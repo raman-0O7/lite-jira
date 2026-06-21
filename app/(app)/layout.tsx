@@ -1,4 +1,5 @@
 import { TopBar } from "@/components/app-shell/top-bar";
+import { QueryProvider } from "@/components/providers/query-provider";
 import { requireUser } from "@/lib/auth";
 
 /**
@@ -20,11 +21,13 @@ export default async function AppLayout({
   const user = await requireUser();
 
   return (
-    <div className="flex min-h-full flex-1 flex-col">
-      <TopBar
-        user={{ name: user.name, email: user.email, image: user.image }}
-      />
-      <div className="flex flex-1 flex-col">{children}</div>
-    </div>
+    <QueryProvider>
+      <div className="flex min-h-full flex-1 flex-col">
+        <TopBar
+          user={{ name: user.name, email: user.email, image: user.image }}
+        />
+        <div className="flex flex-1 flex-col">{children}</div>
+      </div>
+    </QueryProvider>
   );
 }
