@@ -36,7 +36,10 @@ architecture and feature roadmap.
    Edit `.env` and set a real `BETTER_AUTH_SECRET` (e.g. `openssl rand -base64 32`).
    GitHub OAuth is optional — leave `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
    empty and the app still boots (the GitHub provider is only registered when
-   both are set).
+   both are set). The "Continue with GitHub" button always renders, but it only
+   completes the OAuth flow once both credentials are set; without them it shows
+   a "GitHub sign-in is unavailable" toast. Email/password sign-up and login work
+   with no GitHub credentials at all.
 
 3. **Start Postgres**
 
@@ -56,8 +59,10 @@ architecture and feature roadmap.
    pnpm dev
    ```
 
-   Visit http://localhost:3000. Hitting `/boards` while logged out redirects to
-   `/login` (the login UI ships in Feature 01).
+   Visit http://localhost:3000. Sign up at `/signup`, then you land on `/boards`.
+   Hitting `/boards` while logged out redirects to `/login`; visiting `/login` or
+   `/signup` while logged in redirects to `/boards`. Route protection is enforced
+   server-side in `app/(app)/layout.tsx` via `requireUser()`.
 
 ## Common commands
 
@@ -75,6 +80,10 @@ architecture and feature roadmap.
 
 ```
 app/
+  (auth)/login/page.tsx        # public — email/password + GitHub sign-in
+  (auth)/signup/page.tsx       # public — create account, then sign in
+  (auth)/layout.tsx            # centered card layout for auth pages
+  (app)/layout.tsx             # protected app shell + auth guard (requireUser)
   (app)/boards/page.tsx        # protected placeholder (prints session email)
   api/auth/[...all]/route.ts   # Better Auth handler
   layout.tsx  globals.css
@@ -82,9 +91,20 @@ lib/
   auth.ts        # Better Auth server instance + getSession() / requireUser()
   auth-client.ts # Better Auth React client
   db.ts          # Prisma singleton
-  validations/   # Zod schemas (shared contracts: board, column, task, label)
-components/ui/   # shadcn primitives
+  validations/   # Zod schemas (auth, board, column, task, label)
+components/
+  ui/            # shadcn primitives
+  auth/          # login/signup forms, GitHub button, auth card
+  app-shell/     # top bar + user menu (logout)
 prisma/
   schema.prisma  # data model (single source of truth)
 docker-compose.yml
 ```
+
+## Auth notes
+
+- **Route protection** is server-side in `app/(app)/layout.tsx` (`requireUser()`),
+  not middleware. Better Auth validates the session against the database, which
+  is reliable in a Server Component but not in Next's middleware runtime.
+- **Out of scope** (future work): password reset, email verification, profile
+  editing.
