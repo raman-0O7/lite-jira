@@ -1,30 +1,12 @@
 "use client";
 
-import {
-  DndContext,
-  DragOverlay,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  arrayMove,
-  horizontalListSortingStrategy,
-  sortableKeyboardCoordinates,
-} from "@dnd-kit/sortable";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { ColumnContainer } from "@/components/board/ColumnContainer";
-import { ColumnHeader } from "@/components/board/ColumnHeader";
+import { KanbanBoard } from "@/components/board/KanbanBoard";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -49,7 +31,6 @@ import {
 
 export function BoardView({ boardId }: { boardId: string }) {
   const queryClient = useQueryClient();
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
 
@@ -57,15 +38,6 @@ export function BoardView({ boardId }: { boardId: string }) {
     queryKey: boardKeys.detail(boardId),
     queryFn: () => fetchBoard(boardId),
   });
-
-  const sensors = useSensors(
-    // A small activation distance lets header clicks (rename/delete) still work
-    // without accidentally starting a drag.
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  );
 
   // Helper to mutate the cached board's columns array.
   function patchColumns(
@@ -135,27 +107,14 @@ export function BoardView({ boardId }: { boardId: string }) {
     },
   });
 
-  function handleDragStart(event: DragStartEvent) {
-    setActiveId(String(event.active.id));
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    setActiveId(null);
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const columns = boardQuery.data?.columns ?? [];
-    const oldIndex = columns.findIndex((c) => c.id === active.id);
-    const newIndex = columns.findIndex((c) => c.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const next = arrayMove(columns, oldIndex, newIndex).map((c, i) => ({
-      ...c,
-      position: i,
-    }));
-
-    // onMutate applies the optimistic update + snapshots for rollback.
-    reorder.mutate({ orderedIds: next.map((c) => c.id), ordered: next });
+  // KanbanBoard owns the unified DndContext and computes the new column order
+  // (arrayMove); BoardView keeps ownership of the reorder mutation. onMutate
+  // applies the optimistic update + snapshots for rollback.
+  function handleReorderColumns(
+    orderedIds: string[],
+    ordered: ColumnWithTasks[],
+  ) {
+    reorder.mutate({ orderedIds, ordered });
   }
 
   function handleAddColumn(event: React.FormEvent<HTMLFormElement>) {
@@ -195,8 +154,6 @@ export function BoardView({ boardId }: { boardId: string }) {
   }
 
   const board = boardQuery.data;
-  const columnIds = board.columns.map((c) => c.id);
-  const activeColumn = board.columns.find((c) => c.id === activeId) ?? null;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -218,55 +175,21 @@ export function BoardView({ boardId }: { boardId: string }) {
       </div>
 
       <div className="flex-1 overflow-x-auto p-4">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={columnIds}
-            strategy={horizontalListSortingStrategy}
-          >
-            <div className="flex h-full min-h-[60vh] items-start gap-4">
-              {board.columns.map((column) => (
-                <ColumnContainer
-                  key={column.id}
-                  column={column}
-                  busy={rename.isPending || remove.isPending}
-                  onRename={(name) => rename.mutate({ id: column.id, name })}
-                  onDelete={() => remove.mutate(column.id)}
-                />
-              ))}
-              {board.columns.length === 0 ? (
-                <div className="flex h-40 w-72 shrink-0 flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center text-sm text-muted-foreground">
-                  <p>No columns yet</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAddOpen(true)}
-                  >
-                    <Plus />
-                    Add column
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </SortableContext>
-
-          <DragOverlay>
-            {activeColumn ? (
-              <div className="flex w-72 flex-col rounded-xl border bg-muted/80 shadow-lg">
-                <ColumnHeader
-                  column={activeColumn}
-                  taskCount={activeColumn.tasks.length}
-                  onRename={() => {}}
-                  onDelete={() => {}}
-                />
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+        {/*
+          KanbanBoard hosts the single unified DndContext for BOTH column
+          reorder (F02) and task drag (F03). BoardView keeps the board query +
+          column CRUD/reorder mutations and passes the handlers down, so F02's
+          column logic is reused rather than rewritten.
+        */}
+        <KanbanBoard
+          boardId={boardId}
+          columns={board.columns}
+          columnsBusy={rename.isPending || remove.isPending}
+          onAddColumn={() => setAddOpen(true)}
+          onRenameColumn={(id, name) => rename.mutate({ id, name })}
+          onDeleteColumn={(id) => remove.mutate(id)}
+          onReorderColumns={handleReorderColumns}
+        />
       </div>
 
       {/* Add column dialog */}

@@ -42,3 +42,14 @@ export async function findOwnedColumn(columnId: string, userId: string) {
     where: { id: columnId, board: { userId } },
   });
 }
+
+/**
+ * Resolve a task whose column → board is owned by `userId`, or `null`.
+ * Walks the ownership chain task → column → board → user in a single query.
+ * Handlers map `null` to a 404 `{ error }` response.
+ */
+export async function findOwnedTask(taskId: string, userId: string) {
+  return db.task.findFirst({
+    where: { id: taskId, column: { board: { userId } } },
+  });
+}
