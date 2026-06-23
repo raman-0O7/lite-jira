@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { findOwnedTask, getApiUser } from "@/lib/api/ownership";
@@ -40,11 +41,14 @@ export async function GET(_request: Request, { params }: RouteContext) {
   return NextResponse.json({ task });
 }
 
-// PATCH /api/tasks/[id] {title?, ...} → update.
+// PATCH /api/tasks/[id] {title?, description?, priority?, dueDate?, labelIds?}
+//   → update.
 //
-// F03 only updates `title`. updateTaskSchema already permits F04's other
-// fields; we map exactly what's present so unset keys are left untouched
-// (keeping this handler additive for F04 to extend).
+// F03 only updates `title`. F04 extends this additively to also accept
+// description / priority / dueDate / labels. `updateTaskSchema` already permits
+// all of these; we map exactly what's present so unset keys are left untouched.
+// Label assignment uses `set` semantics: the task's labels become exactly the
+// passed `labelIds` (connect new, disconnect removed in one operation).
 export async function PATCH(request: Request, { params }: RouteContext) {
   const user = await getApiUser();
   if (!user) {
@@ -73,11 +77,42 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     );
   }
 
-  // Only assign keys that were actually provided. F03 sends `title`; F04 will
-  // extend this map with description/priority/dueDate/labels.
-  const { title } = parsed.data;
-  const data: { title?: string } = {};
+  // Only assign keys that were actually provided so unset fields stay as-is.
+  // F03 sends `title`; F04 adds description / priority / dueDate / labels.
+  const { title, description, priority, dueDate, labelIds } = parsed.data;
+  const data: Prisma.TaskUpdateInput = {};
   if (title !== undefined) data.title = title;
+  // description/dueDate are nullable: `null` clears, a value sets. `undefined`
+  // (key absent) leaves them untouched.
+  if (description !== undefined) data.description = description ?? null;
+  if (priority !== undefined) data.priority = priority;
+  if (dueDate !== undefined) data.dueDate = dueDate ?? null;
+
+  if (labelIds !== undefined) {
+    // Guard: every label must belong to this task's board, or we'd let a user
+    // attach another board's labels. Resolve the task's board, then ensure all
+    // requested labels live on it.
+    const taskBoard = await db.task.findUnique({
+      where: { id },
+      select: { column: { select: { boardId: true } } },
+    });
+    const boardId = taskBoard?.column.boardId;
+
+    if (labelIds.length > 0) {
+      const ownedLabels = await db.label.findMany({
+        where: { id: { in: labelIds }, boardId },
+        select: { id: true },
+      });
+      if (ownedLabels.length !== new Set(labelIds).size) {
+        return NextResponse.json(
+          { error: "Label not found" },
+          { status: 404 },
+        );
+      }
+    }
+
+    data.labels = { set: labelIds.map((labelId) => ({ id: labelId })) };
+  }
 
   const task = await db.task.update({
     where: { id },
@@ -85,10 +120,12 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     select: {
       id: true,
       title: true,
+      description: true,
       position: true,
       priority: true,
       dueDate: true,
       columnId: true,
+      labels: { select: { id: true, name: true, color: true } },
     },
   });
 

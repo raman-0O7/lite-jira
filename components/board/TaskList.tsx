@@ -5,10 +5,61 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { format } from "date-fns";
 
+import { LabelChip } from "@/components/board/LabelChip";
 import { TaskCard } from "@/components/board/TaskCard";
+import { Badge } from "@/components/ui/badge";
 import type { TaskStub } from "@/lib/api/boards";
+import {
+  dueBadgeClass,
+  dueStatus,
+  PRIORITY_BADGE_CLASS,
+  PRIORITY_LABEL,
+} from "@/lib/task-meta";
 import { cn } from "@/lib/utils";
+
+/**
+ * TaskCardLabels — the `labels` slot: a row of colored label chips.
+ * Renders nothing when the task has no labels (so the slot stays empty).
+ */
+function TaskCardLabels({ task }: { task: TaskStub }) {
+  if (task.labels.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {task.labels.map((label) => (
+        <LabelChip key={label.id} label={label} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * TaskCardMeta — the `meta` slot: priority badge + (optional) due-date badge.
+ * Due date is red when overdue, amber when due within 2 days, muted otherwise.
+ */
+function TaskCardMeta({ task }: { task: TaskStub }) {
+  const due = task.dueDate ? new Date(task.dueDate) : null;
+  const status = due ? dueStatus(due) : null;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <Badge
+        variant="secondary"
+        className={cn("border-0", PRIORITY_BADGE_CLASS[task.priority])}
+      >
+        {PRIORITY_LABEL[task.priority]}
+      </Badge>
+      {due && status ? (
+        <Badge
+          variant="secondary"
+          className={cn("border-0", dueBadgeClass(status))}
+        >
+          {format(due, "MMM d")}
+        </Badge>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * TaskList — the vertical task region for one column.
@@ -21,18 +72,24 @@ import { cn } from "@/lib/utils";
  *
  * The whole list is the droppable surface so dropping anywhere in the column
  * body (including the gap below the last card) targets this column.
+ *
+ * F04: fills the TaskCard `labels` / `meta` slots and forwards `onOpenTask`
+ * into the card's `onOpen` hook so a non-drag click opens the detail modal.
  */
 export function TaskList({
   columnId,
   tasks,
   busy,
   onDeleteTask,
+  onOpenTask,
 }: {
   columnId: string;
   tasks: TaskStub[];
   busy?: boolean;
   /** Delete a task by id. Owned by KanbanBoard's optimistic delete mutation. */
   onDeleteTask: (taskId: string) => void;
+  /** Open the detail modal for a task (F04). */
+  onOpenTask?: (taskId: string) => void;
 }) {
   // Column-level droppable: lets empty columns (and the area past the last
   // card) accept a drop. Prefixed so its id never collides with a task id.
@@ -58,6 +115,9 @@ export function TaskList({
             task={task}
             busy={busy}
             onDelete={() => onDeleteTask(task.id)}
+            onOpen={onOpenTask ? () => onOpenTask(task.id) : undefined}
+            labels={<TaskCardLabels task={task} />}
+            meta={<TaskCardMeta task={task} />}
           />
         ))}
         {tasks.length === 0 ? (

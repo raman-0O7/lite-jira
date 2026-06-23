@@ -10,6 +10,13 @@
 
 export type Priority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 
+/** A label as embedded on a task / returned from the labels endpoints. */
+export type LabelStub = {
+  id: string;
+  name: string;
+  color: string;
+};
+
 /** A board as shown in the boards list. */
 export type BoardSummary = {
   id: string;
@@ -19,13 +26,17 @@ export type BoardSummary = {
   columnCount: number;
 };
 
-/** A task stub embedded in a column. F03 owns the full task shape. */
+/**
+ * A task stub embedded in a column. F03 owns the base task shape; F04 adds
+ * `labels` (additively) so cards can render label chips off the board payload.
+ */
 export type TaskStub = {
   id: string;
   title: string;
   position: number;
   priority: Priority;
   dueDate: string | null;
+  labels: LabelStub[];
 };
 
 /** A column with its ordered tasks, as returned by GET /api/boards/[id]. */

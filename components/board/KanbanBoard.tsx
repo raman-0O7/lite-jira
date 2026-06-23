@@ -28,6 +28,7 @@ import { ColumnContainer } from "@/components/board/ColumnContainer";
 import { ColumnHeader } from "@/components/board/ColumnHeader";
 import { TaskCard } from "@/components/board/TaskCard";
 import { TaskList } from "@/components/board/TaskList";
+import { TaskModal } from "@/components/board/TaskModal";
 import { Button } from "@/components/ui/button";
 import {
   boardKeys,
@@ -78,6 +79,9 @@ export function KanbanBoard({
   const queryClient = useQueryClient();
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  // The task whose detail modal is open (F04). Opening is triggered by a
+  // non-drag click on a card via TaskCard's `onOpen` slot hook.
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   // True pre-drag column state, captured at drag start. handleDragOver mutates
   // the cache live, so this is the only faithful rollback target if the move
   // request fails.
@@ -346,6 +350,7 @@ export function KanbanBoard({
                 tasks={column.tasks}
                 busy={remove.isPending}
                 onDeleteTask={(taskId) => remove.mutate(taskId)}
+                onOpenTask={(taskId) => setOpenTaskId(taskId)}
               />
               <AddTaskComposer columnId={column.id} boardId={boardId} />
             </ColumnContainer>
@@ -378,6 +383,22 @@ export function KanbanBoard({
           </div>
         ) : null}
       </DragOverlay>
+
+      {/*
+        Detail modal (F04). Mounted outside the cards so opening it never
+        interferes with the dnd sensors: TaskCard's `onOpen` only fires on a
+        plain click (the PointerSensor's 6px activation distance keeps a click
+        from starting a drag), and the modal renders in a portal.
+      */}
+      <TaskModal
+        boardId={boardId}
+        taskId={openTaskId}
+        open={openTaskId !== null}
+        onOpenChange={(next) => {
+          if (!next) setOpenTaskId(null);
+        }}
+        onDeleted={(taskId) => remove.mutate(taskId)}
+      />
     </DndContext>
   );
 }

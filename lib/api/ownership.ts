@@ -53,3 +53,16 @@ export async function findOwnedTask(taskId: string, userId: string) {
     where: { id: taskId, column: { board: { userId } } },
   });
 }
+
+/**
+ * Resolve a label whose board is owned by `userId`, or `null`.
+ * Walks the ownership chain label → board → user in a single query.
+ * Returns the label plus its `boardId` for follow-up queries (e.g. validating
+ * that the labels assigned to a task belong to the same board).
+ * Handlers map `null` to a 404 `{ error }` response.
+ */
+export async function findOwnedLabel(labelId: string, userId: string) {
+  return db.label.findFirst({
+    where: { id: labelId, board: { userId } },
+  });
+}

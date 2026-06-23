@@ -40,6 +40,9 @@ export async function GET(_request: Request, { params }: RouteContext) {
               position: true,
               priority: true,
               dueDate: true,
+              // F04: card chips need each task's labels. Additive to F03's
+              // select; the rest of the task shape is unchanged.
+              labels: { select: { id: true, name: true, color: true } },
             },
           },
         },

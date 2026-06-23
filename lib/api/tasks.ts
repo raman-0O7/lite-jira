@@ -73,6 +73,38 @@ export async function updateTaskTitle(
   return data.task;
 }
 
+/**
+ * The fields F04's detail modal can patch on a task. Every key is optional:
+ * only the keys present in the request are updated. `description` / `dueDate`
+ * accept `null` to clear; `labelIds` replaces the task's labels wholesale.
+ */
+export type UpdateTaskPayload = {
+  title?: string;
+  description?: string | null;
+  priority?: Priority;
+  dueDate?: string | null;
+  labelIds?: string[];
+};
+
+/**
+ * PATCH /api/tasks/[id] with any subset of editable fields (F04).
+ * Additive over `updateTaskTitle`; returns the full task so the cache and modal
+ * can reconcile labels / metadata after a save.
+ */
+export async function updateTask(
+  id: string,
+  payload: UpdateTaskPayload,
+): Promise<TaskFull> {
+  const res = await fetch(`/api/tasks/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) await parseError(res, "Failed to update task");
+  const data = (await res.json()) as { task: TaskFull };
+  return data.task;
+}
+
 /** DELETE /api/tasks/[id]. */
 export async function deleteTask(id: string): Promise<void> {
   const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });

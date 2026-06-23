@@ -59,6 +59,8 @@ export async function POST(request: Request, { params }: RouteContext) {
       position: true,
       priority: true,
       dueDate: true,
+      // F04: TaskStub now carries labels; a fresh task has none, so this is `[]`.
+      labels: { select: { id: true, name: true, color: true } },
     },
   });
 
