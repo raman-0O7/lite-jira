@@ -37,6 +37,12 @@ import {
   type TaskStub,
 } from "@/lib/api/boards";
 import { deleteTask, moveTask } from "@/lib/api/tasks";
+import {
+  EMPTY_FILTERS,
+  isFiltersEmpty,
+  matchesFilters,
+  type FilterState,
+} from "@/lib/board-filters";
 import { clampPosition } from "@/lib/board-dnd";
 
 /**
@@ -63,6 +69,7 @@ export function KanbanBoard({
   boardId,
   columns,
   columnsBusy,
+  filters = EMPTY_FILTERS,
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
@@ -71,6 +78,13 @@ export function KanbanBoard({
   boardId: string;
   columns: ColumnWithTasks[];
   columnsBusy?: boolean;
+  /**
+   * F05: client-side filter state. Applied ONLY to the rendered task lists — a
+   * filtered-out card simply isn't rendered. All drag/dnd logic below still
+   * operates on the unfiltered `columns`, so filtering never mutates F03's
+   * board/task state and never breaks moves.
+   */
+  filters?: FilterState;
   onAddColumn: () => void;
   onRenameColumn: (id: string, name: string) => void;
   onDeleteColumn: (id: string) => void;
@@ -316,6 +330,15 @@ export function KanbanBoard({
     });
   }
 
+  // F05: derive the visible task list per column WITHOUT touching the cache.
+  // When filters are active we run each task through the pure matcher; an empty
+  // filter passes everything (and skips the work entirely).
+  const filtersActive = !isFiltersEmpty(filters);
+  function visibleTasks(column: ColumnWithTasks): TaskStub[] {
+    if (!filtersActive) return column.tasks;
+    return column.tasks.filter((task) => matchesFilters(task, filters));
+  }
+
   const overlayColumn = activeColumnId
     ? columns.find((c) => c.id === activeColumnId)
     : null;
@@ -347,7 +370,10 @@ export function KanbanBoard({
             >
               <TaskList
                 columnId={column.id}
-                tasks={column.tasks}
+                tasks={visibleTasks(column)}
+                // Distinguish "genuinely empty" from "hidden by a filter" so the
+                // per-column empty state reads correctly.
+                filtered={filtersActive && column.tasks.length > 0}
                 busy={remove.isPending}
                 onDeleteTask={(taskId) => remove.mutate(taskId)}
                 onOpenTask={(taskId) => setOpenTaskId(taskId)}

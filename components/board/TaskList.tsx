@@ -79,12 +79,20 @@ function TaskCardMeta({ task }: { task: TaskStub }) {
 export function TaskList({
   columnId,
   tasks,
+  filtered,
   busy,
   onDeleteTask,
   onOpenTask,
 }: {
   columnId: string;
   tasks: TaskStub[];
+  /**
+   * F05: true when this column has tasks but they're all hidden by the active
+   * filter (so the empty state reads "No matching tasks" rather than "No
+   * tasks"). The column droppable stays registered regardless, so drops into a
+   * filtered-empty column still work.
+   */
+  filtered?: boolean;
   busy?: boolean;
   /** Delete a task by id. Owned by KanbanBoard's optimistic delete mutation. */
   onDeleteTask: (taskId: string) => void;
@@ -122,7 +130,7 @@ export function TaskList({
         ))}
         {tasks.length === 0 ? (
           <p className="px-1 py-6 text-center text-xs text-muted-foreground">
-            No tasks
+            {filtered ? "No matching tasks" : "No tasks"}
           </p>
         ) : null}
       </div>
