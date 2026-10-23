@@ -1,4 +1,4 @@
-# Lite Jira — Phase 2 Master Plan · Teams, GitHub & AI agents
+# Kanso (formerly Lite Jira) — Phase 2 Master Plan · Teams, GitHub & AI agents
 
 Phase 1 ([`PLAN.md`](PLAN.md), features 00–05) shipped a solo Kanban app. Phase 2
 turns it into a Jira-style tracker for **teams and solo freelancers alike**, with
@@ -212,10 +212,29 @@ earlier; the order above keeps the UI from being designed twice.
 ## 6. Key feature notes
 
 ### 09 — Redesign
-Design direction (type scale, typefaces, palette, density, reference apps) is
-agreed with the user **before** the feature spec is written. Deliverable includes
-design tokens in `globals.css`, updated shadcn theme, and every phase 1 screen
-reworked.
+**Product name: Kanso** (renamed from Lite Jira; mark = an open ensō circle).
+
+Agreed direction ("A · Precision", Linear-like, dense, dark-first, both themes):
+- **Type:** Inter Tight (headings 24/19/15, weight 600), Inter (UI: 13 body,
+  12 meta), JetBrains Mono (11: issue keys, PR numbers, timers). Replaces the
+  current setup, which renders in Times New Roman because `globals.css` defines
+  `--font-sans: var(--font-sans)` (self-reference) — fix as part of this feature.
+- **Color (dark / light):** bg `#0E0F11`/`#FFFFFF`, sidebar `#0A0B0D`/`#FAFAFB`,
+  surface `#18191D`/`#FFFFFF`, border `#24262B`/`#E3E4E8`, text
+  `#ECEDEF`/`#16171A`, muted `#8E9199`/`#5F626A`, accent `#5E62E8`/`#5357DD`,
+  accent text `#A9ACFF`/`#4045C2`.
+- **Iconography:** Lucide 13–15px stroke 2 everywhere (nav, toolbar, card meta);
+  custom status icons driven by column category (dashed / half / three-quarter /
+  check), bar-style priority icons with an orange "!" for urgent, colored
+  issue-type icons (epic, story, task, bug, sub-task).
+- **Signature elements:** live agent states on cards and in the issue panel
+  (pulsing dot, timer, "Watch session"), PR + checks inline on cards, colored
+  avatars, label dots, ⌘K search, filter chips, sprint progress in the toolbar.
+- **Shape:** radius 5 controls · 7 cards · 8 panels; 4px spacing grid.
+
+Mockups (board + tokens sheet) live in the design canvas shared in the planning
+session. Deliverable: tokens in `globals.css`, updated shadcn theme, and every
+phase 1 screen reworked.
 
 ### 10 — MCP server
 
