@@ -1,4 +1,3 @@
-import { TopBar } from "@/components/app-shell/top-bar";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { requireUser } from "@/lib/auth";
 
@@ -10,24 +9,19 @@ import { requireUser } from "@/lib/auth";
  * which is reliable in a Server Component but not in Next's middleware
  * runtime. requireUser() redirects unauthenticated visitors to /login.
  *
- * Feature 02/03 render their pages as {children}; they should not duplicate
- * the auth guard or the top bar.
+ * The top bar is rendered by app/(app)/[workspace]/layout.tsx, which knows the
+ * current workspace.
  */
 export default async function AppLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const user = await requireUser();
+  await requireUser();
 
   return (
     <QueryProvider>
-      <div className="flex min-h-full flex-1 flex-col">
-        <TopBar
-          user={{ name: user.name, email: user.email, image: user.image }}
-        />
-        <div className="flex flex-1 flex-col">{children}</div>
-      </div>
+      <div className="flex min-h-full flex-1 flex-col">{children}</div>
     </QueryProvider>
   );
 }

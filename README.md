@@ -59,9 +59,10 @@ architecture and feature roadmap.
    pnpm dev
    ```
 
-   Visit http://localhost:3000. Sign up at `/signup`, then you land on `/boards`.
-   Hitting `/boards` while logged out redirects to `/login`; visiting `/login` or
-   `/signup` while logged in redirects to `/boards`. Route protection is enforced
+   Visit http://localhost:3000. Sign up at `/signup`: every account gets a
+   personal workspace and lands on `/{workspace}/boards`. Hitting a protected page
+   while logged out redirects to `/login`; visiting `/login` or `/signup` while
+   logged in redirects to your workspace. Route protection is enforced
    server-side in `app/(app)/layout.tsx` via `requireUser()`.
 
 ## Common commands
@@ -71,6 +72,7 @@ architecture and feature roadmap.
 | `pnpm dev` | Start the Next.js dev server |
 | `pnpm build` | Production build |
 | `pnpm lint` | Lint with ESLint |
+| `pnpm test` | Run Vitest against the `task_management_test` database (override with `TEST_DATABASE_URL`; the name must end in `_test`) |
 | `pnpm prisma migrate dev` | Apply migrations + regenerate client |
 | `pnpm prisma studio` | Browse the database |
 | `docker compose up -d` | Start Postgres |

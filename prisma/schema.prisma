@@ -10,16 +10,17 @@ datasource db {
 
 // ---------- Better Auth ----------
 model User {
-  id            String    @id
+  id            String       @id
   name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
+  email         String       @unique
+  emailVerified Boolean      @default(false)
   image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   sessions      Session[]
   accounts      Account[]
-  boards        Board[]
+  memberships   Membership[]
+  activities    Activity[]
 }
 
 model Session {
@@ -60,16 +61,80 @@ model Verification {
   updatedAt  DateTime @updatedAt
 }
 
+// ---------- Workspaces ----------
+model Workspace {
+  id          String       @id @default(cuid())
+  name        String
+  slug        String       @unique
+  personal    Boolean      @default(false)
+  memberships Membership[]
+  boards      Board[]
+  activities  Activity[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Membership {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        Role      @default(MEMBER)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+// Append-only history of every mutation. boardId/taskId are plain ids (no FK)
+// so history survives deletes; actorAgentId gets its FK with the Agent model.
+model Activity {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  boardId      String?
+  taskId       String?
+  actorType    ActorType
+  actorUserId  String?
+  actorUser    User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorAgentId String?
+  action       String
+  data         Json      @default("{}")
+  createdAt    DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([boardId, createdAt])
+  @@index([taskId, createdAt])
+}
+
+enum ActorType {
+  USER
+  AGENT
+  GITHUB
+  SYSTEM
+}
+
 // ---------- App ----------
 model Board {
-  id        String   @id @default(cuid())
-  name      String
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  columns   Column[]
-  labels    Label[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String    @id @default(cuid())
+  name        String
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  columns     Column[]
+  labels      Label[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([workspaceId])
 }
 
 model Column {

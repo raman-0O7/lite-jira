@@ -21,9 +21,12 @@ fi
 
 # Match the credentials in .env.example.
 su postgres -c "psql -q -c \"ALTER USER postgres PASSWORD 'postgres';\""
-if ! su postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='task_management'\"" | grep -q 1; then
-  su postgres -c "createdb task_management"
-fi
+# Dev database, plus a separate one for Vitest (tests truncate tables freely).
+for name in task_management task_management_test; do
+  if ! su postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='$name'\"" | grep -q 1; then
+    su postgres -c "createdb $name"
+  fi
+done
 
 # ---------- .env ----------
 if [ ! -f .env ]; then

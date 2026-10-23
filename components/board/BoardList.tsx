@@ -6,6 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { BoardCard } from "@/components/board/BoardCard";
+import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,19 +22,20 @@ import { Label } from "@/components/ui/label";
 import { boardKeys, createBoard, fetchBoards } from "@/lib/api/boards";
 
 export function BoardList() {
+  const { slug } = useWorkspace();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
 
   const boardsQuery = useQuery({
-    queryKey: boardKeys.lists(),
-    queryFn: fetchBoards,
+    queryKey: boardKeys.lists(slug),
+    queryFn: () => fetchBoards(slug),
   });
 
   const create = useMutation({
-    mutationFn: (value: string) => createBoard(value),
+    mutationFn: (value: string) => createBoard(slug, value),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: boardKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: boardKeys.lists(slug) });
       setCreateOpen(false);
       setName("");
       toast.success("Board created.");

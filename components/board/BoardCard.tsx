@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -31,6 +32,7 @@ import {
 } from "@/lib/api/boards";
 
 export function BoardCard({ board }: { board: BoardSummary }) {
+  const { slug } = useWorkspace();
   const queryClient = useQueryClient();
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -39,7 +41,7 @@ export function BoardCard({ board }: { board: BoardSummary }) {
   const rename = useMutation({
     mutationFn: (value: string) => renameBoard(board.id, value),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: boardKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: boardKeys.lists(slug) });
       setRenameOpen(false);
       toast.success("Board renamed.");
     },
@@ -49,7 +51,7 @@ export function BoardCard({ board }: { board: BoardSummary }) {
   const remove = useMutation({
     mutationFn: () => deleteBoard(board.id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: boardKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: boardKeys.lists(slug) });
       setDeleteOpen(false);
       toast.success("Board deleted.");
     },
@@ -70,7 +72,7 @@ export function BoardCard({ board }: { board: BoardSummary }) {
     <>
       <div className="group relative flex flex-col rounded-xl border bg-card p-4 transition-colors hover:border-foreground/20">
         <Link
-          href={`/boards/${board.id}`}
+          href={`/${slug}/boards/${board.id}`}
           className="flex flex-1 flex-col gap-1 outline-none"
         >
           <span className="truncate pr-8 font-medium">{board.name}</span>

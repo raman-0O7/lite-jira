@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
+import { ensurePersonalWorkspace } from "@/lib/services/workspaces";
 
 const githubClientId = process.env.GITHUB_CLIENT_ID;
 const githubClientSecret = process.env.GITHUB_CLIENT_SECRET;
@@ -29,6 +30,17 @@ export const auth = betterAuth({
     enabled: true,
   },
   socialProviders,
+  databaseHooks: {
+    user: {
+      create: {
+        // Every account starts with a personal workspace. /boards also creates
+        // it lazily, so a failure here never locks a user out.
+        after: async (user) => {
+          await ensurePersonalWorkspace(user);
+        },
+      },
+    },
+  },
   // nextCookies must be the last plugin so it can set cookies from server actions.
   plugins: [nextCookies()],
 });

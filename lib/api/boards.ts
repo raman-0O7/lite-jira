@@ -60,7 +60,8 @@ export type BoardDetail = {
 
 export const boardKeys = {
   all: ["boards"] as const,
-  lists: () => [...boardKeys.all, "list"] as const,
+  lists: (workspaceSlug: string) =>
+    [...boardKeys.all, "list", workspaceSlug] as const,
   detail: (id: string) => [...boardKeys.all, "detail", id] as const,
 };
 
@@ -79,8 +80,10 @@ async function parseError(res: Response, fallback: string): Promise<never> {
 
 // ---------- Boards ----------
 
-export async function fetchBoards(): Promise<BoardSummary[]> {
-  const res = await fetch("/api/boards");
+export async function fetchBoards(
+  workspaceSlug: string,
+): Promise<BoardSummary[]> {
+  const res = await fetch(`/api/workspaces/${workspaceSlug}/boards`);
   if (!res.ok) await parseError(res, "Failed to load boards");
   const data = (await res.json()) as { boards: BoardSummary[] };
   return data.boards;
@@ -93,8 +96,11 @@ export async function fetchBoard(id: string): Promise<BoardDetail> {
   return data.board;
 }
 
-export async function createBoard(name: string): Promise<BoardSummary> {
-  const res = await fetch("/api/boards", {
+export async function createBoard(
+  workspaceSlug: string,
+  name: string,
+): Promise<BoardSummary> {
+  const res = await fetch(`/api/workspaces/${workspaceSlug}/boards`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),

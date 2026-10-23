@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { FilterBar } from "@/components/board/FilterBar";
 import { KanbanBoard } from "@/components/board/KanbanBoard";
+import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { useBoardFilters } from "@/hooks/use-board-filters";
 import {
@@ -49,6 +50,7 @@ function deriveLabels(columns: ColumnWithTasks[]): LabelStub[] {
 }
 
 export function BoardView({ boardId }: { boardId: string }) {
+  const { slug } = useWorkspace();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
@@ -168,7 +170,7 @@ export function BoardView({ boardId }: { boardId: string }) {
           {notFound ? "This board doesn’t exist." : message}
         </p>
         <Button asChild variant="outline" size="sm">
-          <Link href="/boards">
+          <Link href={`/${slug}/boards`}>
             <ArrowLeft />
             Back to boards
           </Link>
@@ -188,7 +190,7 @@ export function BoardView({ boardId }: { boardId: string }) {
       <div className="flex items-center justify-between gap-4 border-b px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <Button asChild variant="ghost" size="icon-sm" aria-label="Back">
-            <Link href="/boards">
+            <Link href={`/${slug}/boards`}>
               <ArrowLeft />
             </Link>
           </Button>
