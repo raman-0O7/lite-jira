@@ -257,8 +257,8 @@ export function BoardView({ boardId }: { boardId: string }) {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={addColumn.isPending}>
-                {addColumn.isPending ? "Adding…" : "Add"}
+              <Button type="submit" loading={addColumn.isPending} loadingText="Adding…">
+                Add
               </Button>
             </DialogFooter>
           </form>

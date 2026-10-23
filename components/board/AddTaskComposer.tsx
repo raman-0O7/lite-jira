@@ -104,8 +104,8 @@ export function AddTaskComposer({
         maxLength={200}
       />
       <div className="flex items-center gap-2">
-        <Button size="sm" onClick={submit} disabled={create.isPending}>
-          {create.isPending ? "Adding…" : "Add task"}
+        <Button size="sm" onClick={submit} loading={create.isPending} loadingText="Adding…">
+          Add task
         </Button>
         <Button
           variant="ghost"

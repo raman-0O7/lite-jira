@@ -91,8 +91,8 @@ export function BoardList() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={create.isPending}>
-                  {create.isPending ? "Creating…" : "Create"}
+                <Button type="submit" loading={create.isPending} loadingText="Creating…">
+                  Create
                 </Button>
               </DialogFooter>
             </form>

@@ -183,9 +183,10 @@ export function LabelPicker({
               <Button
                 size="sm"
                 onClick={submitCreate}
-                disabled={create.isPending}
+                loading={create.isPending}
+                loadingText="Creating…"
               >
-                {create.isPending ? "Creating…" : "Create"}
+                Create
               </Button>
               <Button
                 size="sm"

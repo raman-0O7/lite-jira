@@ -142,8 +142,8 @@ export function BoardCard({ board }: { board: BoardSummary }) {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={rename.isPending}>
-                {rename.isPending ? "Saving…" : "Save"}
+              <Button type="submit" loading={rename.isPending} loadingText="Saving…">
+                Save
               </Button>
             </DialogFooter>
           </form>
@@ -173,9 +173,10 @@ export function BoardCard({ board }: { board: BoardSummary }) {
               type="button"
               variant="destructive"
               onClick={() => remove.mutate()}
-              disabled={remove.isPending}
+              loading={remove.isPending}
+              loadingText="Deleting…"
             >
-              {remove.isPending ? "Deleting…" : "Delete"}
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>
