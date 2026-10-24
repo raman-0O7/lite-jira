@@ -10,7 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Priority } from "@/lib/api/boards";
+import type { Priority } from "@/lib/api/projects";
 import { PRIORITIES, PRIORITY_DOT_CLASS, PRIORITY_LABEL } from "@/lib/task-meta";
 import { cn } from "@/lib/utils";
 

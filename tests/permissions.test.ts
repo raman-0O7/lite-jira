@@ -8,10 +8,12 @@ const agent: Actor = { type: "agent", agentId: "a1", onBehalfOf: "u1" };
 
 describe("role matrix", () => {
   const cases: [Action, Record<"OWNER" | "ADMIN" | "MEMBER" | "GUEST", boolean>][] = [
-    ["board.read", { OWNER: true, ADMIN: true, MEMBER: true, GUEST: true }],
-    ["task.write", { OWNER: true, ADMIN: true, MEMBER: true, GUEST: false }],
-    ["board.create", { OWNER: true, ADMIN: true, MEMBER: true, GUEST: false }],
-    ["board.delete", { OWNER: true, ADMIN: true, MEMBER: false, GUEST: false }],
+    ["project.read", { OWNER: true, ADMIN: true, MEMBER: true, GUEST: true }],
+    ["comment.write", { OWNER: true, ADMIN: true, MEMBER: true, GUEST: true }],
+    ["issue.write", { OWNER: true, ADMIN: true, MEMBER: true, GUEST: false }],
+    ["project.create", { OWNER: true, ADMIN: true, MEMBER: true, GUEST: false }],
+    ["project.delete", { OWNER: true, ADMIN: true, MEMBER: false, GUEST: false }],
+    ["comment.moderate", { OWNER: true, ADMIN: true, MEMBER: false, GUEST: false }],
     ["members.manage", { OWNER: true, ADMIN: true, MEMBER: false, GUEST: false }],
     ["workspace.delete", { OWNER: true, ADMIN: false, MEMBER: false, GUEST: false }],
   ];
@@ -27,17 +29,24 @@ describe("role matrix", () => {
 
 describe("agent cap", () => {
   it("lets an agent do what its user can do day to day", () => {
-    expect(can({ actor: agent, role: "MEMBER" }, "task.write")).toBe(true);
-    expect(can({ actor: agent, role: "OWNER" }, "board.create")).toBe(true);
+    expect(can({ actor: agent, role: "MEMBER" }, "issue.write")).toBe(true);
+    expect(can({ actor: agent, role: "OWNER" }, "project.create")).toBe(true);
+    expect(can({ actor: agent, role: "MEMBER" }, "comment.write")).toBe(true);
   });
 
-  it("never lets an agent delete boards or manage the workspace, even for an owner", () => {
-    for (const action of ["board.delete", "members.manage", "integrations.manage", "workspace.delete"] as const) {
+  it("never lets an agent delete projects, moderate, or manage the workspace, even for an owner", () => {
+    for (const action of [
+      "project.delete",
+      "comment.moderate",
+      "members.manage",
+      "integrations.manage",
+      "workspace.delete",
+    ] as const) {
       expect(can({ actor: agent, role: "OWNER" }, action), action).toBe(false);
     }
   });
 
   it("never gives an agent more than its user", () => {
-    expect(can({ actor: agent, role: "GUEST" }, "task.write")).toBe(false);
+    expect(can({ actor: agent, role: "GUEST" }, "issue.write")).toBe(false);
   });
 });

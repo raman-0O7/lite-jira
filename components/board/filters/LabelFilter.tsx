@@ -10,7 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { LabelStub } from "@/lib/api/boards";
+import type { LabelStub } from "@/lib/api/projects";
 import { cn } from "@/lib/utils";
 
 /**

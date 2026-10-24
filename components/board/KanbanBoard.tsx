@@ -20,6 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -31,12 +32,13 @@ import { TaskList } from "@/components/board/TaskList";
 import { TaskModal } from "@/components/board/TaskModal";
 import { Button } from "@/components/ui/button";
 import {
-  boardKeys,
-  type BoardDetail,
-  type ColumnWithTasks,
-  type TaskStub,
-} from "@/lib/api/boards";
-import { deleteTask, moveTask } from "@/lib/api/tasks";
+  projectKeys,
+  type ColumnCategory,
+  type ColumnWithIssues,
+  type IssueCard,
+  type ProjectDetail,
+} from "@/lib/api/projects";
+import { deleteIssue, moveIssue } from "@/lib/api/issues";
 import {
   EMPTY_FILTERS,
   isFiltersEmpty,
@@ -66,17 +68,18 @@ import { clampPosition } from "@/lib/board-dnd";
  * ───────────────────────────────────────────────────────────────────────────
  */
 export function KanbanBoard({
-  boardId,
+  projectId,
   columns,
   columnsBusy,
   filters = EMPTY_FILTERS,
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
+  onSetColumnCategory,
   onReorderColumns,
 }: {
-  boardId: string;
-  columns: ColumnWithTasks[];
+  projectId: string;
+  columns: ColumnWithIssues[];
   columnsBusy?: boolean;
   /**
    * F05: client-side filter state. Applied ONLY to the rendered task lists — a
@@ -88,18 +91,41 @@ export function KanbanBoard({
   onAddColumn: () => void;
   onRenameColumn: (id: string, name: string) => void;
   onDeleteColumn: (id: string) => void;
-  onReorderColumns: (orderedIds: string[], ordered: ColumnWithTasks[]) => void;
+  onSetColumnCategory: (id: string, category: ColumnCategory) => void;
+  onReorderColumns: (orderedIds: string[], ordered: ColumnWithIssues[]) => void;
 }) {
   const queryClient = useQueryClient();
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  // The task whose detail modal is open (F04). Opening is triggered by a
-  // non-drag click on a card via TaskCard's `onOpen` slot hook.
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  // The issue whose detail modal is open (F04). Opening is triggered by a
+  // non-drag click on a card via TaskCard's `onOpen` slot hook, or by an
+  // `?issue=WEB-42` link (what /[workspace]/issues/[key] redirects to).
+  const searchParams = useSearchParams();
+  const [openTaskId, setOpenIssueState] = useState<string | null>(() => {
+    const key = searchParams.get("issue")?.toUpperCase();
+    if (!key) return null;
+    for (const column of columns) {
+      const hit = column.issues.find((issue) => issue.key === key);
+      if (hit) return hit.id;
+    }
+    return null;
+  });
+
+  /** Open/close the modal and keep `?issue=` in the URL shareable. */
+  function setOpenTaskId(issueId: string | null) {
+    setOpenIssueState(issueId);
+    const key = issueId
+      ? columns.flatMap((c) => c.issues).find((issue) => issue.id === issueId)?.key
+      : undefined;
+    const url = new URL(window.location.href);
+    if (key) url.searchParams.set("issue", key);
+    else url.searchParams.delete("issue");
+    window.history.replaceState(null, "", url);
+  }
   // True pre-drag column state, captured at drag start. handleDragOver mutates
   // the cache live, so this is the only faithful rollback target if the move
   // request fails.
-  const preDragColumns = useRef<ColumnWithTasks[] | null>(null);
+  const preDragColumns = useRef<ColumnWithIssues[] | null>(null);
 
   const sensors = useSensors(
     // A small activation distance keeps header/menu clicks working without
@@ -114,36 +140,36 @@ export function KanbanBoard({
 
   // ---- cache helpers -------------------------------------------------------
 
-  function setColumns(updater: (cols: ColumnWithTasks[]) => ColumnWithTasks[]) {
-    queryClient.setQueryData<BoardDetail>(boardKeys.detail(boardId), (prev) =>
+  function setColumns(updater: (cols: ColumnWithIssues[]) => ColumnWithIssues[]) {
+    queryClient.setQueryData<ProjectDetail>(projectKeys.detail(projectId), (prev) =>
       prev ? { ...prev, columns: updater(prev.columns) } : prev,
     );
   }
 
-  function snapshotColumns(): ColumnWithTasks[] {
+  function snapshotColumns(): ColumnWithIssues[] {
     return (
-      queryClient.getQueryData<BoardDetail>(boardKeys.detail(boardId))
+      queryClient.getQueryData<ProjectDetail>(projectKeys.detail(projectId))
         ?.columns ?? []
     );
   }
 
   function findColumnOfTask(
-    cols: ColumnWithTasks[],
+    cols: ColumnWithIssues[],
     taskId: string,
-  ): ColumnWithTasks | undefined {
-    return cols.find((c) => c.tasks.some((t) => t.id === taskId));
+  ): ColumnWithIssues | undefined {
+    return cols.find((c) => c.issues.some((t) => t.id === taskId));
   }
 
   // ---- task mutations ------------------------------------------------------
 
   const remove = useMutation({
-    mutationFn: (taskId: string) => deleteTask(taskId),
+    mutationFn: (taskId: string) => deleteIssue(taskId),
     onMutate: (taskId) => {
       const previous = snapshotColumns();
       setColumns((cols) =>
         cols.map((c) => ({
           ...c,
-          tasks: c.tasks
+          issues: c.issues
             .filter((t) => t.id !== taskId)
             .map((t, i) => ({ ...t, position: i })),
         })),
@@ -163,10 +189,10 @@ export function KanbanBoard({
       taskId: string;
       toColumnId: string;
       toPosition: number;
-      previous: ColumnWithTasks[];
+      previous: ColumnWithIssues[];
     }) =>
-      moveTask({
-        taskId: vars.taskId,
+      moveIssue({
+        issueId: vars.taskId,
         toColumnId: vars.toColumnId,
         toPosition: vars.toPosition,
       }),
@@ -208,7 +234,7 @@ export function KanbanBoard({
       // Resolve the destination column: dropping over a task targets that
       // task's column; dropping over a column droppable (`column:<id>`)
       // targets that column directly.
-      let toColumn: ColumnWithTasks | undefined;
+      let toColumn: ColumnWithIssues | undefined;
       if (overId.startsWith("column:")) {
         const colId = overId.slice("column:".length);
         toColumn = cols.find((c) => c.id === colId);
@@ -219,27 +245,27 @@ export function KanbanBoard({
       }
       if (!toColumn || toColumn.id === fromColumn.id) return cols;
 
-      const moving = fromColumn.tasks.find((t) => t.id === activeId);
+      const moving = fromColumn.issues.find((t) => t.id === activeId);
       if (!moving) return cols;
 
       // Insert at the hovered task's index, else append to the end.
-      const overIndex = toColumn.tasks.findIndex((t) => t.id === overId);
+      const overIndex = toColumn.issues.findIndex((t) => t.id === overId);
       const insertAt =
-        overIndex === -1 ? toColumn.tasks.length : overIndex;
+        overIndex === -1 ? toColumn.issues.length : overIndex;
 
       return cols.map((c) => {
         if (c.id === fromColumn.id) {
           return {
             ...c,
-            tasks: c.tasks
+            issues: c.issues
               .filter((t) => t.id !== activeId)
               .map((t, i) => ({ ...t, position: i })),
           };
         }
         if (c.id === toColumn.id) {
-          const next = [...c.tasks];
+          const next = [...c.issues];
           next.splice(insertAt, 0, moving);
-          return { ...c, tasks: next.map((t, i) => ({ ...t, position: i })) };
+          return { ...c, issues: next.map((t, i) => ({ ...t, position: i })) };
         }
         return c;
       });
@@ -295,29 +321,29 @@ export function KanbanBoard({
     // Determine the target index within the destination column.
     let toPosition: number;
     if (overId.startsWith("column:")) {
-      toPosition = toColumn.tasks.length;
+      toPosition = toColumn.issues.length;
     } else {
-      const overIndex = toColumn.tasks.findIndex((t) => t.id === overId);
+      const overIndex = toColumn.issues.findIndex((t) => t.id === overId);
       if (overIndex === -1) {
-        toPosition = toColumn.tasks.findIndex((t) => t.id === activeId);
+        toPosition = toColumn.issues.findIndex((t) => t.id === activeId);
       } else {
         // Reorder within the column to land exactly on the hovered slot.
-        const fromIndex = toColumn.tasks.findIndex((t) => t.id === activeId);
+        const fromIndex = toColumn.issues.findIndex((t) => t.id === activeId);
         toPosition = overIndex;
         if (fromIndex !== -1 && fromIndex !== overIndex) {
-          const reordered = arrayMove(toColumn.tasks, fromIndex, overIndex).map(
+          const reordered = arrayMove(toColumn.issues, fromIndex, overIndex).map(
             (t, i) => ({ ...t, position: i }),
           );
           setColumns((curr) =>
             curr.map((c) =>
-              c.id === toColumn.id ? { ...c, tasks: reordered } : c,
+              c.id === toColumn.id ? { ...c, issues: reordered } : c,
             ),
           );
           toPosition = reordered.findIndex((t) => t.id === activeId);
         }
       }
     }
-    toPosition = clampPosition(toPosition, toColumn.tasks.length);
+    toPosition = clampPosition(toPosition, toColumn.issues.length);
 
     move.mutate({
       taskId: activeId,
@@ -334,16 +360,16 @@ export function KanbanBoard({
   // When filters are active we run each task through the pure matcher; an empty
   // filter passes everything (and skips the work entirely).
   const filtersActive = !isFiltersEmpty(filters);
-  function visibleTasks(column: ColumnWithTasks): TaskStub[] {
-    if (!filtersActive) return column.tasks;
-    return column.tasks.filter((task) => matchesFilters(task, filters));
+  function visibleTasks(column: ColumnWithIssues): IssueCard[] {
+    if (!filtersActive) return column.issues;
+    return column.issues.filter((task) => matchesFilters(task, filters));
   }
 
   const overlayColumn = activeColumnId
     ? columns.find((c) => c.id === activeColumnId)
     : null;
-  const overlayTask: TaskStub | null = activeTaskId
-    ? (columns.flatMap((c) => c.tasks).find((t) => t.id === activeTaskId) ??
+  const overlayTask: IssueCard | null = activeTaskId
+    ? (columns.flatMap((c) => c.issues).find((t) => t.id === activeTaskId) ??
       null)
     : null;
 
@@ -367,18 +393,19 @@ export function KanbanBoard({
               busy={columnsBusy}
               onRename={(name) => onRenameColumn(column.id, name)}
               onDelete={() => onDeleteColumn(column.id)}
+              onSetCategory={(category) => onSetColumnCategory(column.id, category)}
             >
               <TaskList
                 columnId={column.id}
-                tasks={visibleTasks(column)}
+                issues={visibleTasks(column)}
                 // Distinguish "genuinely empty" from "hidden by a filter" so the
                 // per-column empty state reads correctly.
-                filtered={filtersActive && column.tasks.length > 0}
+                filtered={filtersActive && column.issues.length > 0}
                 busy={remove.isPending}
                 onDeleteTask={(taskId) => remove.mutate(taskId)}
                 onOpenTask={(taskId) => setOpenTaskId(taskId)}
               />
-              <AddTaskComposer columnId={column.id} boardId={boardId} />
+              <AddTaskComposer columnId={column.id} projectId={projectId} />
             </ColumnContainer>
           ))}
           {columns.length === 0 ? (
@@ -398,9 +425,10 @@ export function KanbanBoard({
           <div className="flex w-72 flex-col rounded-xl border bg-muted/80 shadow-lg">
             <ColumnHeader
               column={overlayColumn}
-              taskCount={overlayColumn.tasks.length}
+              taskCount={overlayColumn.issues.length}
               onRename={() => {}}
               onDelete={() => {}}
+              onSetCategory={() => {}}
             />
           </div>
         ) : overlayTask ? (
@@ -417,13 +445,14 @@ export function KanbanBoard({
         from starting a drag), and the modal renders in a portal.
       */}
       <TaskModal
-        boardId={boardId}
+        projectId={projectId}
         taskId={openTaskId}
         open={openTaskId !== null}
         onOpenChange={(next) => {
           if (!next) setOpenTaskId(null);
         }}
         onDeleted={(taskId) => remove.mutate(taskId)}
+        onOpenIssue={(issueId) => setOpenTaskId(issueId)}
       />
     </DndContext>
   );

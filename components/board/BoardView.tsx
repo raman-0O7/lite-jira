@@ -22,25 +22,27 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  boardKeys,
+  projectKeys,
   createColumn,
   deleteColumn,
-  fetchBoard,
+  fetchProject,
   renameColumn,
   reorderColumns,
-  type BoardDetail,
-  type ColumnWithTasks,
+  updateColumn,
+  type ColumnCategory,
+  type ColumnWithIssues,
   type LabelStub,
-} from "@/lib/api/boards";
+  type ProjectDetail,
+} from "@/lib/api/projects";
 
 /**
  * Collect the unique labels in use across a board's tasks (deduped by id,
  * sorted by name) — the option set for F05's label filter.
  */
-function deriveLabels(columns: ColumnWithTasks[]): LabelStub[] {
+function deriveLabels(columns: ColumnWithIssues[]): LabelStub[] {
   const seen = new Map<string, LabelStub>();
   for (const column of columns) {
-    for (const task of column.tasks) {
+    for (const task of column.issues) {
       for (const label of task.labels) {
         if (!seen.has(label.id)) seen.set(label.id, label);
       }
@@ -49,7 +51,7 @@ function deriveLabels(columns: ColumnWithTasks[]): LabelStub[] {
   return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function BoardView({ boardId }: { boardId: string }) {
+export function BoardView({ projectId }: { projectId: string }) {
   const { slug } = useWorkspace();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
@@ -61,21 +63,21 @@ export function BoardView({ boardId }: { boardId: string }) {
   const filters = useBoardFilters();
 
   const boardQuery = useQuery({
-    queryKey: boardKeys.detail(boardId),
-    queryFn: () => fetchBoard(boardId),
+    queryKey: projectKeys.detail(projectId),
+    queryFn: () => fetchProject(projectId),
   });
 
   // Helper to mutate the cached board's columns array.
   function patchColumns(
-    updater: (columns: ColumnWithTasks[]) => ColumnWithTasks[],
+    updater: (columns: ColumnWithIssues[]) => ColumnWithIssues[],
   ) {
-    queryClient.setQueryData<BoardDetail>(boardKeys.detail(boardId), (prev) =>
+    queryClient.setQueryData<ProjectDetail>(projectKeys.detail(projectId), (prev) =>
       prev ? { ...prev, columns: updater(prev.columns) } : prev,
     );
   }
 
   const addColumn = useMutation({
-    mutationFn: (name: string) => createColumn(boardId, name),
+    mutationFn: (name: string) => createColumn(projectId, name),
     onSuccess: (column) => {
       patchColumns((columns) => [...columns, column]);
       setAddOpen(false);
@@ -99,6 +101,24 @@ export function BoardView({ boardId }: { boardId: string }) {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const recategorize = useMutation({
+    mutationFn: ({ id, category }: { id: string; category: ColumnCategory }) =>
+      updateColumn(id, { category }),
+    onMutate: ({ id, category }) => {
+      const previous =
+        queryClient.getQueryData<ProjectDetail>(projectKeys.detail(projectId))
+          ?.columns ?? [];
+      patchColumns((columns) =>
+        columns.map((c) => (c.id === id ? { ...c, category } : c)),
+      );
+      return { previous };
+    },
+    onError: (error: Error, _vars, context) => {
+      if (context?.previous) patchColumns(() => context.previous);
+      toast.error(error.message);
+    },
+  });
+
   const remove = useMutation({
     mutationFn: (id: string) => deleteColumn(id),
     onSuccess: (_data, id) => {
@@ -116,11 +136,11 @@ export function BoardView({ boardId }: { boardId: string }) {
       orderedIds,
     }: {
       orderedIds: string[];
-      ordered: ColumnWithTasks[];
-    }) => reorderColumns(boardId, orderedIds),
+      ordered: ColumnWithIssues[];
+    }) => reorderColumns(projectId, orderedIds),
     onMutate: ({ ordered }) => {
       const previous =
-        queryClient.getQueryData<BoardDetail>(boardKeys.detail(boardId))
+        queryClient.getQueryData<ProjectDetail>(projectKeys.detail(projectId))
           ?.columns ?? [];
       patchColumns(() => ordered);
       return { previous };
@@ -138,7 +158,7 @@ export function BoardView({ boardId }: { boardId: string }) {
   // applies the optimistic update + snapshots for rollback.
   function handleReorderColumns(
     orderedIds: string[],
-    ordered: ColumnWithTasks[],
+    ordered: ColumnWithIssues[],
   ) {
     reorder.mutate({ orderedIds, ordered });
   }
@@ -156,7 +176,7 @@ export function BoardView({ boardId }: { boardId: string }) {
   if (boardQuery.isPending) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
-        Loading board…
+        Loading project…
       </div>
     );
   }
@@ -167,12 +187,12 @@ export function BoardView({ boardId }: { boardId: string }) {
     return (
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
         <p className="text-sm text-muted-foreground">
-          {notFound ? "This board doesn’t exist." : message}
+          {notFound ? "This project doesn’t exist." : message}
         </p>
         <Button asChild variant="outline" size="sm">
-          <Link href={`/${slug}/boards`}>
+          <Link href={`/${slug}/projects`}>
             <ArrowLeft />
-            Back to boards
+            Back to projects
           </Link>
         </Button>
       </div>
@@ -190,10 +210,13 @@ export function BoardView({ boardId }: { boardId: string }) {
       <div className="flex items-center justify-between gap-4 border-b px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <Button asChild variant="ghost" size="icon-sm" aria-label="Back">
-            <Link href={`/${slug}/boards`}>
+            <Link href={`/${slug}/projects`}>
               <ArrowLeft />
             </Link>
           </Button>
+          <span className="shrink-0 rounded bg-muted px-1.5 font-mono text-xs text-muted-foreground">
+            {board.key}
+          </span>
           <h1 className="truncate text-lg font-semibold tracking-tight">
             {board.name}
           </h1>
@@ -217,13 +240,14 @@ export function BoardView({ boardId }: { boardId: string }) {
           column logic is reused rather than rewritten.
         */}
         <KanbanBoard
-          boardId={boardId}
+          projectId={projectId}
           columns={board.columns}
           columnsBusy={rename.isPending || remove.isPending}
           filters={filters.filters}
           onAddColumn={() => setAddOpen(true)}
           onRenameColumn={(id, name) => rename.mutate({ id, name })}
           onDeleteColumn={(id) => remove.mutate(id)}
+          onSetColumnCategory={(id, category) => recategorize.mutate({ id, category })}
           onReorderColumns={handleReorderColumns}
         />
       </div>
@@ -234,7 +258,7 @@ export function BoardView({ boardId }: { boardId: string }) {
           <DialogHeader>
             <DialogTitle>Add column</DialogTitle>
             <DialogDescription>
-              Adds a new column to the end of this board.
+              Adds a new column to the end of this project’s board. Set whether it means to do, in progress, or done from its menu.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddColumn} className="flex flex-col gap-4">

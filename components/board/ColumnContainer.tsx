@@ -4,7 +4,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 import { ColumnHeader } from "@/components/board/ColumnHeader";
-import type { ColumnWithTasks } from "@/lib/api/boards";
+import type { ColumnCategory, ColumnWithIssues } from "@/lib/api/projects";
 
 /**
  * ColumnContainer — the column shell for the board view.
@@ -20,13 +20,13 @@ import type { ColumnWithTasks } from "@/lib/api/boards";
  * there WITHOUT editing this file:
  *
  *     <ColumnContainer column={col}, onRename={...} onDelete={...} busy={...}>
- *       <TaskList columnId={col.id} tasks={col.tasks} />
+ *       <TaskList columnId={col.id} tasks={col.issues} />
  *       <AddTaskComposer columnId={col.id} />
  *     </ColumnContainer>
  *
  * Contract details F03 can rely on:
- *  - `column` carries `{ id, name, position, tasks }` (see ColumnWithTasks).
- *    F03 may read `column.tasks` for initial render; live task state is F03's.
+ *  - `column` carries `{ id, name, position, tasks }` (see ColumnWithIssues).
+ *    F03 may read `column.issues` for initial render; live task state is F03's.
  *  - `children` renders inside a vertical flex region that grows and scrolls
  *    independently (`flex-1 overflow-y-auto`). The "add task" composer can sit
  *    at the bottom of that region or be rendered after the scroll area —
@@ -37,7 +37,7 @@ import type { ColumnWithTasks } from "@/lib/api/boards";
  *  - The drop target for task drag-and-drop is F03's concern; it should wrap
  *    its own task list in a droppable. This container only makes the COLUMN
  *    itself sortable (horizontal reorder).
- *  - Header task count comes from `column.tasks.length`. If F03 manages task
+ *  - Header task count comes from `column.issues.length`. If F03 manages task
  *    state outside this prop, it can ignore the badge or (future) lift count.
  * ───────────────────────────────────────────────────────────────────────────
  */
@@ -46,12 +46,14 @@ export function ColumnContainer({
   busy,
   onRename,
   onDelete,
+  onSetCategory,
   children,
 }: {
-  column: ColumnWithTasks;
+  column: ColumnWithIssues;
   busy?: boolean;
   onRename: (name: string) => void;
   onDelete: () => void;
+  onSetCategory: (category: ColumnCategory) => void;
   /** F03 task list + composer slot. See contract above. */
   children?: React.ReactNode;
 }) {
@@ -79,10 +81,11 @@ export function ColumnContainer({
     >
       <ColumnHeader
         column={column}
-        taskCount={column.tasks.length}
+        taskCount={column.issues.length}
         busy={busy}
         onRename={onRename}
         onDelete={onDelete}
+        onSetCategory={onSetCategory}
         dragHandleProps={{ attributes, listeners }}
       />
 

@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { TaskStub } from "@/lib/api/boards";
+import type { IssueCard } from "@/lib/api/projects";
 import { cn } from "@/lib/utils";
 
 /**
@@ -44,12 +44,12 @@ import { cn } from "@/lib/utils";
  * Anything passed via these slots sits inside the same card frame, so F04 never
  * touches layout/drag code. If a slot is omitted, nothing extra renders.
  *
- * `task` is a TaskStub ({ id, title, position, priority, dueDate }); F04 can
+ * `task` is a IssueCard ({ id, title, position, priority, dueDate }); F04 can
  * read `priority` / `dueDate` straight off it to render its badges.
  * ───────────────────────────────────────────────────────────────────────────
  */
 export type TaskCardProps = {
-  task: TaskStub;
+  task: IssueCard;
   /** Disable controls while a mutation touching this card is in flight. */
   busy?: boolean;
   onDelete: () => void;
@@ -112,7 +112,7 @@ export function TaskCard({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label="Task actions"
+                aria-label="Issue actions"
                 disabled={busy}
                 // Stop drag + card-open from firing when opening the menu.
                 onClick={(event) => event.stopPropagation()}
@@ -141,7 +141,7 @@ export function TaskCard({
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete task?</DialogTitle>
+            <DialogTitle>Delete {task.key}?</DialogTitle>
             <DialogDescription>
               This deletes “{task.title}”. This cannot be undone.
             </DialogDescription>

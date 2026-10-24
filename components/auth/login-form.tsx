@@ -53,7 +53,7 @@ export function LoginForm() {
     }
 
     // Full navigation so the protected layout re-reads the new session cookie.
-    router.push("/boards");
+    router.push("/projects");
     router.refresh();
   }
 

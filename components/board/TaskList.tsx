@@ -7,10 +7,12 @@ import {
 } from "@dnd-kit/sortable";
 import { format } from "date-fns";
 
+import { Avatar } from "@/components/board/Avatar";
+import { IssueTypeIcon } from "@/components/board/IssueTypeIcon";
 import { LabelChip } from "@/components/board/LabelChip";
 import { TaskCard } from "@/components/board/TaskCard";
 import { Badge } from "@/components/ui/badge";
-import type { TaskStub } from "@/lib/api/boards";
+import type { IssueCard } from "@/lib/api/projects";
 import {
   dueBadgeClass,
   dueStatus,
@@ -23,13 +25,20 @@ import { cn } from "@/lib/utils";
  * TaskCardLabels — the `labels` slot: a row of colored label chips.
  * Renders nothing when the task has no labels (so the slot stays empty).
  */
-function TaskCardLabels({ task }: { task: TaskStub }) {
-  if (task.labels.length === 0) return null;
+function TaskCardLabels({ task }: { task: IssueCard }) {
   return (
-    <div className="flex flex-wrap gap-1">
-      {task.labels.map((label) => (
-        <LabelChip key={label.id} label={label} />
-      ))}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <IssueTypeIcon type={task.type} />
+        <span className="font-mono text-[11px] text-muted-foreground">{task.key}</span>
+      </div>
+      {task.labels.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {task.labels.map((label) => (
+            <LabelChip key={label.id} label={label} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -38,11 +47,11 @@ function TaskCardLabels({ task }: { task: TaskStub }) {
  * TaskCardMeta — the `meta` slot: priority badge + (optional) due-date badge.
  * Due date is red when overdue, amber when due within 2 days, muted otherwise.
  */
-function TaskCardMeta({ task }: { task: TaskStub }) {
+function TaskCardMeta({ task }: { task: IssueCard }) {
   const due = task.dueDate ? new Date(task.dueDate) : null;
   const status = due ? dueStatus(due) : null;
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1.5">
       <Badge
         variant="secondary"
         className={cn("border-0", PRIORITY_BADGE_CLASS[task.priority])}
@@ -57,6 +66,18 @@ function TaskCardMeta({ task }: { task: TaskStub }) {
           {format(due, "MMM d")}
         </Badge>
       ) : null}
+      {task.subIssueCount > 0 ? (
+        <span
+          className="text-xs text-muted-foreground tabular-nums"
+          title={`${task.subIssueDoneCount} of ${task.subIssueCount} sub-issues done`}
+        >
+          {task.subIssueDoneCount}/{task.subIssueCount}
+        </span>
+      ) : null}
+      {task.estimate !== null ? (
+        <span className="text-xs text-muted-foreground tabular-nums">{task.estimate} pt</span>
+      ) : null}
+      {task.assignee ? <Avatar person={task.assignee} className="ml-auto" /> : null}
     </div>
   );
 }
@@ -78,14 +99,14 @@ function TaskCardMeta({ task }: { task: TaskStub }) {
  */
 export function TaskList({
   columnId,
-  tasks,
+  issues,
   filtered,
   busy,
   onDeleteTask,
   onOpenTask,
 }: {
   columnId: string;
-  tasks: TaskStub[];
+  issues: IssueCard[];
   /**
    * F05: true when this column has tasks but they're all hidden by the active
    * filter (so the empty state reads "No matching tasks" rather than "No
@@ -106,7 +127,7 @@ export function TaskList({
     data: { type: "column", columnId },
   });
 
-  const taskIds = tasks.map((t) => t.id);
+  const taskIds = issues.map((t) => t.id);
 
   return (
     <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
@@ -117,7 +138,7 @@ export function TaskList({
           isOver && "bg-accent/40",
         )}
       >
-        {tasks.map((task) => (
+        {issues.map((task) => (
           <TaskCard
             key={task.id}
             task={task}
@@ -128,9 +149,9 @@ export function TaskList({
             meta={<TaskCardMeta task={task} />}
           />
         ))}
-        {tasks.length === 0 ? (
+        {issues.length === 0 ? (
           <p className="px-1 py-6 text-center text-xs text-muted-foreground">
-            {filtered ? "No matching tasks" : "No tasks"}
+            {filtered ? "No matching issues" : "No issues"}
           </p>
         ) : null}
       </div>

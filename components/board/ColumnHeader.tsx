@@ -18,18 +18,33 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import type { ColumnCategory } from "@/lib/api/projects";
+import { cn } from "@/lib/utils";
+
+const CATEGORIES: { value: ColumnCategory; label: string; dot: string }[] = [
+  { value: "TODO", label: "To do", dot: "bg-muted-foreground/60" },
+  { value: "IN_PROGRESS", label: "In progress", dot: "bg-amber-500" },
+  { value: "DONE", label: "Done", dot: "bg-emerald-500" },
+];
+
 type ColumnHeaderProps = {
-  column: { id: string; name: string };
+  column: { id: string; name: string; category: ColumnCategory };
   taskCount: number;
   /** Whether mutations are in flight (disables controls). */
   busy?: boolean;
   onRename: (name: string) => void;
   onDelete: () => void;
+  /** Change what the column means (to do / in progress / done). */
+  onSetCategory: (category: ColumnCategory) => void;
   /**
    * dnd-kit drag-handle wiring, spread onto the grip button. The types are
    * derived from `useSortable()`'s return so we don't depend on dnd-kit's
@@ -47,8 +62,10 @@ export function ColumnHeader({
   busy,
   onRename,
   onDelete,
+  onSetCategory,
   dragHandleProps,
 }: ColumnHeaderProps) {
+  const category = CATEGORIES.find((c) => c.value === column.category) ?? CATEGORIES[1]!;
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [name, setName] = useState(column.name);
@@ -77,6 +94,12 @@ export function ColumnHeader({
           <GripVertical className="size-4" />
         </button>
 
+        <span
+          className={cn("size-2 shrink-0 rounded-full", category.dot)}
+          title={category.label}
+          aria-label={`Category: ${category.label}`}
+          role="img"
+        />
         <span className="flex-1 truncate text-sm font-medium">
           {column.name}
         </span>
@@ -95,7 +118,22 @@ export function ColumnHeader({
               <MoreHorizontal />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              Category
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={column.category}
+              onValueChange={(value) => onSetCategory(value as ColumnCategory)}
+            >
+              {CATEGORIES.map((c) => (
+                <DropdownMenuRadioItem key={c.value} value={c.value}>
+                  <span className={cn("size-2 rounded-full", c.dot)} />
+                  {c.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={() => {
                 setName(column.name);
@@ -156,7 +194,7 @@ export function ColumnHeader({
             <DialogDescription>
               {taskCount > 0
                 ? `This deletes the column and its ${taskCount} ${
-                    taskCount === 1 ? "task" : "tasks"
+                    taskCount === 1 ? "issue" : "issues"
                   }. This cannot be undone.`
                 : "This deletes the column. This cannot be undone."}
             </DialogDescription>

@@ -3,9 +3,9 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { authorize } from "@/lib/permissions";
 import { recordActivity } from "@/lib/services/activity";
-import { findBoardInWorkspace } from "@/lib/services/boards";
 import type { Ctx } from "@/lib/services/context";
 import { notFound } from "@/lib/services/errors";
+import { findProjectInWorkspace } from "@/lib/services/projects";
 import { createLabelSchema, updateLabelSchema } from "@/lib/validations/label";
 
 const labelSelect = { id: true, name: true, color: true } as const;
@@ -16,18 +16,18 @@ async function findLabelInWorkspace(
   labelId: string,
 ) {
   const label = await client.label.findFirst({
-    where: { id: labelId, board: { workspaceId: ctx.workspaceId } },
-    select: { ...labelSelect, boardId: true },
+    where: { id: labelId, project: { workspaceId: ctx.workspaceId } },
+    select: { ...labelSelect, projectId: true },
   });
   if (!label) throw notFound("Label not found");
   return label;
 }
 
-export async function listLabels(ctx: Ctx, boardId: string) {
-  authorize(ctx, "board.read");
-  await findBoardInWorkspace(db, ctx, boardId);
+export async function listLabels(ctx: Ctx, projectId: string) {
+  authorize(ctx, "project.read");
+  await findProjectInWorkspace(db, ctx, projectId);
   return db.label.findMany({
-    where: { boardId },
+    where: { projectId },
     orderBy: { createdAt: "asc" },
     select: labelSelect,
   });
@@ -35,21 +35,21 @@ export async function listLabels(ctx: Ctx, boardId: string) {
 
 export async function createLabel(
   ctx: Ctx,
-  boardId: string,
+  projectId: string,
   input: unknown,
 ) {
   authorize(ctx, "label.write");
   const { name, color } = createLabelSchema.parse(input);
 
   return db.$transaction(async (tx) => {
-    await findBoardInWorkspace(tx, ctx, boardId);
+    await findProjectInWorkspace(tx, ctx, projectId);
     const label = await tx.label.create({
-      data: { name, color, boardId },
+      data: { name, color, projectId },
       select: labelSelect,
     });
     await recordActivity(tx, ctx, {
       action: "label.created",
-      boardId,
+      projectId,
       data: { labelId: label.id, name, color },
     });
     return label;
@@ -77,7 +77,7 @@ export async function updateLabel(
     });
     await recordActivity(tx, ctx, {
       action: "label.updated",
-      boardId: before.boardId,
+      projectId: before.projectId,
       data: {
         labelId,
         from: { name: before.name, color: before.color },
@@ -88,7 +88,7 @@ export async function updateLabel(
   });
 }
 
-/** Delete a label; Prisma detaches it from any tasks. */
+/** Delete a label; Prisma detaches it from any issues. */
 export async function deleteLabel(ctx: Ctx, labelId: string) {
   authorize(ctx, "label.write");
   await db.$transaction(async (tx) => {
@@ -96,7 +96,7 @@ export async function deleteLabel(ctx: Ctx, labelId: string) {
     await tx.label.delete({ where: { id: labelId } });
     await recordActivity(tx, ctx, {
       action: "label.deleted",
-      boardId: label.boardId,
+      projectId: label.projectId,
       data: { labelId, name: label.name },
     });
   });

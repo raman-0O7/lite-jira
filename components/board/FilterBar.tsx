@@ -8,7 +8,7 @@ import { PriorityFilter } from "@/components/board/filters/PriorityFilter";
 import { TextFilter } from "@/components/board/filters/TextFilter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { LabelStub } from "@/lib/api/boards";
+import type { LabelStub } from "@/lib/api/projects";
 import type { UseBoardFilters } from "@/hooks/use-board-filters";
 
 /**

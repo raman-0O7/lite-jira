@@ -22,7 +22,7 @@ export function GitHubButton() {
     setIsLoading(true);
     const { error } = await signIn.social({
       provider: "github",
-      callbackURL: "/boards",
+      callbackURL: "/projects",
     });
 
     // On success the browser is redirected to GitHub, so we only reach

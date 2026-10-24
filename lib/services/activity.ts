@@ -3,25 +3,28 @@ import type { ActorType, Prisma } from "@prisma/client";
 import type { Ctx } from "@/lib/services/context";
 
 export type ActivityAction =
-  | "board.created"
-  | "board.renamed"
-  | "board.deleted"
+  | "project.created"
+  | "project.updated"
+  | "project.deleted"
   | "column.created"
-  | "column.renamed"
+  | "column.updated"
   | "column.deleted"
   | "column.reordered"
-  | "task.created"
-  | "task.updated"
-  | "task.moved"
-  | "task.deleted"
+  | "issue.created"
+  | "issue.updated"
+  | "issue.moved"
+  | "issue.deleted"
   | "label.created"
   | "label.updated"
-  | "label.deleted";
+  | "label.deleted"
+  | "comment.added"
+  | "comment.edited"
+  | "comment.deleted";
 
 type ActivityEntry = {
   action: ActivityAction;
-  boardId?: string;
-  taskId?: string;
+  projectId?: string;
+  issueId?: string;
   data?: Prisma.InputJsonObject;
 };
 
@@ -48,8 +51,8 @@ export async function recordActivity(
   await tx.activity.create({
     data: {
       workspaceId: ctx.workspaceId,
-      boardId: entry.boardId,
-      taskId: entry.taskId,
+      projectId: entry.projectId,
+      issueId: entry.issueId,
       action: entry.action,
       data: { ...entry.data, via: ctx.via },
       actorType: ACTOR_TYPE[actor.type],

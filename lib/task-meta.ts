@@ -5,7 +5,17 @@
  * and the detail modal stay in sync. Pure functions — no React, no I/O.
  */
 
-import type { Priority } from "@/lib/api/boards";
+import type { IssueType, Priority } from "@/lib/api/projects";
+
+export const ISSUE_TYPES: IssueType[] = ["EPIC", "STORY", "TASK", "BUG", "SUBTASK"];
+
+export const ISSUE_TYPE_LABEL: Record<IssueType, string> = {
+  EPIC: "Epic",
+  STORY: "Story",
+  TASK: "Task",
+  BUG: "Bug",
+  SUBTASK: "Sub-issue",
+};
 
 export const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 

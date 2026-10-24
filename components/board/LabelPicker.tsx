@@ -13,10 +13,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import type { LabelStub } from "@/lib/api/boards";
+import type { LabelStub } from "@/lib/api/projects";
 import {
   createLabel,
-  fetchBoardLabels,
+  fetchProjectLabels,
   labelKeys,
 } from "@/lib/api/labels";
 import { cn } from "@/lib/utils";
@@ -43,15 +43,15 @@ const PALETTE = [
  *
  * `selectedIds` is the task's current label set; `onChange` receives the next
  * set when the user toggles a label. Board labels are fetched + cached under
- * `labelKeys.board`. Creating a label appends to that cache and auto-assigns it.
+ * `labelKeys.project`. Creating a label appends to that cache and auto-assigns it.
  */
 export function LabelPicker({
-  boardId,
+  projectId,
   selectedIds,
   onChange,
   disabled,
 }: {
-  boardId: string;
+  projectId: string;
   selectedIds: string[];
   onChange: (nextIds: string[]) => void;
   disabled?: boolean;
@@ -63,15 +63,15 @@ export function LabelPicker({
   const [newColor, setNewColor] = useState(PALETTE[0]);
 
   const labelsQuery = useQuery({
-    queryKey: labelKeys.board(boardId),
-    queryFn: () => fetchBoardLabels(boardId),
+    queryKey: labelKeys.project(projectId),
+    queryFn: () => fetchProjectLabels(projectId),
     enabled: open,
   });
 
   const create = useMutation({
-    mutationFn: () => createLabel(boardId, { name: newName.trim(), color: newColor }),
+    mutationFn: () => createLabel(projectId, { name: newName.trim(), color: newColor }),
     onSuccess: (label) => {
-      queryClient.setQueryData<LabelStub[]>(labelKeys.board(boardId), (prev) =>
+      queryClient.setQueryData<LabelStub[]>(labelKeys.project(projectId), (prev) =>
         prev ? [...prev, label] : [label],
       );
       onChange([...selectedIds, label.id]);

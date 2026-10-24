@@ -8,11 +8,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  boardKeys,
-  type BoardDetail,
-  type ColumnWithTasks,
-} from "@/lib/api/boards";
-import { createTask } from "@/lib/api/tasks";
+  projectKeys,
+  type ProjectDetail,
+  type ColumnWithIssues,
+} from "@/lib/api/projects";
+import { createIssue } from "@/lib/api/issues";
 
 /**
  * AddTaskComposer — inline "add task" affordance pinned to a column's bottom.
@@ -25,27 +25,27 @@ import { createTask } from "@/lib/api/tasks";
  */
 export function AddTaskComposer({
   columnId,
-  boardId,
+  projectId,
 }: {
   columnId: string;
-  boardId: string;
+  projectId: string;
 }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
 
   const create = useMutation({
-    mutationFn: (value: string) => createTask(columnId, value),
+    mutationFn: (value: string) => createIssue(columnId, value),
     onSuccess: (task) => {
-      queryClient.setQueryData<BoardDetail>(
-        boardKeys.detail(boardId),
+      queryClient.setQueryData<ProjectDetail>(
+        projectKeys.detail(projectId),
         (prev) =>
           prev
             ? {
                 ...prev,
-                columns: prev.columns.map((c: ColumnWithTasks) =>
+                columns: prev.columns.map((c: ColumnWithIssues) =>
                   c.id === columnId
-                    ? { ...c, tasks: [...c.tasks, task] }
+                    ? { ...c, issues: [...c.issues, task] }
                     : c,
                 ),
               }
@@ -85,7 +85,7 @@ export function AddTaskComposer({
         onClick={() => setOpen(true)}
       >
         <Plus />
-        Add task
+        Add issue
       </Button>
     );
   }
@@ -96,7 +96,7 @@ export function AddTaskComposer({
         value={title}
         onChange={(event) => setTitle(event.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Task title…"
+        placeholder="Issue title…"
         rows={2}
         autoFocus
         disabled={create.isPending}
@@ -105,7 +105,7 @@ export function AddTaskComposer({
       />
       <div className="flex items-center gap-2">
         <Button size="sm" onClick={submit} loading={create.isPending} loadingText="Adding…">
-          Add task
+          Add issue
         </Button>
         <Button
           variant="ghost"

@@ -1,8 +1,10 @@
-# Lite Jira — Task Management
+# Kanso
 
-A solo, self-hosted Kanban task manager: multiple boards, customizable columns,
-drag-and-drop tasks, and auth. See [`docs/PLAN.md`](docs/PLAN.md) for the full
-architecture and feature roadmap.
+Issue tracking for teams and solo freelancers, built to work with AI agents:
+workspaces with roles, projects with issue keys (`WEB-42`), issue types,
+sub-issues, epics, comments, and a Kanban board. Phase 1 is described in
+[`docs/PLAN.md`](docs/PLAN.md); the current roadmap is
+[`docs/PLAN-v2.md`](docs/PLAN-v2.md).
 
 ## Stack
 
@@ -72,6 +74,7 @@ architecture and feature roadmap.
 | `pnpm dev` | Start the Next.js dev server |
 | `pnpm build` | Production build |
 | `pnpm lint` | Lint with ESLint |
+| `pnpm typecheck` | Generate Next route types, then `tsc --noEmit` |
 | `pnpm test` | Run Vitest against the `task_management_test` database (override with `TEST_DATABASE_URL`; the name must end in `_test`) |
 | `pnpm prisma migrate dev` | Apply migrations + regenerate client |
 | `pnpm prisma studio` | Browse the database |
@@ -82,26 +85,28 @@ architecture and feature roadmap.
 
 ```
 app/
-  (auth)/login/page.tsx        # public — email/password + GitHub sign-in
-  (auth)/signup/page.tsx       # public — create account, then sign in
-  (auth)/layout.tsx            # centered card layout for auth pages
-  (app)/layout.tsx             # protected app shell + auth guard (requireUser)
-  (app)/boards/page.tsx        # protected placeholder (prints session email)
-  api/auth/[...all]/route.ts   # Better Auth handler
-  layout.tsx  globals.css
+  (auth)/login, signup              # public auth pages
+  (app)/[workspace]/projects        # projects list (workspace-scoped)
+  (app)/[workspace]/projects/[key]  # project board (Kanban), ?issue=KEY opens an issue
+  (app)/[workspace]/issues/[key]    # issue link (WEB-42) → its board
+  (app)/projects, boards            # post-login landing + legacy redirects
+  api/                              # thin route handlers over lib/services
 lib/
-  auth.ts        # Better Auth server instance + getSession() / requireUser()
-  auth-client.ts # Better Auth React client
-  db.ts          # Prisma singleton
-  validations/   # Zod schemas (auth, board, column, task, label)
+  services/      # all business logic: authorize → validate → write + Activity
+  query/         # issue query language (assignee:me type:bug …)
+  api/           # client fetchers + route ctx/handler helpers
+  permissions.ts # role matrix + agent cap
+  validations/   # Zod schemas
+  auth.ts, db.ts
 components/
+  board/         # board, cards, issue modal (rebuilt in Feature 09)
   ui/            # shadcn primitives
-  auth/          # login/signup forms, GitHub button, auth card
-  app-shell/     # top bar + user menu (logout)
-prisma/
-  schema.prisma  # data model (single source of truth)
-docker-compose.yml
+prisma/schema.prisma
+tests/           # Vitest (services, permissions, query language)
 ```
+
+See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
+`docs/features/` for each feature's spec.
 
 ## Auth notes
 

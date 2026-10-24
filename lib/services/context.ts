@@ -41,3 +41,13 @@ export function userCtx(
 ): Ctx {
   return { actor: { type: "user", userId }, workspaceId, role, via };
 }
+
+/**
+ * The person an operation is attributed to: the user, or the user an agent
+ * acts for. Null for GitHub sync and system jobs.
+ */
+export function actingUserId(ctx: Ctx): string | null {
+  if (ctx.actor.type === "user") return ctx.actor.userId;
+  if (ctx.actor.type === "agent") return ctx.actor.onBehalfOf;
+  return null;
+}

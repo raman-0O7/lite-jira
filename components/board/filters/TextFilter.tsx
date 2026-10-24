@@ -25,8 +25,8 @@ export function TextFilter({
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Search tasks…"
-        aria-label="Search tasks"
+        placeholder="Search issues…"
+        aria-label="Search issues"
         className="pl-8 pr-8 [&::-webkit-search-cancel-button]:hidden"
       />
       {value ? (

@@ -18,7 +18,7 @@ export function TopBar({ workspace, user }: TopBarProps) {
       <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <Link
-            href={`/${workspace.slug}/boards`}
+            href={`/${workspace.slug}/projects`}
             className="text-base font-semibold tracking-tight"
           >
             Kanso

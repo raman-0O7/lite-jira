@@ -37,24 +37,27 @@ async function ctxFor(
 export const ctxForWorkspaceSlug = (slug: string) =>
   ctxFor({ slug }, "Workspace not found");
 
-export const ctxForBoard = (boardId: string) =>
-  ctxFor({ boards: { some: { id: boardId } } }, "Board not found");
+export const ctxForProject = (projectId: string) =>
+  ctxFor({ projects: { some: { id: projectId } } }, "Project not found");
 
 export const ctxForColumn = (columnId: string) =>
   ctxFor(
-    { boards: { some: { columns: { some: { id: columnId } } } } },
+    { projects: { some: { columns: { some: { id: columnId } } } } },
     "Column not found",
   );
 
-export const ctxForTask = (taskId: string) =>
-  ctxFor(
-    {
-      boards: {
-        some: { columns: { some: { tasks: { some: { id: taskId } } } } },
-      },
-    },
-    "Task not found",
-  );
+export const ctxForIssue = (issueId: string) =>
+  ctxFor({ projects: { some: { issues: { some: { id: issueId } } } } }, "Issue not found");
 
 export const ctxForLabel = (labelId: string) =>
-  ctxFor({ boards: { some: { labels: { some: { id: labelId } } } } }, "Label not found");
+  ctxFor({ projects: { some: { labels: { some: { id: labelId } } } } }, "Label not found");
+
+export const ctxForComment = (commentId: string) =>
+  ctxFor(
+    {
+      projects: {
+        some: { issues: { some: { comments: { some: { id: commentId } } } } },
+      },
+    },
+    "Comment not found",
+  );

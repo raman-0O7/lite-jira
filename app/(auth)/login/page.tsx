@@ -6,14 +6,14 @@ import { LoginForm } from "@/components/auth/login-form";
 import { getSession } from "@/lib/auth";
 
 export const metadata: Metadata = {
-  title: "Sign in · Lite Jira",
+  title: "Sign in · Kanso",
 };
 
 export default async function LoginPage() {
   // Authenticated users should never see the login page.
   const session = await getSession();
   if (session) {
-    redirect("/boards");
+    redirect("/projects");
   }
 
   return (

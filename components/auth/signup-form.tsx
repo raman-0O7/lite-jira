@@ -58,7 +58,7 @@ export function SignupForm() {
       return;
     }
 
-    router.push("/boards");
+    router.push("/projects");
     router.refresh();
   }
 

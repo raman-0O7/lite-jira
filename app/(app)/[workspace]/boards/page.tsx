@@ -1,6 +1,8 @@
-import { BoardList } from "@/components/board/BoardList";
+import { redirect } from "next/navigation";
 
-// The [workspace] layout has already checked membership.
-export default function BoardsPage() {
-  return <BoardList />;
+// Feature 06 URL; projects replaced boards in Feature 07.
+export default async function LegacyBoardsRedirect({
+  params,
+}: PageProps<"/[workspace]/boards">) {
+  redirect(`/${(await params).workspace}/projects`);
 }

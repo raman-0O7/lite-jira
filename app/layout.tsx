@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Lite Jira",
-  description: "A solo, self-hosted Kanban task manager.",
+  title: "Kanso",
+  description: "Issue tracking for teams and the AI agents that work with them.",
 };
 
 export default function RootLayout({

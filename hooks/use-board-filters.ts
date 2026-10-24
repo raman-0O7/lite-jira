@@ -16,7 +16,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { Priority } from "@/lib/api/boards";
+import type { Priority } from "@/lib/api/projects";
 import {
   activeFilterCount,
   filtersFromSearchParams,

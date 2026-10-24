@@ -10,17 +10,20 @@ datasource db {
 
 // ---------- Better Auth ----------
 model User {
-  id            String       @id
-  name          String
-  email         String       @unique
-  emailVerified Boolean      @default(false)
-  image         String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  sessions      Session[]
-  accounts      Account[]
-  memberships   Membership[]
-  activities    Activity[]
+  id             String       @id
+  name           String
+  email          String       @unique
+  emailVerified  Boolean      @default(false)
+  image          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  sessions       Session[]
+  accounts       Account[]
+  memberships    Membership[]
+  activities     Activity[]
+  assignedIssues Issue[]      @relation("IssueAssignee")
+  reportedIssues Issue[]      @relation("IssueReporter")
+  comments       Comment[]
 }
 
 model Session {
@@ -68,7 +71,7 @@ model Workspace {
   slug        String       @unique
   personal    Boolean      @default(false)
   memberships Membership[]
-  boards      Board[]
+  projects    Project[]
   activities  Activity[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -95,14 +98,14 @@ enum Role {
   GUEST
 }
 
-// Append-only history of every mutation. boardId/taskId are plain ids (no FK)
-// so history survives deletes; actorAgentId gets its FK with the Agent model.
+// Append-only history of every mutation. projectId/issueId are plain ids (no
+// FK) so history survives deletes; actorAgentId gets its FK with the Agent model.
 model Activity {
   id           String    @id @default(cuid())
   workspaceId  String
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  boardId      String?
-  taskId       String?
+  projectId    String?
+  issueId      String?
   actorType    ActorType
   actorUserId  String?
   actorUser    User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
@@ -112,8 +115,8 @@ model Activity {
   createdAt    DateTime  @default(now())
 
   @@index([workspaceId, createdAt])
-  @@index([boardId, createdAt])
-  @@index([taskId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([issueId, createdAt])
 }
 
 enum ActorType {
@@ -123,59 +126,124 @@ enum ActorType {
   SYSTEM
 }
 
-// ---------- App ----------
-model Board {
-  id          String    @id @default(cuid())
-  name        String
-  workspaceId String
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  columns     Column[]
-  labels      Label[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+// ---------- Projects & issues ----------
+model Project {
+  id           String      @id @default(cuid())
+  name         String
+  // Issue key prefix ("WEB" → WEB-42). Unique per workspace, immutable.
+  key          String
+  // Last issue number handed out; incremented atomically, never reused.
+  issueCounter Int         @default(0)
+  mode         ProjectMode @default(KANBAN)
+  workspaceId  String
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  columns      Column[]
+  labels       Label[]
+  issues       Issue[]
+  sprints      Sprint[]
+  archivedAt   DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
+  @@unique([workspaceId, key])
   @@index([workspaceId])
 }
 
-model Column {
-  id        String   @id @default(cuid())
-  name      String
-  position  Int
-  boardId   String
-  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  tasks     Task[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([boardId])
+enum ProjectMode {
+  KANBAN
+  SCRUM
 }
 
-model Task {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
-  priority    Priority  @default(MEDIUM)
-  dueDate     DateTime?
-  position    Int
-  columnId    String
-  column      Column    @relation(fields: [columnId], references: [id], onDelete: Cascade)
-  labels      Label[]   @relation("TaskLabels")
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+model Column {
+  id        String         @id @default(cuid())
+  name      String
+  position  Int
+  // What the column means, independent of its name (drives "done" for sync/agents).
+  category  ColumnCategory @default(IN_PROGRESS)
+  projectId String
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues    Issue[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
+  @@index([projectId])
+}
+
+enum ColumnCategory {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+model Issue {
+  id                 String      @id @default(cuid())
+  projectId          String
+  project            Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number             Int
+  type               IssueType   @default(TASK)
+  title              String
+  description        String?
+  acceptanceCriteria String?
+  priority           Priority    @default(MEDIUM)
+  dueDate            DateTime?
+  estimate           Int?
+  position           Int
+  columnId           String
+  column             Column      @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  parentId           String?
+  parent             Issue?      @relation("SubIssues", fields: [parentId], references: [id], onDelete: Cascade)
+  subIssues          Issue[]     @relation("SubIssues")
+  epicId             String?
+  epic               Issue?      @relation("EpicIssues", fields: [epicId], references: [id], onDelete: SetNull)
+  epicIssues         Issue[]     @relation("EpicIssues")
+  sprintId           String?
+  sprint             Sprint?     @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  assigneeUserId     String?
+  assignee           User?       @relation("IssueAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  assigneeAgentId    String?
+  reporterUserId     String?
+  reporter           User?       @relation("IssueReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  claimedByAgentId   String?
+  claimedAt          DateTime?
+  source             IssueSource @default(NATIVE)
+  labels             Label[]     @relation("IssueLabels")
+  comments           Comment[]
+  linksFrom          IssueLink[] @relation("IssueLinkFrom")
+  linksTo            IssueLink[] @relation("IssueLinkTo")
+  archivedAt         DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@unique([projectId, number])
   @@index([columnId])
+  @@index([parentId])
+  @@index([epicId])
+  @@index([assigneeUserId])
+}
+
+enum IssueType {
+  EPIC
+  STORY
+  TASK
+  BUG
+  SUBTASK
+}
+
+enum IssueSource {
+  NATIVE
+  GITHUB
 }
 
 model Label {
   id        String   @id @default(cuid())
   name      String
   color     String
-  boardId   String
-  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  tasks     Task[]   @relation("TaskLabels")
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues    Issue[]  @relation("IssueLabels")
   createdAt DateTime @default(now())
 
-  @@index([boardId])
+  @@index([projectId])
 }
 
 enum Priority {
@@ -183,4 +251,61 @@ enum Priority {
   MEDIUM
   HIGH
   URGENT
+}
+
+model Comment {
+  id            String    @id @default(cuid())
+  issueId       String
+  issue         Issue     @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  authorUserId  String?
+  author        User?     @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  authorAgentId String?
+  body          String
+  editedAt      DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([issueId, createdAt])
+}
+
+// Scrum projects only. Schema lands in 07; UI in Feature 15.
+model Sprint {
+  id        String      @id @default(cuid())
+  projectId String
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  goal      String?
+  startDate DateTime?
+  endDate   DateTime?
+  state     SprintState @default(PLANNED)
+  issues    Issue[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([projectId])
+}
+
+enum SprintState {
+  PLANNED
+  ACTIVE
+  CLOSED
+}
+
+// Schema lands in 07; UI in Feature 16.
+model IssueLink {
+  id          String        @id @default(cuid())
+  fromIssueId String
+  fromIssue   Issue         @relation("IssueLinkFrom", fields: [fromIssueId], references: [id], onDelete: Cascade)
+  toIssueId   String
+  toIssue     Issue         @relation("IssueLinkTo", fields: [toIssueId], references: [id], onDelete: Cascade)
+  type        IssueLinkType
+  createdAt   DateTime      @default(now())
+
+  @@unique([fromIssueId, toIssueId, type])
+  @@index([toIssueId])
+}
+
+enum IssueLinkType {
+  BLOCKS
+  RELATES
+  DUPLICATES
 }

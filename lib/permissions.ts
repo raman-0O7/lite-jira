@@ -13,26 +13,34 @@ import { forbidden } from "@/lib/services/errors";
  */
 export type Action =
   | "workspace.read"
-  | "board.read"
-  | "board.create"
-  | "board.update"
-  | "board.delete"
+  | "project.read"
+  | "project.create"
+  | "project.update"
+  | "project.delete"
   | "column.write"
-  | "task.write"
+  | "issue.write"
   | "label.write"
+  | "comment.write"
+  | "comment.moderate"
   | "members.manage"
   | "integrations.manage"
   | "workspace.delete";
 
-const READ: Action[] = ["workspace.read", "board.read"];
+// Guests can read and comment (PLAN-v2 §4); they can't change issues.
+const READ: Action[] = ["workspace.read", "project.read", "comment.write"];
 const WRITE: Action[] = [
-  "board.create",
-  "board.update",
+  "project.create",
+  "project.update",
   "column.write",
-  "task.write",
+  "issue.write",
   "label.write",
 ];
-const ADMIN: Action[] = ["board.delete", "members.manage", "integrations.manage"];
+const ADMIN: Action[] = [
+  "project.delete",
+  "comment.moderate",
+  "members.manage",
+  "integrations.manage",
+];
 
 const ROLE_ACTIONS: Record<Role, ReadonlySet<Action>> = {
   OWNER: new Set([...READ, ...WRITE, ...ADMIN, "workspace.delete"]),
@@ -43,7 +51,8 @@ const ROLE_ACTIONS: Record<Role, ReadonlySet<Action>> = {
 
 /** Actions an agent may never perform, whatever its on-behalf-of user's role. */
 const AGENT_NEVER: ReadonlySet<Action> = new Set([
-  "board.delete",
+  "project.delete",
+  "comment.moderate",
   "members.manage",
   "integrations.manage",
   "workspace.delete",
