@@ -7,7 +7,7 @@ import { getSession } from "@/lib/auth";
 import { safeNext, withNext } from "@/lib/safe-next";
 
 export const metadata: Metadata = {
-  title: "Sign in · Kanso",
+  title: "Sign in",
 };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {

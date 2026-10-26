@@ -13,7 +13,7 @@ const TABS = [
 export function SettingsNav({ slug }: { slug: string }) {
   const pathname = usePathname();
   return (
-    <nav className="flex gap-1 border-b" aria-label="Settings">
+    <nav className="ml-2 flex h-7 items-center rounded-md bg-chip p-0.5" aria-label="Settings">
       {TABS.map((tab) => {
         const href = `/${slug}/settings/${tab.href}`;
         const active = pathname === href;
@@ -23,10 +23,8 @@ export function SettingsNav({ slug }: { slug: string }) {
             href={href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "-mb-px border-b-2 px-3 py-2 text-sm transition-colors",
-              active
-                ? "border-foreground font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
+              "flex h-6 items-center rounded-[5px] px-2.5 text-xs font-medium transition-colors",
+              active ? "bg-seg text-foreground shadow-seg" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {tab.label}

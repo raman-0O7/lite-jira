@@ -15,7 +15,7 @@ import { getSession } from "@/lib/auth";
 import { getInvitePreview, type InviteStatus } from "@/lib/services/invites";
 
 export const metadata: Metadata = {
-  title: "Invitation · Kanso",
+  title: "Invitation",
   // The token is in the URL: don't hand it to other sites as a referrer.
   referrer: "no-referrer",
 };
@@ -41,9 +41,9 @@ export default async function InvitePage({ params }: PageProps<"/invite/[token]"
 
   if (!preview || unusable) {
     return (
-      <Card className="w-full max-w-sm">
+      <Card className="w-full max-w-sm bg-background shadow-panel [--card-spacing:--spacing(6)]">
         <CardHeader>
-          <CardTitle className="text-xl">Invite can’t be used</CardTitle>
+          <CardTitle className="text-[19px] font-semibold tracking-[-0.02em]">Invite can’t be used</CardTitle>
           <CardDescription>{unusable}</CardDescription>
         </CardHeader>
         <CardFooter>
@@ -63,9 +63,9 @@ export default async function InvitePage({ params }: PageProps<"/invite/[token]"
     preview.email !== session.user.email.toLowerCase();
 
   return (
-    <Card className="w-full max-w-sm">
+    <Card className="w-full max-w-sm bg-background shadow-panel [--card-spacing:--spacing(6)]">
       <CardHeader>
-        <CardTitle className="text-xl">Join {preview.workspace.name}</CardTitle>
+        <CardTitle className="text-[19px] font-semibold tracking-[-0.02em]">Join {preview.workspace.name}</CardTitle>
         <CardDescription>
           {preview.invitedBy ? `${preview.invitedBy} invited you` : "You’re invited"} to join as{" "}
           {ROLE_NOUN[preview.role]}.

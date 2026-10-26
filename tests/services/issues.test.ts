@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { reorderColumns, updateColumn } from "@/lib/services/columns";
 import type { Ctx } from "@/lib/services/context";
 import {
+  createIssue,
   createSubIssue,
   deleteIssue,
   getIssue,
@@ -169,6 +170,48 @@ describe("assignees", () => {
     await expectStatus(updateIssue(ctx, issue.id, { assigneeUserId: guest.id }), 400);
     await expectStatus(updateIssue(ctx, issue.id, { assigneeUserId: stranger.id }), 400);
     expect((await updateIssue(ctx, issue.id, { assigneeUserId: null })).assignee).toBeNull();
+  });
+});
+
+describe("createIssue", () => {
+  it("takes priority, description, and a member assignee from the new-issue dialog", async () => {
+    const { ctx, workspace } = await makeOwner();
+    const { todo } = await makeProject(ctx);
+    const member = await makeUser("Member");
+    await addMember(workspace.id, member, "MEMBER");
+
+    const card = await createIssue(ctx, todo.id, {
+      title: "Ship it",
+      type: "BUG",
+      priority: "HIGH",
+      description: "Steps to reproduce",
+      assigneeUserId: member.id,
+    });
+    expect(card).toMatchObject({ type: "BUG", priority: "HIGH", assignee: { id: member.id } });
+    const full = await getIssue(ctx, card.id);
+    expect(full.description).toBe("Steps to reproduce");
+    const activity = await db.activity.findFirstOrThrow({ where: { issueId: card.id, action: "issue.created" } });
+    expect(activity.data).toMatchObject({ assigneeUserId: member.id });
+  });
+
+  it("defaults to medium priority, no description, and nobody assigned", async () => {
+    const { ctx } = await makeOwner();
+    const { todo } = await makeProject(ctx);
+    const card = await createIssue(ctx, todo.id, { title: "Plain", description: "" });
+    expect(card).toMatchObject({ priority: "MEDIUM", assignee: null });
+    expect((await getIssue(ctx, card.id)).description).toBeNull();
+  });
+
+  it("refuses guests and strangers as assignees", async () => {
+    const { ctx, workspace } = await makeOwner();
+    const { todo } = await makeProject(ctx);
+    const guest = await makeUser("Guest");
+    await addMember(workspace.id, guest, "GUEST");
+    const stranger = await makeUser("Stranger");
+
+    await expectStatus(createIssue(ctx, todo.id, { title: "x", assigneeUserId: guest.id }), 400);
+    await expectStatus(createIssue(ctx, todo.id, { title: "x", assigneeUserId: stranger.id }), 400);
+    expect(await db.issue.count()).toBe(0);
   });
 });
 

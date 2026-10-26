@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { TopBar } from "@/components/app-shell/top-bar";
+import { AppShell } from "@/components/app-shell/AppShell";
 import { WorkspaceProvider } from "@/components/providers/workspace-provider";
 import { requireUser } from "@/lib/auth";
 import { listWorkspacesForUser } from "@/lib/services/workspaces";
@@ -21,12 +21,12 @@ export default async function WorkspaceLayout({
 
   return (
     <WorkspaceProvider workspace={workspace}>
-      <TopBar
-        workspace={workspace}
+      <AppShell
         workspaces={workspaces}
-        user={{ name: user.name, email: user.email, image: user.image }}
-      />
-      <div className="flex flex-1 flex-col">{children}</div>
+        user={{ id: user.id, name: user.name, email: user.email, image: user.image }}
+      >
+        {children}
+      </AppShell>
     </WorkspaceProvider>
   );
 }

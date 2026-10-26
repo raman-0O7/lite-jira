@@ -1,3 +1,4 @@
+import { PageHeader, PageTitle } from "@/components/app-shell/PageHeader";
 import { SettingsNav } from "@/components/workspace/SettingsNav";
 
 export default async function SettingsLayout({
@@ -6,10 +7,14 @@ export default async function SettingsLayout({
 }: LayoutProps<"/[workspace]/settings">) {
   const { workspace } = await params;
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      <SettingsNav slug={workspace} />
-      {children}
-    </main>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <PageHeader>
+        <PageTitle>Settings</PageTitle>
+        <SettingsNav slug={workspace} />
+      </PageHeader>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">{children}</div>
+      </div>
+    </div>
   );
 }

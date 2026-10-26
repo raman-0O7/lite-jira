@@ -108,10 +108,11 @@ export async function getIssueByKey(ctx: Ctx, key: string) {
 /** Append an issue to a column. Sub-issues go through createSubIssue. */
 export async function createIssue(ctx: Ctx, columnId: string, input: unknown) {
   authorize(ctx, "issue.write");
-  const { title, type } = createIssueSchema.parse(input);
+  const { title, type, priority, description, assigneeUserId } = createIssueSchema.parse(input);
 
   return db.$transaction(async (tx) => {
     const column = await findColumnInWorkspace(tx, ctx, columnId);
+    if (assigneeUserId) await assertAssignable(tx, ctx, assigneeUserId);
     const project = await tx.project.findUniqueOrThrow({
       where: { id: column.projectId },
       select: { key: true },
@@ -120,6 +121,9 @@ export async function createIssue(ctx: Ctx, columnId: string, input: unknown) {
       data: {
         title,
         type,
+        priority,
+        description: description || null,
+        assigneeUserId: assigneeUserId ?? null,
         columnId,
         projectId: column.projectId,
         number: await nextNumber(tx, column.projectId),
@@ -133,7 +137,7 @@ export async function createIssue(ctx: Ctx, columnId: string, input: unknown) {
       action: "issue.created",
       projectId: column.projectId,
       issueId: issue.id,
-      data: { key: card.key, title, type, columnId },
+      data: { key: card.key, title, type, columnId, ...(assigneeUserId ? { assigneeUserId } : {}) },
     });
     return card;
   });
@@ -189,6 +193,15 @@ export async function createSubIssue(ctx: Ctx, parentId: string, input: unknown)
     });
     return card;
   });
+}
+
+/** Issues can be assigned to the workspace's members, never to guests. */
+async function assertAssignable(tx: Prisma.TransactionClient, ctx: Ctx, userId: string) {
+  const member = await tx.membership.findFirst({
+    where: { workspaceId: ctx.workspaceId, userId, role: { not: "GUEST" } },
+    select: { id: true },
+  });
+  if (!member) throw badRequest("Assignee must be a member of this workspace");
 }
 
 type Changes = Record<string, Prisma.InputJsonValue>;
@@ -249,13 +262,7 @@ export async function updateIssue(ctx: Ctx, issueId: string, input: unknown) {
     // ---- assignee ----
     if (patch.assigneeUserId !== undefined) {
       const next = patch.assigneeUserId ?? null;
-      if (next) {
-        const member = await tx.membership.findFirst({
-          where: { workspaceId: ctx.workspaceId, userId: next, role: { not: "GUEST" } },
-          select: { id: true },
-        });
-        if (!member) throw badRequest("Assignee must be a member of this workspace");
-      }
+      if (next) await assertAssignable(tx, ctx, next);
       data.assigneeUserId = next;
       change(changes, "assigneeUserId", before.assigneeUserId, next);
     }

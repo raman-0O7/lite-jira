@@ -1,39 +1,35 @@
 "use client";
 
-import { LogOut } from "lucide-react";
+import { Keyboard, LogOut, Monitor, Moon, MoreHorizontal, Sun } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import { useAppUI } from "@/components/app-shell/app-ui";
+import { Avatar } from "@/components/icons/Avatar";
+import { useTheme } from "@/components/theme/use-theme";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOut } from "@/lib/auth-client";
-import { cn } from "@/lib/utils";
+import { isThemePreference } from "@/lib/theme";
 
 type UserMenuProps = {
-  name: string;
-  email: string;
-  image?: string | null;
+  user: { id: string; name: string; email: string; image?: string | null };
 };
 
-function initials(name: string, email: string) {
-  const source = name.trim() || email;
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return source.slice(0, 2).toUpperCase();
-}
-
-export function UserMenu({ name, email, image }: UserMenuProps) {
+/** The sidebar's bottom row: who's signed in, theme, shortcuts, log out. */
+export function UserMenu({ user }: UserMenuProps) {
   const router = useRouter();
+  const { preference, setTheme } = useTheme();
+  const { setShortcutsOpen } = useAppUI();
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleLogout() {
@@ -52,42 +48,43 @@ export function UserMenu({ name, email, image }: UserMenuProps) {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          className="h-9 gap-2 px-1.5"
-          aria-label="Open user menu"
-        >
-          <span
-            className={cn(
-              "flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-xs font-medium",
-            )}
-          >
-            {image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={image}
-                alt=""
-                className="size-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              initials(name, email)
-            )}
-          </span>
-          <span className="hidden max-w-[12rem] truncate text-sm sm:inline">
-            {email}
-          </span>
-        </Button>
+      <DropdownMenuTrigger
+        aria-label="Open user menu"
+        className="flex h-10 w-full min-w-0 items-center gap-2.5 rounded-md px-1.5 text-left outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-sidebar-accent"
+      >
+        <Avatar person={{ ...user, image: user.image ?? null }} size="md" title={false} />
+        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate text-sm font-medium text-foreground">{user.name || "Account"}</span>
+          <span className="truncate text-2xs text-muted-foreground">{user.email}</span>
+        </span>
+        <MoreHorizontal className="size-4 shrink-0 text-icon" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="flex flex-col gap-0.5">
-          <span className="truncate font-medium">{name || "Account"}</span>
-          <span className="truncate text-xs font-normal text-muted-foreground">
-            {email}
-          </span>
-        </DropdownMenuLabel>
+      <DropdownMenuContent align="start" side="top" className="w-56">
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Theme</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={preference}
+          onValueChange={(value) => {
+            if (isThemePreference(value)) setTheme(value);
+          }}
+        >
+          <DropdownMenuRadioItem value="dark">
+            <Moon />
+            Dark
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="light">
+            <Sun />
+            Light
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="system">
+            <Monitor />
+            System
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => setShortcutsOpen(true)}>
+          <Keyboard />
+          Keyboard shortcuts
+        </DropdownMenuItem>
         <DropdownMenuItem
           variant="destructive"
           disabled={isLoading}

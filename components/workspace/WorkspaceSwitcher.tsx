@@ -4,7 +4,7 @@ import { Check, ChevronsUpDown, Plus, Settings } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { KansoMark } from "@/components/icons/KansoMark";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,7 +19,7 @@ import type { WorkspaceSummary } from "@/lib/api/workspaces";
 export const workspaceLabel = (workspace: Pick<WorkspaceSummary, "name" | "personal">) =>
   workspace.personal ? "Personal" : workspace.name;
 
-/** Top-bar menu: switch workspace, open its settings, or create a new one. */
+/** Sidebar header: switch workspace, open its settings, or create a new one. */
 export function WorkspaceSwitcher({
   current,
   workspaces,
@@ -32,11 +32,15 @@ export function WorkspaceSwitcher({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="min-w-0 gap-1.5 px-2">
-            <span className="truncate font-medium">{workspaceLabel(current)}</span>
-            <ChevronsUpDown className="size-3.5 text-muted-foreground" />
-          </Button>
+        <DropdownMenuTrigger
+          aria-label={`Workspace: ${workspaceLabel(current)}`}
+          className="flex h-[34px] w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-sidebar-accent"
+        >
+          <KansoMark />
+          <span className="min-w-0 flex-1 truncate font-heading text-sm font-semibold tracking-[-0.01em] text-foreground">
+            {workspaceLabel(current)}
+          </span>
+          <ChevronsUpDown className="size-3.5 shrink-0 text-icon" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-60">
           <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">

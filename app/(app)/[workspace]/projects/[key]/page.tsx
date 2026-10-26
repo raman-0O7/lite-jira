@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
-import { BoardView } from "@/components/board/BoardView";
+import { ProjectView } from "@/components/project/ProjectView";
 import { ctxForWorkspaceSlug } from "@/lib/api/context";
 import { ServiceError } from "@/lib/services/errors";
 import { getProjectByKey } from "@/lib/services/projects";
 
-// BoardView reads filter state from the URL via useSearchParams, so it must sit
+// ProjectView reads filter state from the URL via useSearchParams, so it must sit
 // under a Suspense boundary (otherwise prerendering this route fails the build).
 export default async function ProjectPage({
   params,
@@ -21,7 +21,7 @@ export default async function ProjectPage({
   }
   return (
     <Suspense>
-      <BoardView projectId={project.id} />
+      <ProjectView projectId={project.id} />
     </Suspense>
   );
 }

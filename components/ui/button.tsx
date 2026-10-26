@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils"
 // stays crisp. Variants paint that layer via `before:*` classes.
 const buttonVariants = cva(
   [
-    "group/button relative isolate inline-flex shrink-0 items-center justify-center rounded-lg bg-clip-padding text-sm font-medium whitespace-nowrap outline-none select-none",
+    "group/button relative isolate inline-flex shrink-0 items-center justify-center rounded-md bg-clip-padding text-sm font-medium whitespace-nowrap outline-none select-none",
     "transition-[color,box-shadow] duration-150 ease-out",
     "before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:rounded-[inherit] before:border before:border-transparent",
     "before:transition-[scale,background-color,border-color,box-shadow] before:duration-150 before:ease-out motion-reduce:before:transition-none",

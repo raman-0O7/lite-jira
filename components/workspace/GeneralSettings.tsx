@@ -63,7 +63,7 @@ export function GeneralSettings() {
   return (
     <div className="flex flex-col gap-8">
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">Workspace</h2>
+        <h2 className="font-heading text-sm font-semibold text-foreground">Workspace</h2>
         <form
           className="flex flex-wrap items-end gap-3"
           onSubmit={(event) => {
@@ -103,7 +103,7 @@ export function GeneralSettings() {
 
       {!workspace.personal ? (
         <section className="flex flex-col gap-3 rounded-xl border border-destructive/30 p-4">
-          <h2 className="text-sm font-medium">Danger zone</h2>
+          <h2 className="font-heading text-sm font-semibold text-foreground">Danger zone</h2>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
               Leave this workspace. You’ll need a new invite to come back.

@@ -10,6 +10,9 @@ export const createIssueSchema = z.object({
   title,
   // Sub-issues are created through createSubIssueSchema, never by type.
   type: issueTypeEnum.exclude(["SUBTASK"]).default("TASK"),
+  priority: priorityEnum.optional(),
+  description: z.string().max(10_000).nullish(),
+  assigneeUserId: id.nullish(),
 });
 
 export const createSubIssueSchema = z.object({ title });

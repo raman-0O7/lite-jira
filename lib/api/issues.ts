@@ -36,6 +36,7 @@ export type IssueFull = IssueCard & {
 export const issueKeys = {
   detail: (id: string) => ["issue", id] as const,
   comments: (id: string) => ["issue", id, "comments"] as const,
+  activity: (id: string) => ["issue", id, "activity"] as const,
 };
 
 /** Every key is optional; only present keys change. Nullable fields accept null to clear. */
@@ -52,11 +53,20 @@ export type UpdateIssuePayload = {
   epicId?: string | null;
 };
 
-export async function createIssue(columnId: string, title: string) {
+export type CreateIssuePayload = {
+  title: string;
+  type?: Exclude<IssueType, "SUBTASK">;
+  priority?: Priority;
+  description?: string | null;
+  assigneeUserId?: string | null;
+};
+
+/** Append an issue to a column: a title, or the new-issue dialog's fields. */
+export async function createIssue(columnId: string, input: string | CreateIssuePayload) {
   const data = await request<{ issue: IssueCard }>(
     `/api/columns/${columnId}/issues`,
     "Failed to add issue",
-    { method: "POST", body: { title } },
+    { method: "POST", body: typeof input === "string" ? { title: input } : input },
   );
   return data.issue;
 }
@@ -97,3 +107,43 @@ export async function moveIssue(args: {
 }
 
 export type { LabelStub };
+
+export type IssueSearchResult = IssueCard & { project: { id: string; key: string; name: string } };
+
+/** Search the workspace's issues with the query language (text, keys, `assignee:me`…). */
+export async function searchIssues(workspaceSlug: string, query: string) {
+  const data = await request<{ issues: IssueSearchResult[] }>(
+    `/api/workspaces/${workspaceSlug}/issues?q=${encodeURIComponent(query)}`,
+    "Search failed",
+  );
+  return data.issues;
+}
+
+// ---------- Activity ----------
+
+type ColumnRef = { id: string; name: string; category: "TODO" | "IN_PROGRESS" | "DONE" };
+
+/** One row of an issue's history; `data` depends on the action (see lib/services/issues.ts). */
+export type IssueActivityEntry = {
+  id: string;
+  action: "issue.created" | "issue.updated" | "issue.moved";
+  createdAt: string;
+  actorType: "USER" | "AGENT" | "GITHUB" | "SYSTEM";
+  actorAgentId: string | null;
+  actor: PersonStub | null;
+  data: Record<string, unknown>;
+};
+
+export type IssueActivity = {
+  entries: IssueActivityEntry[];
+  refs: {
+    people: Record<string, PersonStub>;
+    columns: Record<string, ColumnRef>;
+    labels: Record<string, LabelStub>;
+    issues: Record<string, { id: string; key: string; title: string }>;
+  };
+};
+
+export async function fetchIssueActivity(issueId: string) {
+  return request<IssueActivity>(`/api/issues/${issueId}/activity`, "Failed to load activity");
+}

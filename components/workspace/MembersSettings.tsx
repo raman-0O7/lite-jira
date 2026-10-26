@@ -5,7 +5,7 @@ import { Copy, Link2, Mail, RefreshCw, Trash2, UserPlus, X } from "lucide-react"
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Avatar } from "@/components/board/Avatar";
+import { Avatar } from "@/components/icons/Avatar";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,7 +72,7 @@ export function MembersSettings() {
   if (workspace.personal) {
     return (
       <section className="flex flex-col items-start gap-3 rounded-xl border border-dashed p-6">
-        <h2 className="font-medium">This is your personal workspace</h2>
+        <h2 className="font-heading text-[15px] font-semibold text-foreground">This is your personal workspace</h2>
         <p className="max-w-prose text-sm text-muted-foreground">
           It’s just for you. To work with a team, or to share projects with a client, create a
           team workspace and invite people there.
@@ -175,7 +175,7 @@ function TeamMembers() {
       {result ? <InviteLink result={result} onDismiss={() => setResult(null)} /> : null}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">
+        <h2 className="font-heading text-sm font-semibold text-foreground">
           Members{members.data ? ` · ${members.data.length}` : ""}
         </h2>
         {members.isPending ? (
@@ -183,10 +183,10 @@ function TeamMembers() {
         ) : members.isError ? (
           <p className="text-sm text-muted-foreground">{members.error.message}</p>
         ) : (
-          <ul className="divide-y rounded-xl border">
+          <ul className="divide-y rounded-lg border bg-surface shadow-card">
             {members.data.map((member) => (
               <li key={member.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <Avatar person={member} className="size-8 text-xs" />
+                <Avatar person={member} size="lg" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
                     {member.name}
@@ -250,11 +250,11 @@ function TeamMembers() {
 
       {canManage && invites.data && invites.data.length > 0 ? (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium">Pending invites</h2>
-          <ul className="divide-y rounded-xl border">
+          <h2 className="font-heading text-sm font-semibold text-foreground">Pending invites</h2>
+          <ul className="divide-y rounded-lg border bg-surface shadow-card">
             {invites.data.map((invite: Invite) => (
               <li key={invite.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <span className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <span className="flex size-8 items-center justify-center rounded-full bg-chip text-icon">
                   {invite.email ? <Mail className="size-4" /> : <Link2 className="size-4" />}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -351,7 +351,7 @@ function InviteForm({
   return (
     <section className="flex flex-col gap-3">
       <div>
-        <h2 className="text-sm font-medium">Invite people</h2>
+        <h2 className="font-heading text-sm font-semibold text-foreground">Invite people</h2>
         <p className="text-sm text-muted-foreground">
           Invite by email, or leave the email empty to get a link anyone can use once.
         </p>
