@@ -19,7 +19,17 @@ export type ActivityAction =
   | "label.deleted"
   | "comment.added"
   | "comment.edited"
-  | "comment.deleted";
+  | "comment.deleted"
+  | "workspace.created"
+  | "workspace.updated"
+  | "invite.created"
+  | "invite.revoked"
+  | "invite.renewed"
+  | "member.joined"
+  | "member.role_changed"
+  | "member.removed"
+  | "member.left"
+  | "member.projects_changed";
 
 type ActivityEntry = {
   action: ActivityAction;

@@ -6,6 +6,7 @@ import { recordActivity } from "@/lib/services/activity";
 import type { Ctx } from "@/lib/services/context";
 import { badRequest, notFound } from "@/lib/services/errors";
 import { findProjectInWorkspace } from "@/lib/services/projects";
+import { projectScope } from "@/lib/services/scope";
 import {
   createColumnSchema,
   reorderColumnsSchema,
@@ -26,7 +27,7 @@ export async function findColumnInWorkspace(
   columnId: string,
 ) {
   const column = await client.column.findFirst({
-    where: { id: columnId, project: { workspaceId: ctx.workspaceId } },
+    where: { id: columnId, project: projectScope(ctx) },
     select: { ...columnSelect, projectId: true },
   });
   if (!column) throw notFound("Column not found");

@@ -30,6 +30,7 @@ import { ColumnHeader } from "@/components/board/ColumnHeader";
 import { TaskCard } from "@/components/board/TaskCard";
 import { TaskList } from "@/components/board/TaskList";
 import { TaskModal } from "@/components/board/TaskModal";
+import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
   projectKeys,
@@ -135,6 +136,9 @@ export function KanbanBoard({
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
+
+  // Guests get a read-only board: no sensors means nothing can be dragged.
+  const canEdit = useCan("issue.write");
 
   const columnIds = columns.map((c) => c.id);
 
@@ -375,7 +379,7 @@ export function KanbanBoard({
 
   return (
     <DndContext
-      sensors={sensors}
+      sensors={canEdit ? sensors : []}
       collisionDetection={closestCorners}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
@@ -405,16 +409,20 @@ export function KanbanBoard({
                 onDeleteTask={(taskId) => remove.mutate(taskId)}
                 onOpenTask={(taskId) => setOpenTaskId(taskId)}
               />
-              <AddTaskComposer columnId={column.id} projectId={projectId} />
+              {canEdit ? (
+                <AddTaskComposer columnId={column.id} projectId={projectId} />
+              ) : null}
             </ColumnContainer>
           ))}
           {columns.length === 0 ? (
             <div className="flex h-40 w-72 shrink-0 flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center text-sm text-muted-foreground">
               <p>No columns yet</p>
-              <Button variant="outline" size="sm" onClick={onAddColumn}>
-                <Plus />
-                Add column
-              </Button>
+              {canEdit ? (
+                <Button variant="outline" size="sm" onClick={onAddColumn}>
+                  <Plus />
+                  Add column
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>

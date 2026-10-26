@@ -15,14 +15,14 @@ function GitHubIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-export function GitHubButton() {
+export function GitHubButton({ callbackURL = "/projects" }: { callbackURL?: string }) {
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleClick() {
     setIsLoading(true);
     const { error } = await signIn.social({
       provider: "github",
-      callbackURL: "/projects",
+      callbackURL,
     });
 
     // On success the browser is redirected to GitHub, so we only reach

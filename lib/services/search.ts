@@ -4,6 +4,7 @@ import { issueQueryToWhere, parseIssueQuery, QueryError } from "@/lib/query/issu
 import { actingUserId, type Ctx } from "@/lib/services/context";
 import { badRequest } from "@/lib/services/errors";
 import { cardSelect, toCard } from "@/lib/services/issue-shapes";
+import { projectScope } from "@/lib/services/scope";
 
 const LIMIT = 50;
 
@@ -21,7 +22,7 @@ export async function searchIssues(ctx: Ctx, query: string) {
   const issues = await db.issue.findMany({
     where: {
       AND: [
-        { archivedAt: null, project: { workspaceId: ctx.workspaceId, archivedAt: null } },
+        { archivedAt: null, project: { ...projectScope(ctx), archivedAt: null } },
         filter,
       ],
     },

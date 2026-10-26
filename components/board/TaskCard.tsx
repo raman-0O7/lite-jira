@@ -5,6 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { MoreHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
 
+import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -69,6 +70,7 @@ export function TaskCard({
   meta,
   onOpen,
 }: TaskCardProps) {
+  const canEdit = useCan("issue.write");
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const {
@@ -107,31 +109,33 @@ export function TaskCard({
             {task.title}
           </p>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Issue actions"
-                disabled={busy}
-                // Stop drag + card-open from firing when opening the menu.
-                onClick={(event) => event.stopPropagation()}
-                onPointerDown={(event) => event.stopPropagation()}
-                className="-mr-1 -mt-1 size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-              >
-                <MoreHorizontal />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => setDeleteOpen(true)}
-              >
-                <Trash2 />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {canEdit ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Issue actions"
+                  disabled={busy}
+                  // Stop drag + card-open from firing when opening the menu.
+                  onClick={(event) => event.stopPropagation()}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  className="-mr-1 -mt-1 size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                >
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => setDeleteOpen(true)}
+                >
+                  <Trash2 />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
 
         {meta ? <div className="mt-1.5">{meta}</div> : null}

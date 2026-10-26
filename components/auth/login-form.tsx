@@ -13,7 +13,7 @@ import { loginSchema } from "@/lib/validations/auth";
 
 type FieldErrors = Partial<Record<"email" | "password", string>>;
 
-export function LoginForm() {
+export function LoginForm({ next }: { next: string }) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -53,7 +53,7 @@ export function LoginForm() {
     }
 
     // Full navigation so the protected layout re-reads the new session cookie.
-    router.push("/projects");
+    router.push(next);
     router.refresh();
   }
 
@@ -105,7 +105,7 @@ export function LoginForm() {
         </div>
       </div>
 
-      <GitHubButton />
+      <GitHubButton callbackURL={next} />
     </div>
   );
 }

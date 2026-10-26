@@ -6,6 +6,7 @@ import { recordActivity } from "@/lib/services/activity";
 import type { Ctx } from "@/lib/services/context";
 import { notFound } from "@/lib/services/errors";
 import { findProjectInWorkspace } from "@/lib/services/projects";
+import { projectScope } from "@/lib/services/scope";
 import { createLabelSchema, updateLabelSchema } from "@/lib/validations/label";
 
 const labelSelect = { id: true, name: true, color: true } as const;
@@ -16,7 +17,7 @@ async function findLabelInWorkspace(
   labelId: string,
 ) {
   const label = await client.label.findFirst({
-    where: { id: labelId, project: { workspaceId: ctx.workspaceId } },
+    where: { id: labelId, project: projectScope(ctx) },
     select: { ...labelSelect, projectId: true },
   });
   if (!label) throw notFound("Label not found");

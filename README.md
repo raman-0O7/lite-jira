@@ -42,6 +42,9 @@ sub-issues, epics, comments, and a Kanban board. Phase 1 is described in
    completes the OAuth flow once both credentials are set; without them it shows
    a "GitHub sign-in is unavailable" toast. Email/password sign-up and login work
    with no GitHub credentials at all.
+   Invite emails are optional too: set `RESEND_API_KEY` and `EMAIL_FROM` to send
+   them through [Resend](https://resend.com). Without them, the inviter gets a
+   link to share and the server logs the email instead.
 
 3. **Start Postgres**
 
@@ -85,10 +88,12 @@ sub-issues, epics, comments, and a Kanban board. Phase 1 is described in
 
 ```
 app/
-  (auth)/login, signup              # public auth pages
+  (auth)/login, signup              # public auth pages (?next= returns after sign-in)
+  (auth)/invite/[token]             # accept a workspace invite
   (app)/[workspace]/projects        # projects list (workspace-scoped)
   (app)/[workspace]/projects/[key]  # project board (Kanban), ?issue=KEY opens an issue
   (app)/[workspace]/issues/[key]    # issue link (WEB-42) → its board
+  (app)/[workspace]/settings        # members, invites, guest access; rename/leave/delete
   (app)/projects, boards            # post-login landing + legacy redirects
   api/                              # thin route handlers over lib/services
 lib/
@@ -100,6 +105,7 @@ lib/
   auth.ts, db.ts
 components/
   board/         # board, cards, issue modal (rebuilt in Feature 09)
+  workspace/     # workspace switcher, settings pages, invite actions
   ui/            # shadcn primitives
 prisma/schema.prisma
 tests/           # Vitest (services, permissions, query language)

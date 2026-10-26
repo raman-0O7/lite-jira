@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react";
 
+import { type Action, can } from "@/lib/permissions";
 import type { WorkspaceSummary } from "@/lib/services/workspaces";
 
 const WorkspaceContext = createContext<WorkspaceSummary | null>(null);
@@ -27,4 +28,13 @@ export function useWorkspace(): WorkspaceSummary {
     throw new Error("useWorkspace must be used under app/(app)/[workspace]");
   }
   return workspace;
+}
+
+/**
+ * Whether the signed-in user may do `action` here, for hiding controls. The
+ * server enforces the same rules; this only keeps the UI honest.
+ */
+export function useCan(action: Action): boolean {
+  const { role } = useWorkspace();
+  return can({ actor: { type: "user", userId: "" }, role }, action);
 }

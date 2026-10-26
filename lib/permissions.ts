@@ -24,6 +24,7 @@ export type Action =
   | "comment.moderate"
   | "members.manage"
   | "integrations.manage"
+  | "workspace.update"
   | "workspace.delete";
 
 // Guests can read and comment (PLAN-v2 §4); they can't change issues.
@@ -40,6 +41,7 @@ const ADMIN: Action[] = [
   "comment.moderate",
   "members.manage",
   "integrations.manage",
+  "workspace.update",
 ];
 
 const ROLE_ACTIONS: Record<Role, ReadonlySet<Action>> = {
@@ -55,6 +57,7 @@ const AGENT_NEVER: ReadonlySet<Action> = new Set([
   "comment.moderate",
   "members.manage",
   "integrations.manage",
+  "workspace.update",
   "workspace.delete",
 ]);
 

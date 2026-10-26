@@ -1,14 +1,24 @@
 import { randomBytes } from "node:crypto";
 
-import type { Role } from "@prisma/client";
+import { Prisma, type Role } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { authorize } from "@/lib/permissions";
+import { recordActivity } from "@/lib/services/activity";
+import { type Ctx, userCtx } from "@/lib/services/context";
+import { badRequest, ServiceError } from "@/lib/services/errors";
+import { slugify } from "@/lib/slug";
+import {
+  createWorkspaceSchema,
+  updateWorkspaceSchema,
+} from "@/lib/validations/workspace";
 
 /**
- * Workspace lookup and creation.
+ * Workspace lookup, creation, and settings.
  *
- * These functions establish context (who belongs where) rather than act within
- * it, so unlike the other services they take a user id instead of a Ctx.
+ * Lookup and creation establish context (who belongs where) rather than act
+ * within it, so they take a user id instead of a Ctx. Renaming and deleting
+ * act on an existing workspace and take a Ctx like every other service.
  */
 
 /** Slugs that would collide with top-level app routes. */
@@ -30,17 +40,6 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "static",
 ]);
 
-export function slugify(name: string): string {
-  const base = name
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40)
-    .replace(/-+$/g, "");
-  return base || "workspace";
-}
-
 /**
  * A slug for `name` that is not taken and not reserved. Personal workspaces
  * always get a short random suffix so two people with the same name never
@@ -49,7 +48,8 @@ export function slugify(name: string): string {
 async function availableSlug(name: string, forceSuffix: boolean) {
   const base = slugify(name);
   for (let attempt = 0; attempt < 5; attempt++) {
-    const suffixed = forceSuffix || attempt > 0 || RESERVED_SLUGS.has(base);
+    const suffixed =
+      forceSuffix || attempt > 0 || base.length < 3 || RESERVED_SLUGS.has(base);
     const slug = suffixed ? `${base}-${randomBytes(3).toString("hex")}` : base;
     const taken = await db.workspace.findUnique({
       where: { slug },
@@ -148,4 +148,80 @@ export async function workspaceSlugForCtx(ctx: { workspaceId: string }) {
     select: { slug: true },
   });
   return workspace.slug;
+}
+
+const summarySelect = { id: true, name: true, slug: true, personal: true } as const;
+
+/** Create a team workspace with the user as its owner. */
+export async function createWorkspace(
+  userId: string,
+  input: unknown,
+): Promise<WorkspaceSummary> {
+  const parsed = createWorkspaceSchema.parse(input);
+  if (parsed.slug && RESERVED_SLUGS.has(parsed.slug)) {
+    throw badRequest(`The URL "${parsed.slug}" is reserved`);
+  }
+  const slug = parsed.slug ?? (await availableSlug(parsed.name, false));
+
+  try {
+    return await db.$transaction(async (tx) => {
+      const workspace = await tx.workspace.create({
+        data: {
+          name: parsed.name,
+          slug,
+          memberships: { create: { userId, role: "OWNER" } },
+        },
+        select: summarySelect,
+      });
+      await recordActivity(tx, userCtx(userId, workspace.id, "OWNER"), {
+        action: "workspace.created",
+        data: { name: parsed.name, slug },
+      });
+      return { ...workspace, role: "OWNER" as const };
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new ServiceError(409, `The URL "${slug}" is already taken`);
+    }
+    throw error;
+  }
+}
+
+/** Rename the ctx workspace. The slug never changes (it's in every URL). */
+export async function updateWorkspace(ctx: Ctx, input: unknown) {
+  authorize(ctx, "workspace.update");
+  const { name } = updateWorkspaceSchema.parse(input);
+  return db.$transaction(async (tx) => {
+    const before = await tx.workspace.findUniqueOrThrow({
+      where: { id: ctx.workspaceId },
+      select: { name: true },
+    });
+    const workspace = await tx.workspace.update({
+      where: { id: ctx.workspaceId },
+      data: { name },
+      select: summarySelect,
+    });
+    await recordActivity(tx, ctx, {
+      action: "workspace.updated",
+      data: { name: { from: before.name, to: name } },
+    });
+    return { ...workspace, role: ctx.role };
+  });
+}
+
+/**
+ * Delete the ctx workspace and everything in it (cascades). Personal
+ * workspaces can't be deleted. Nothing is logged: the activity goes with it.
+ */
+export async function deleteWorkspace(ctx: Ctx) {
+  authorize(ctx, "workspace.delete");
+  const workspace = await db.workspace.findUniqueOrThrow({
+    where: { id: ctx.workspaceId },
+    select: { personal: true },
+  });
+  if (workspace.personal) throw badRequest("Your personal workspace can't be deleted");
+  await db.workspace.delete({ where: { id: ctx.workspaceId } });
 }

@@ -5,6 +5,7 @@ import { GripVertical, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -66,6 +67,7 @@ export function ColumnHeader({
   dragHandleProps,
 }: ColumnHeaderProps) {
   const category = CATEGORIES.find((c) => c.value === column.category) ?? CATEGORIES[1]!;
+  const canEdit = useCan("column.write");
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [name, setName] = useState(column.name);
@@ -84,15 +86,17 @@ export function ColumnHeader({
   return (
     <>
       <div className="flex items-center gap-1.5 px-1 py-1">
-        <button
-          type="button"
-          aria-label="Drag to reorder column"
-          className="-ml-1 flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
-          {...dragHandleProps?.attributes}
-          {...dragHandleProps?.listeners}
-        >
-          <GripVertical className="size-4" />
-        </button>
+        {canEdit ? (
+          <button
+            type="button"
+            aria-label="Drag to reorder column"
+            className="-ml-1 flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
+            {...dragHandleProps?.attributes}
+            {...dragHandleProps?.listeners}
+          >
+            <GripVertical className="size-4" />
+          </button>
+        ) : null}
 
         <span
           className={cn("size-2 shrink-0 rounded-full", category.dot)}
@@ -107,51 +111,53 @@ export function ColumnHeader({
           {taskCount}
         </span>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Column actions"
-              disabled={busy}
-            >
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
-              Category
-            </DropdownMenuLabel>
-            <DropdownMenuRadioGroup
-              value={column.category}
-              onValueChange={(value) => onSetCategory(value as ColumnCategory)}
-            >
-              {CATEGORIES.map((c) => (
-                <DropdownMenuRadioItem key={c.value} value={c.value}>
-                  <span className={cn("size-2 rounded-full", c.dot)} />
-                  {c.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => {
-                setName(column.name);
-                setRenameOpen(true);
-              }}
-            >
-              <Pencil />
-              Rename
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={() => setDeleteOpen(true)}
-            >
-              <Trash2 />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {canEdit ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Column actions"
+                disabled={busy}
+              >
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                Category
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={column.category}
+                onValueChange={(value) => onSetCategory(value as ColumnCategory)}
+              >
+                {CATEGORIES.map((c) => (
+                  <DropdownMenuRadioItem key={c.value} value={c.value}>
+                    <span className={cn("size-2 rounded-full", c.dot)} />
+                    {c.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  setName(column.name);
+                  setRenameOpen(true);
+                }}
+              >
+                <Pencil />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => setDeleteOpen(true)}
+              >
+                <Trash2 />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </div>
 
       {/* Rename dialog */}

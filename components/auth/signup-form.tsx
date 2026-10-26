@@ -13,7 +13,7 @@ import { signupSchema } from "@/lib/validations/auth";
 
 type FieldErrors = Partial<Record<"name" | "email" | "password", string>>;
 
-export function SignupForm() {
+export function SignupForm({ next }: { next: string }) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -58,7 +58,7 @@ export function SignupForm() {
       return;
     }
 
-    router.push("/projects");
+    router.push(next);
     router.refresh();
   }
 
@@ -130,7 +130,7 @@ export function SignupForm() {
         </div>
       </div>
 
-      <GitHubButton />
+      <GitHubButton callbackURL={next} />
     </div>
   );
 }

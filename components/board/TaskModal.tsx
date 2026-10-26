@@ -19,7 +19,7 @@ import { LabelChip } from "@/components/board/LabelChip";
 import { LabelPicker } from "@/components/board/LabelPicker";
 import { PrioritySelect } from "@/components/board/PrioritySelect";
 import { SubIssues } from "@/components/board/SubIssues";
-import { useWorkspace } from "@/components/providers/workspace-provider";
+import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -73,6 +73,7 @@ export function TaskModal({
 }) {
   const queryClient = useQueryClient();
   const { slug } = useWorkspace();
+  const canEdit = useCan("issue.write");
   const membersQuery = useQuery({
     queryKey: memberKeys.list(slug),
     queryFn: () => fetchMembers(slug),
@@ -321,210 +322,217 @@ export function TaskModal({
           </p>
         ) : task ? (
           <div className="flex flex-col gap-4">
-            {/* Title (inline edit) */}
-            <Input
-              value={titleDraft}
-              onChange={(event) => setTitleDraft(event.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                } else if (event.key === "Escape") {
-                  setTitleDraft(task.title);
-                  event.currentTarget.blur();
-                }
-              }}
-              className="text-base font-medium"
-              maxLength={200}
-              aria-label="Issue title"
-              disabled={save.isPending}
-            />
+            {/* Guests can read and comment; the fieldset disables every field. */}
+            <fieldset disabled={!canEdit} className="flex min-w-0 flex-col gap-4">
+              {/* Title (inline edit) */}
+              <Input
+                value={titleDraft}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onBlur={commitTitle}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  } else if (event.key === "Escape") {
+                    setTitleDraft(task.title);
+                    event.currentTarget.blur();
+                  }
+                }}
+                className="text-base font-medium"
+                maxLength={200}
+                aria-label="Issue title"
+                disabled={save.isPending}
+              />
 
-            {/* Type, assignee, priority, due date, estimate, epic */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Type</span>
-                <TypeSelect value={task.type} onChange={changeType} disabled={save.isPending} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Assignee</span>
-                <AssigneeSelect
-                  value={task.assigneeUserId}
-                  members={membersQuery.data ?? []}
-                  onChange={changeAssignee}
-                  disabled={save.isPending || !membersQuery.data}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Priority</span>
-                <PrioritySelect
-                  value={task.priority}
-                  onChange={changePriority}
-                  disabled={save.isPending}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Due date</span>
-                <DueDatePicker
-                  value={task.dueDate}
-                  onChange={changeDueDate}
-                  disabled={save.isPending}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Estimate</span>
-                <EstimateInput
-                  value={task.estimate}
-                  onChange={changeEstimate}
-                  disabled={save.isPending}
-                />
-              </div>
-              {task.type !== "EPIC" && task.type !== "SUBTASK" ? (
+              {/* Type, assignee, priority, due date, estimate, epic */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">Epic</span>
-                  <EpicSelect
-                    value={task.epicId}
-                    epics={epics}
-                    onChange={changeEpic}
+                  <span className="text-xs font-medium text-muted-foreground">Type</span>
+                  <TypeSelect value={task.type} onChange={changeType} disabled={save.isPending} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Assignee</span>
+                  <AssigneeSelect
+                    value={task.assigneeUserId}
+                    members={membersQuery.data ?? []}
+                    onChange={changeAssignee}
+                    disabled={save.isPending || !membersQuery.data}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Priority</span>
+                  <PrioritySelect
+                    value={task.priority}
+                    onChange={changePriority}
                     disabled={save.isPending}
                   />
                 </div>
-              ) : null}
-            </div>
-
-            {/* Labels */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                Labels
-              </span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {task.labels.map((label) => (
-                  <LabelChip
-                    key={label.id}
-                    label={label}
-                    onRemove={() =>
-                      changeLabels(
-                        task.labels
-                          .filter((l) => l.id !== label.id)
-                          .map((l) => l.id),
-                        knownLabels,
-                      )
-                    }
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Due date</span>
+                  <DueDatePicker
+                    value={task.dueDate}
+                    onChange={changeDueDate}
+                    disabled={save.isPending}
                   />
-                ))}
-                <LabelPicker
-                  projectId={projectId}
-                  selectedIds={task.labels.map((l) => l.id)}
-                  onChange={(ids) => {
-                    const all =
-                      queryClient.getQueryData<LabelStub[]>(
-                        labelKeys.project(projectId),
-                      ) ?? knownLabels;
-                    changeLabels(ids, all);
-                  }}
-                  disabled={save.isPending}
-                />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Estimate</span>
+                  <EstimateInput
+                    value={task.estimate}
+                    onChange={changeEstimate}
+                    disabled={save.isPending}
+                  />
+                </div>
+                {task.type !== "EPIC" && task.type !== "SUBTASK" ? (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">Epic</span>
+                    <EpicSelect
+                      value={task.epicId}
+                      epics={epics}
+                      onChange={changeEpic}
+                      disabled={save.isPending}
+                    />
+                  </div>
+                ) : null}
               </div>
-            </div>
 
-            {/* Description: edit (textarea) / preview (markdown) */}
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
+              {/* Labels */}
+              <div className="flex flex-col gap-1.5">
                 <span className="text-xs font-medium text-muted-foreground">
-                  Description
+                  Labels
                 </span>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => {
-                    if (editingDesc) {
-                      commitDescription();
-                    } else {
-                      setEditingDesc(true);
-                    }
-                  }}
-                  disabled={save.isPending}
-                >
-                  {editingDesc ? (
-                    <>
-                      <Eye />
-                      Preview
-                    </>
-                  ) : (
-                    <>
-                      <Pencil />
-                      Edit
-                    </>
-                  )}
-                </Button>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {task.labels.map((label) => (
+                    <LabelChip
+                      key={label.id}
+                      label={label}
+                      onRemove={() =>
+                        changeLabels(
+                          task.labels
+                            .filter((l) => l.id !== label.id)
+                            .map((l) => l.id),
+                          knownLabels,
+                        )
+                      }
+                    />
+                  ))}
+                  <LabelPicker
+                    projectId={projectId}
+                    selectedIds={task.labels.map((l) => l.id)}
+                    onChange={(ids) => {
+                      const all =
+                        queryClient.getQueryData<LabelStub[]>(
+                          labelKeys.project(projectId),
+                        ) ?? knownLabels;
+                      changeLabels(ids, all);
+                    }}
+                    disabled={save.isPending}
+                  />
+                </div>
               </div>
-              {editingDesc ? (
+
+              {/* Description: edit (textarea) / preview (markdown) */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Description
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => {
+                      if (editingDesc) {
+                        commitDescription();
+                      } else {
+                        setEditingDesc(true);
+                      }
+                    }}
+                    disabled={save.isPending}
+                  >
+                    {editingDesc ? (
+                      <>
+                        <Eye />
+                        Preview
+                      </>
+                    ) : (
+                      <>
+                        <Pencil />
+                        Edit
+                      </>
+                    )}
+                  </Button>
+                </div>
+                {editingDesc ? (
+                  <Textarea
+                    value={descDraft}
+                    onChange={(event) => setDescDraft(event.target.value)}
+                    onBlur={commitDescription}
+                    placeholder="Add a description… (Markdown supported)"
+                    rows={6}
+                    className="resize-none"
+                    autoFocus
+                    disabled={save.isPending}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditingDesc(true)}
+                    className="min-h-16 w-full rounded-lg border border-dashed px-2.5 py-2 text-left text-sm"
+                  >
+                    {descDraft.trim() ? (
+                      <div className="prose prose-sm dark:prose-invert max-w-none break-words [&_a]:underline [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-base [&_h2]:text-sm [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
+                        <ReactMarkdown>{descDraft}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        No description. Click to add one.
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* Acceptance criteria */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Acceptance criteria
+                </span>
                 <Textarea
-                  value={descDraft}
-                  onChange={(event) => setDescDraft(event.target.value)}
-                  onBlur={commitDescription}
-                  placeholder="Add a description… (Markdown supported)"
-                  rows={6}
+                  value={criteriaDraft}
+                  onChange={(event) => setCriteriaDraft(event.target.value)}
+                  onBlur={commitCriteria}
+                  placeholder="What has to be true for this to be done? (Markdown supported)"
+                  rows={3}
                   className="resize-none"
-                  autoFocus
                   disabled={save.isPending}
+                  aria-label="Acceptance criteria"
                 />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setEditingDesc(true)}
-                  className="min-h-16 w-full rounded-lg border border-dashed px-2.5 py-2 text-left text-sm"
-                >
-                  {descDraft.trim() ? (
-                    <div className="prose prose-sm dark:prose-invert max-w-none break-words [&_a]:underline [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-base [&_h2]:text-sm [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
-                      <ReactMarkdown>{descDraft}</ReactMarkdown>
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      No description. Click to add one.
-                    </span>
-                  )}
-                </button>
-              )}
-            </div>
+              </div>
 
-            {/* Acceptance criteria */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                Acceptance criteria
-              </span>
-              <Textarea
-                value={criteriaDraft}
-                onChange={(event) => setCriteriaDraft(event.target.value)}
-                onBlur={commitCriteria}
-                placeholder="What has to be true for this to be done? (Markdown supported)"
-                rows={3}
-                className="resize-none"
-                disabled={save.isPending}
-                aria-label="Acceptance criteria"
-              />
-            </div>
-
-            {task.type !== "SUBTASK" && task.type !== "EPIC" ? (
-              <SubIssues issue={task} onOpen={onOpenIssue} />
-            ) : null}
+              {task.type !== "SUBTASK" && task.type !== "EPIC" ? (
+                <SubIssues issue={task} onOpen={onOpenIssue} />
+              ) : null}
+            </fieldset>
 
             <IssueComments issueId={task.id} />
           </div>
         ) : null}
 
         <DialogFooter className="sm:justify-between">
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            onClick={handleDelete}
-            disabled={!task}
-          >
-            <Trash2 />
-            Delete issue
-          </Button>
+          {canEdit ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              onClick={handleDelete}
+              disabled={!task}
+            >
+              <Trash2 />
+              Delete issue
+            </Button>
+          ) : (
+            <span />
+          )}
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Done
           </Button>

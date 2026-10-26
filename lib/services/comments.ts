@@ -3,6 +3,7 @@ import { authorize, can } from "@/lib/permissions";
 import { recordActivity } from "@/lib/services/activity";
 import { actingUserId, type Ctx } from "@/lib/services/context";
 import { forbidden, notFound } from "@/lib/services/errors";
+import { projectScope } from "@/lib/services/scope";
 import { commentSchema } from "@/lib/validations/comment";
 
 const commentSelect = {
@@ -16,7 +17,7 @@ const commentSelect = {
 
 async function findIssue(ctx: Ctx, issueId: string) {
   const issue = await db.issue.findFirst({
-    where: { id: issueId, project: { workspaceId: ctx.workspaceId } },
+    where: { id: issueId, project: projectScope(ctx) },
     select: { id: true, projectId: true },
   });
   if (!issue) throw notFound("Issue not found");
@@ -25,7 +26,7 @@ async function findIssue(ctx: Ctx, issueId: string) {
 
 async function findComment(ctx: Ctx, commentId: string) {
   const comment = await db.comment.findFirst({
-    where: { id: commentId, issue: { project: { workspaceId: ctx.workspaceId } } },
+    where: { id: commentId, issue: { project: projectScope(ctx) } },
     select: {
       id: true,
       authorUserId: true,

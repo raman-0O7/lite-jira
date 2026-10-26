@@ -14,6 +14,7 @@ import {
   toCard,
   toFull,
 } from "@/lib/services/issue-shapes";
+import { projectScope } from "@/lib/services/scope";
 import {
   createIssueSchema,
   createSubIssueSchema,
@@ -28,7 +29,7 @@ async function findIssueInWorkspace(
   issueId: string,
 ) {
   const issue = await client.issue.findFirst({
-    where: { id: issueId, project: { workspaceId: ctx.workspaceId } },
+    where: { id: issueId, project: projectScope(ctx) },
     select: {
       id: true,
       number: true,
@@ -82,7 +83,7 @@ async function loadFull(client: Prisma.TransactionClient, issueId: string) {
 export async function getIssue(ctx: Ctx, issueId: string) {
   authorize(ctx, "project.read");
   const issue = await db.issue.findFirst({
-    where: { id: issueId, project: { workspaceId: ctx.workspaceId } },
+    where: { id: issueId, project: projectScope(ctx) },
     select: fullSelect,
   });
   if (!issue) throw notFound("Issue not found");
@@ -96,7 +97,7 @@ export async function getIssueByKey(ctx: Ctx, key: string) {
   const issue = await db.issue.findFirst({
     where: {
       number: parsed.number,
-      project: { workspaceId: ctx.workspaceId, key: parsed.projectKey },
+      project: { ...projectScope(ctx), key: parsed.projectKey },
     },
     select: fullSelect,
   });

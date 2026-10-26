@@ -6,6 +6,7 @@ import { recordActivity } from "@/lib/services/activity";
 import type { Ctx } from "@/lib/services/context";
 import { badRequest, notFound, ServiceError } from "@/lib/services/errors";
 import { cardSelect, toCard } from "@/lib/services/issue-shapes";
+import { projectScope } from "@/lib/services/scope";
 import {
   createProjectSchema,
   projectKeySchema,
@@ -53,7 +54,7 @@ export async function findProjectInWorkspace(
   projectId: string,
 ) {
   const project = await client.project.findFirst({
-    where: { id: projectId, workspaceId: ctx.workspaceId },
+    where: { id: projectId, ...projectScope(ctx) },
     select: { id: true, name: true, key: true },
   });
   if (!project) throw notFound("Project not found");
@@ -69,7 +70,7 @@ export async function getProject(ctx: Ctx, projectId: string) {
 export async function listProjects(ctx: Ctx) {
   authorize(ctx, "project.read");
   const projects = await db.project.findMany({
-    where: { workspaceId: ctx.workspaceId, archivedAt: null },
+    where: { ...projectScope(ctx), archivedAt: null },
     orderBy: { createdAt: "asc" },
     select: summarySelect,
   });
@@ -80,7 +81,7 @@ export async function listProjects(ctx: Ctx) {
 export async function getProjectByKey(ctx: Ctx, key: string) {
   authorize(ctx, "project.read");
   const project = await db.project.findFirst({
-    where: { workspaceId: ctx.workspaceId, key: key.toUpperCase() },
+    where: { ...projectScope(ctx), key: key.toUpperCase() },
     select: { id: true, name: true, key: true },
   });
   if (!project) throw notFound("Project not found");
@@ -91,7 +92,7 @@ export async function getProjectByKey(ctx: Ctx, key: string) {
 export async function getProjectDetail(ctx: Ctx, projectId: string) {
   authorize(ctx, "project.read");
   const project = await db.project.findFirst({
-    where: { id: projectId, workspaceId: ctx.workspaceId },
+    where: { id: projectId, ...projectScope(ctx) },
     select: {
       id: true,
       name: true,
@@ -170,7 +171,7 @@ export async function updateProject(ctx: Ctx, projectId: string, input: unknown)
 
   return db.$transaction(async (tx) => {
     const before = await tx.project.findFirst({
-      where: { id: projectId, workspaceId: ctx.workspaceId },
+      where: { id: projectId, ...projectScope(ctx) },
       select: { name: true, mode: true },
     });
     if (!before) throw notFound("Project not found");

@@ -3,15 +3,17 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { addComment, deleteComment, editComment, listComments } from "@/lib/services/comments";
 import type { Ctx } from "@/lib/services/context";
-import { addMember, makeOwner, makeUser } from "@/tests/factories";
+import { addMember, makeOwner, makeUser, shareProject } from "@/tests/factories";
 import { expectStatus, makeIssue, makeProject } from "@/tests/helpers";
 
 async function setup() {
   const owner = await makeOwner("Owner");
-  const { todo } = await makeProject(owner.ctx);
+  const { project, todo } = await makeProject(owner.ctx);
   const issue = await makeIssue(owner.ctx, todo.id);
   const member = await addMember(owner.workspace.id, await makeUser("Member"), "MEMBER");
-  const guest = await addMember(owner.workspace.id, await makeUser("Guest"), "GUEST");
+  const guestUser = await makeUser("Guest");
+  const guest = await addMember(owner.workspace.id, guestUser, "GUEST");
+  await shareProject(owner.workspace.id, guestUser.id, project.id);
   return { owner, issue, member, guest };
 }
 

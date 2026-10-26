@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { FilterBar } from "@/components/board/FilterBar";
 import { KanbanBoard } from "@/components/board/KanbanBoard";
-import { useWorkspace } from "@/components/providers/workspace-provider";
+import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { useBoardFilters } from "@/hooks/use-board-filters";
 import {
@@ -53,6 +53,7 @@ function deriveLabels(columns: ColumnWithIssues[]): LabelStub[] {
 
 export function BoardView({ projectId }: { projectId: string }) {
   const { slug } = useWorkspace();
+  const canEditColumns = useCan("column.write");
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
@@ -221,10 +222,12 @@ export function BoardView({ projectId }: { projectId: string }) {
             {board.name}
           </h1>
         </div>
-        <Button size="sm" onClick={() => setAddOpen(true)}>
-          <Plus />
-          Add column
-        </Button>
+        {canEditColumns ? (
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus />
+            Add column
+          </Button>
+        ) : null}
       </div>
 
       {/* F05: search + filter bar. Filters are client-side over loaded data. */}

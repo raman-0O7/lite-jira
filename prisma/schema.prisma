@@ -24,6 +24,7 @@ model User {
   assignedIssues Issue[]      @relation("IssueAssignee")
   reportedIssues Issue[]      @relation("IssueReporter")
   comments       Comment[]
+  invitesSent    Invite[]     @relation("InviteSender")
 }
 
 model Session {
@@ -73,22 +74,57 @@ model Workspace {
   memberships Membership[]
   projects    Project[]
   activities  Activity[]
+  invites     Invite[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 }
 
 model Membership {
-  id          String    @id @default(cuid())
-  workspaceId String
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role        Role      @default(MEMBER)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id            String          @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          Role            @default(MEMBER)
+  projectAccess ProjectAccess[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
   @@unique([workspaceId, userId])
   @@index([userId])
+}
+
+// The projects a guest can see. Members and above see every project.
+model ProjectAccess {
+  id           String     @id @default(cuid())
+  projectId    String
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  membershipId String
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([projectId, membershipId])
+  @@index([membershipId])
+}
+
+// email = null is a link invite. Only the token's SHA-256 is stored.
+model Invite {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email        String?
+  role         Role
+  projectIds   String[]  @default([])
+  tokenHash    String    @unique
+  invitedById  String?
+  invitedBy    User?     @relation("InviteSender", fields: [invitedById], references: [id], onDelete: SetNull)
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  acceptedById String?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
 }
 
 enum Role {
@@ -128,22 +164,23 @@ enum ActorType {
 
 // ---------- Projects & issues ----------
 model Project {
-  id           String      @id @default(cuid())
+  id           String          @id @default(cuid())
   name         String
   // Issue key prefix ("WEB" → WEB-42). Unique per workspace, immutable.
   key          String
   // Last issue number handed out; incremented atomically, never reused.
-  issueCounter Int         @default(0)
-  mode         ProjectMode @default(KANBAN)
+  issueCounter Int             @default(0)
+  mode         ProjectMode     @default(KANBAN)
   workspaceId  String
-  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   columns      Column[]
   labels       Label[]
   issues       Issue[]
   sprints      Sprint[]
+  access       ProjectAccess[]
   archivedAt   DateTime?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   @@unique([workspaceId, key])
   @@index([workspaceId])

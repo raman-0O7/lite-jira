@@ -6,6 +6,9 @@ export type Member = {
   email: string;
   image: string | null;
   role: "OWNER" | "ADMIN" | "MEMBER" | "GUEST";
+  joinedAt: string;
+  /** A guest's shared projects; only filled in for callers who manage members. */
+  projectIds: string[];
 };
 
 export const memberKeys = {

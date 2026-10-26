@@ -4,16 +4,18 @@ import { redirect } from "next/navigation";
 import { AuthCard } from "@/components/auth/auth-card";
 import { LoginForm } from "@/components/auth/login-form";
 import { getSession } from "@/lib/auth";
+import { safeNext, withNext } from "@/lib/safe-next";
 
 export const metadata: Metadata = {
   title: "Sign in · Kanso",
 };
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: PageProps<"/login">) {
+  const next = safeNext((await searchParams).next);
   // Authenticated users should never see the login page.
   const session = await getSession();
   if (session) {
-    redirect("/projects");
+    redirect(next);
   }
 
   return (
@@ -22,9 +24,9 @@ export default async function LoginPage() {
       description="Welcome back. Enter your details to continue."
       footerPrompt="Don't have an account?"
       footerLinkLabel="Sign up"
-      footerLinkHref="/signup"
+      footerLinkHref={withNext("/signup", next)}
     >
-      <LoginForm />
+      <LoginForm next={next} />
     </AuthCard>
   );
 }

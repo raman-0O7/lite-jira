@@ -16,9 +16,7 @@ import { notFound, unauthorized } from "@/lib/services/errors";
  */
 
 async function requireUserId() {
-  const session = await getSession();
-  if (!session) throw unauthorized();
-  return session.user.id;
+  return (await requireApiUser()).id;
 }
 
 async function ctxFor(
@@ -61,3 +59,13 @@ export const ctxForComment = (commentId: string) =>
     },
     "Comment not found",
   );
+
+export const ctxForInvite = (inviteId: string) =>
+  ctxFor({ invites: { some: { id: inviteId } } }, "Invite not found");
+
+/** The signed-in user (id and email), or a 401. For routes that act before a Ctx exists. */
+export async function requireApiUser() {
+  const session = await getSession();
+  if (!session) throw unauthorized();
+  return session.user;
+}

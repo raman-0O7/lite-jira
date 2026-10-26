@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 
-import { getSession } from "@/lib/auth";
-import { apiRoute } from "@/lib/api/handler";
-import { unauthorized } from "@/lib/services/errors";
-import { listWorkspacesForUser } from "@/lib/services/workspaces";
+import { requireApiUser } from "@/lib/api/context";
+import { apiRoute, readJson } from "@/lib/api/handler";
+import { createWorkspace, listWorkspacesForUser } from "@/lib/services/workspaces";
 
 // GET /api/workspaces → the workspaces the current user belongs to, with roles.
 export const GET = apiRoute(async () => {
-  const session = await getSession();
-  if (!session) throw unauthorized();
-  const workspaces = await listWorkspacesForUser(session.user.id);
+  const user = await requireApiUser();
+  const workspaces = await listWorkspacesForUser(user.id);
   return NextResponse.json({ workspaces });
+});
+
+// POST /api/workspaces {name, slug?} → create a team workspace owned by the caller.
+export const POST = apiRoute(async (request: Request) => {
+  const user = await requireApiUser();
+  const workspace = await createWorkspace(user.id, await readJson(request));
+  return NextResponse.json({ workspace }, { status: 201 });
 });
