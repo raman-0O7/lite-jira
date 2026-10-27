@@ -195,3 +195,13 @@ export async function setMemberProjects(ctx: Ctx, userId: string, input: unknown
     return { userId, projectIds };
   });
 }
+
+/** Name and email of a user, for "who am I" answers to token-based clients. */
+export async function getProfile(userId: string) {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true },
+  });
+  if (!user) throw notFound("User not found");
+  return user;
+}

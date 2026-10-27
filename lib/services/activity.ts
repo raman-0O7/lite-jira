@@ -33,7 +33,9 @@ export type ActivityAction =
   | "member.role_changed"
   | "member.removed"
   | "member.left"
-  | "member.projects_changed";
+  | "member.projects_changed"
+  | "api_token.created"
+  | "api_token.revoked";
 
 type ActivityEntry = {
   action: ActivityAction;

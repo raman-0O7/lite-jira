@@ -93,12 +93,16 @@ app/
   (app)/[workspace]/projects        # projects list (workspace-scoped)
   (app)/[workspace]/projects/[key]  # project board (Kanban), ?issue=KEY opens an issue
   (app)/[workspace]/issues/[key]    # issue link (WEB-42) → its board
-  (app)/[workspace]/settings        # members, invites, guest access; rename/leave/delete
+  (app)/[workspace]/settings        # members, invites, guest access; rename/leave/delete; API & MCP
+  (auth)/oauth/consent              # OAuth consent for MCP clients
   (app)/projects, boards            # post-login landing + legacy redirects
   api/                              # thin route handlers over lib/services
+  api/mcp                           # remote MCP server (OAuth or `kanso_` API token)
+  .well-known/                      # OAuth discovery, forwarded to Better Auth
 lib/
   services/      # all business logic: authorize → validate → write + Activity
   query/         # issue query language (assignee:me type:bug …)
+  mcp/           # MCP tools, resources, prompts; name resolution; rate limit
   api/           # client fetchers + route ctx/handler helpers
   permissions.ts # role matrix + agent cap
   validations/   # Zod schemas
@@ -119,5 +123,10 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
 - **Route protection** is server-side in `app/(app)/layout.tsx` (`requireUser()`),
   not middleware. Better Auth validates the session against the database, which
   is reliable in a Server Component but not in Next's middleware runtime.
+- **MCP server** at `/api/mcp`: clients sign in with OAuth 2.1 (Better Auth
+  `mcp()` + CIMD, with dynamic registration as a fallback) or send a personal
+  API token (`Authorization: Bearer kanso_…`, created in Settings → API & MCP).
+  Both act as the user, capped by the credential. See
+  [`docs/features/10-mcp-server.md`](docs/features/10-mcp-server.md).
 - **Out of scope** (future work): password reset, email verification, profile
   editing.

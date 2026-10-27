@@ -25,10 +25,12 @@ export type Action =
   | "members.manage"
   | "integrations.manage"
   | "workspace.update"
-  | "workspace.delete";
+  | "workspace.delete"
+  | "token.manage";
 
-// Guests can read and comment (PLAN-v2 §4); they can't change issues.
-const READ: Action[] = ["workspace.read", "project.read", "comment.write"];
+// Guests can read and comment (PLAN-v2 §4); they can't change issues. Everyone
+// manages their own API tokens.
+const READ: Action[] = ["workspace.read", "project.read", "comment.write", "token.manage"];
 const WRITE: Action[] = [
   "project.create",
   "project.update",
@@ -51,7 +53,10 @@ const ROLE_ACTIONS: Record<Role, ReadonlySet<Action>> = {
   GUEST: new Set(READ),
 };
 
-/** Actions an agent may never perform, whatever its on-behalf-of user's role. */
+/**
+ * Actions an agent — or any token-based client (MCP, API token) — may never
+ * perform, whatever the role behind it.
+ */
 const AGENT_NEVER: ReadonlySet<Action> = new Set([
   "project.delete",
   "comment.moderate",
@@ -59,13 +64,25 @@ const AGENT_NEVER: ReadonlySet<Action> = new Set([
   "integrations.manage",
   "workspace.update",
   "workspace.delete",
+  // A token can't mint or revoke tokens.
+  "token.manage",
 ]);
 
-export function can(ctx: Pick<Ctx, "actor" | "role">, action: Action): boolean {
-  if (ctx.actor.type === "agent" && AGENT_NEVER.has(action)) return false;
+/** What a read-only credential can still do. */
+const READ_ONLY: ReadonlySet<Action> = new Set(["workspace.read", "project.read"]);
+
+type AuthzCtx = Pick<Ctx, "actor" | "role" | "limits">;
+
+export function can(ctx: AuthzCtx, action: Action): boolean {
+  if ((ctx.actor.type === "agent" || ctx.limits) && AGENT_NEVER.has(action)) return false;
+  if (ctx.limits) {
+    if (!ctx.limits.write && !READ_ONLY.has(action)) return false;
+    // A project-limited token can't create projects it then couldn't see.
+    if (ctx.limits.projectIds && action === "project.create") return false;
+  }
   return ROLE_ACTIONS[ctx.role].has(action);
 }
 
-export function authorize(ctx: Pick<Ctx, "actor" | "role">, action: Action) {
+export function authorize(ctx: AuthzCtx, action: Action) {
   if (!can(ctx, action)) throw forbidden();
 }

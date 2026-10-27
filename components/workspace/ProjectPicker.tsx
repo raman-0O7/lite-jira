@@ -12,16 +12,19 @@ export function ProjectPicker({
   value,
   onChange,
   disabled,
+  emptyLabel = "No projects",
 }: {
   projects: Pick<ProjectSummary, "id" | "name" | "key">[];
   value: string[];
   onChange: (projectIds: string[]) => void;
   disabled?: boolean;
+  /** Button text when nothing is chosen. */
+  emptyLabel?: string;
 }) {
   const selected = new Set(value);
   const label =
     value.length === 0
-      ? "No projects"
+      ? emptyLabel
       : value.length === 1
         ? (projects.find((p) => p.id === value[0])?.name ?? "1 project")
         : `${value.length} projects`;

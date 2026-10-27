@@ -50,3 +50,37 @@ describe("agent cap", () => {
     expect(can({ actor: agent, role: "GUEST" }, "issue.write")).toBe(false);
   });
 });
+
+describe("credential limits (tokens)", () => {
+  const readOnly = { write: false, projectIds: null };
+  const writer = { write: true, projectIds: null };
+  const limited = { write: true, projectIds: ["p1"] };
+
+  it("lets read-only credentials read and nothing else", () => {
+    expect(can({ actor: user, role: "OWNER", limits: readOnly }, "project.read")).toBe(true);
+    expect(can({ actor: user, role: "OWNER", limits: readOnly }, "workspace.read")).toBe(true);
+    for (const action of ["issue.write", "comment.write", "project.create"] as const) {
+      expect(can({ actor: user, role: "OWNER", limits: readOnly }, action), action).toBe(false);
+    }
+  });
+
+  it("never exceeds the role and never does what agents may not", () => {
+    expect(can({ actor: user, role: "GUEST", limits: writer }, "issue.write")).toBe(false);
+    expect(can({ actor: user, role: "GUEST", limits: writer }, "comment.write")).toBe(true);
+    expect(can({ actor: user, role: "MEMBER", limits: writer }, "issue.write")).toBe(true);
+    for (const action of ["project.delete", "members.manage", "workspace.delete", "token.manage"] as const) {
+      expect(can({ actor: user, role: "OWNER", limits: writer }, action), action).toBe(false);
+    }
+  });
+
+  it("forbids creating projects with a project-limited credential", () => {
+    expect(can({ actor: user, role: "OWNER", limits: limited }, "project.create")).toBe(false);
+    expect(can({ actor: user, role: "OWNER", limits: limited }, "issue.write")).toBe(true);
+  });
+
+  it("lets every role manage its own tokens from the web", () => {
+    for (const role of ["OWNER", "ADMIN", "MEMBER", "GUEST"] as const) {
+      expect(can({ actor: user, role }, "token.manage"), role).toBe(true);
+    }
+  });
+});

@@ -4,17 +4,20 @@ import { redirect } from "next/navigation";
 import { AuthCard } from "@/components/auth/auth-card";
 import { LoginForm } from "@/components/auth/login-form";
 import { getSession } from "@/lib/auth";
-import { safeNext, withNext } from "@/lib/safe-next";
+import { oauthQuery, safeNext, withNext } from "@/lib/safe-next";
 
 export const metadata: Metadata = {
   title: "Sign in",
 };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
-  const next = safeNext((await searchParams).next);
+  const params = await searchParams;
+  const next = safeNext(params.next);
+  // Mid-OAuth (an MCP client asked to connect), the flow resumes after sign-in.
+  const oauth = oauthQuery(params);
   // Authenticated users should never see the login page.
   const session = await getSession();
-  if (session) {
+  if (session && !oauth) {
     redirect(next);
   }
 
@@ -24,7 +27,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       description="Welcome back. Enter your details to continue."
       footerPrompt="Don't have an account?"
       footerLinkLabel="Sign up"
-      footerLinkHref={withNext("/signup", next)}
+      footerLinkHref={oauth ? `/signup?${oauth}` : withNext("/signup", next)}
     >
       <LoginForm next={next} />
     </AuthCard>

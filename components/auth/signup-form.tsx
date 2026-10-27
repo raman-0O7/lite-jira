@@ -44,7 +44,7 @@ export function SignupForm({ next }: { next: string }) {
     setIsLoading(true);
     // signUp.email creates the account and signs the user in (sets the session
     // cookie) in a single call.
-    const { error } = await signUp.email({
+    const { data, error } = await signUp.email({
       name: parsed.data.name,
       email: parsed.data.email,
       password: parsed.data.password,
@@ -57,6 +57,10 @@ export function SignupForm({ next }: { next: string }) {
       );
       return;
     }
+
+    // Mid-OAuth, the response carries the next authorization step and the
+    // auth client navigates there itself.
+    if (data && "redirect" in data && data.redirect) return;
 
     router.push(next);
     router.refresh();

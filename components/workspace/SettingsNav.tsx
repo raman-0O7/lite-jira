@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "members", label: "Members" },
   { href: "general", label: "General" },
+  { href: "api", label: "API & MCP" },
 ] as const;
 
 export function SettingsNav({ slug }: { slug: string }) {

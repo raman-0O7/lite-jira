@@ -22,3 +22,19 @@ export function safeNext(next: string | string[] | undefined | null): string {
 export function withNext(path: string, next: string): string {
   return next === "/projects" ? path : `${path}?next=${encodeURIComponent(next)}`;
 }
+
+/**
+ * The signed OAuth authorize query (`…&sig=…`) Better Auth adds when it sends
+ * someone to /login or /signup mid-authorization, or null. Kept verbatim so
+ * links between the two pages carry it and the flow resumes after sign-in.
+ */
+export function oauthQuery(params: Record<string, string | string[] | undefined>): string | null {
+  if (typeof params.sig !== "string") return null;
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    for (const v of Array.isArray(value) ? value : value === undefined ? [] : [value]) {
+      query.append(key, v);
+    }
+  }
+  return query.toString();
+}

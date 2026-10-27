@@ -31,6 +31,20 @@ export type Ctx = {
   workspaceId: string;
   role: Role;
   via: Via;
+  /**
+   * Set when the request carries a token (MCP OAuth or API token): the
+   * credential's own cap on top of the role. Absent for web sessions.
+   */
+  limits?: CredentialLimits;
+};
+
+/**
+ * What a token may do, at most. `write: false` → read-only; `projectIds` →
+ * only those projects are visible (null = every project the role can see).
+ */
+export type CredentialLimits = {
+  write: boolean;
+  projectIds: string[] | null;
 };
 
 export function userCtx(

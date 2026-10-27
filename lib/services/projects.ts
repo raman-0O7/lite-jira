@@ -54,7 +54,7 @@ export async function findProjectInWorkspace(
   projectId: string,
 ) {
   const project = await client.project.findFirst({
-    where: { id: projectId, ...projectScope(ctx) },
+    where: { AND: [{ id: projectId }, projectScope(ctx)] },
     select: { id: true, name: true, key: true },
   });
   if (!project) throw notFound("Project not found");
@@ -88,11 +88,41 @@ export async function getProjectByKey(ctx: Ctx, key: string) {
   return project;
 }
 
+/**
+ * A project by key with its ordered columns (and categories), labels, and how
+ * many issues sit in each column — what MCP clients need to name things.
+ */
+export async function getProjectWorkflow(ctx: Ctx, key: string) {
+  authorize(ctx, "project.read");
+  const project = await db.project.findFirst({
+    where: { ...projectScope(ctx), key: key.trim().toUpperCase(), archivedAt: null },
+    select: {
+      id: true,
+      name: true,
+      key: true,
+      mode: true,
+      columns: {
+        orderBy: { position: "asc" },
+        select: { id: true, name: true, category: true, _count: { select: { issues: true } } },
+      },
+      labels: { orderBy: { createdAt: "asc" }, select: { id: true, name: true, color: true } },
+    },
+  });
+  if (!project) throw notFound("Project not found");
+  return {
+    ...project,
+    columns: project.columns.map(({ _count, ...column }) => ({
+      ...column,
+      issueCount: _count.issues,
+    })),
+  };
+}
+
 /** The project with its ordered columns and their ordered issue cards. */
 export async function getProjectDetail(ctx: Ctx, projectId: string) {
   authorize(ctx, "project.read");
   const project = await db.project.findFirst({
-    where: { id: projectId, ...projectScope(ctx) },
+    where: { AND: [{ id: projectId }, projectScope(ctx)] },
     select: {
       id: true,
       name: true,
@@ -171,7 +201,7 @@ export async function updateProject(ctx: Ctx, projectId: string, input: unknown)
 
   return db.$transaction(async (tx) => {
     const before = await tx.project.findFirst({
-      where: { id: projectId, ...projectScope(ctx) },
+      where: { AND: [{ id: projectId }, projectScope(ctx)] },
       select: { name: true, mode: true },
     });
     if (!before) throw notFound("Project not found");

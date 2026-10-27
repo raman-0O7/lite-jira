@@ -1,10 +1,15 @@
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
+import { mcp } from "@better-auth/mcp";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
+import { jwt } from "better-auth/plugins";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
+import { MCP_RESOURCE, MCP_SCOPES, OAUTH_SCOPES } from "@/lib/mcp/config";
 import { ensurePersonalWorkspace } from "@/lib/services/workspaces";
 
 const githubClientId = process.env.GITHUB_CLIENT_ID;
@@ -41,8 +46,32 @@ export const auth = betterAuth({
       },
     },
   },
-  // nextCookies must be the last plugin so it can set cookies from server actions.
-  plugins: [nextCookies()],
+  // The JWT plugin's own /token endpoint is not used; OAuth clients get tokens
+  // from /oauth2/token.
+  disabledPaths: ["/token"],
+  plugins: [
+    // Signs OAuth access tokens; /api/mcp verifies them against /api/auth/jwks.
+    jwt(),
+    // OAuth 2.1 authorization server for MCP clients (docs/features/10-mcp-server.md).
+    mcp({
+      resource: MCP_RESOURCE,
+      loginPage: "/login",
+      consentPage: "/oauth/consent",
+      scopes: [...OAUTH_SCOPES],
+      // Prisma can't store a resource without an explicit scope list.
+      resources: [{ identifier: MCP_RESOURCE, allowedScopes: [...OAUTH_SCOPES] }],
+      clientRegistrationDefaultScopes: [...OAUTH_SCOPES],
+      // Client ID Metadata Documents are the MCP default; dynamic registration
+      // stays on for clients that don't support them yet (Cursor, older CLIs).
+      allowDynamicClientRegistration: true,
+      allowUnauthenticatedClientRegistration: true,
+      clientRegistrationDefaultApplicationType: "infer",
+      scopeExpirations: { [MCP_SCOPES.write]: "1h" },
+    }),
+    cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
+    // nextCookies must be the last plugin so it can set cookies from server actions.
+    nextCookies(),
+  ],
 });
 
 export type Session = typeof auth.$Infer.Session;

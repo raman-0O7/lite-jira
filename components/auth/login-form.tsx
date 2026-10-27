@@ -41,7 +41,7 @@ export function LoginForm({ next }: { next: string }) {
     }
 
     setIsLoading(true);
-    const { error } = await signIn.email({
+    const { data, error } = await signIn.email({
       email: parsed.data.email,
       password: parsed.data.password,
     });
@@ -51,6 +51,10 @@ export function LoginForm({ next }: { next: string }) {
       toast.error(error.message ?? "Invalid email or password.");
       return;
     }
+
+    // Mid-OAuth, the response carries the next authorization step and the
+    // auth client navigates there itself.
+    if (data && "redirect" in data && data.redirect) return;
 
     // Full navigation so the protected layout re-reads the new session cookie.
     router.push(next);

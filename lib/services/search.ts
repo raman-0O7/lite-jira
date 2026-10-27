@@ -9,7 +9,7 @@ import { projectScope } from "@/lib/services/scope";
 const LIMIT = 50;
 
 /** Search the ctx workspace's issues with the query language; newest activity first. */
-export async function searchIssues(ctx: Ctx, query: string) {
+export async function searchIssues(ctx: Ctx, query: string, { limit = LIMIT } = {}) {
   authorize(ctx, "project.read");
   let filter;
   try {
@@ -27,8 +27,12 @@ export async function searchIssues(ctx: Ctx, query: string) {
       ],
     },
     orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
-    take: LIMIT,
-    select: { ...cardSelect, project: { select: { id: true, key: true, name: true } } },
+    take: Math.min(Math.max(limit, 1), LIMIT),
+    select: {
+      ...cardSelect,
+      column: { select: { name: true, category: true } },
+      project: { select: { id: true, key: true, name: true } },
+    },
   });
   return issues.map(({ project, ...issue }) => ({
     ...toCard(project.key, issue),
