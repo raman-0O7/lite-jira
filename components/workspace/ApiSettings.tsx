@@ -48,7 +48,7 @@ const EXPIRY_CHOICES = [
   { value: "never", label: "Never" },
 ] as const;
 
-async function copy(text: string, what: string) {
+export async function copy(text: string, what: string) {
   try {
     await navigator.clipboard.writeText(text);
     toast.success(`${what} copied.`);
@@ -71,7 +71,7 @@ export function ApiSettings({ mcpUrl }: { mcpUrl: string }) {
   );
 }
 
-function Snippet({ label, text }: { label: string; text: string }) {
+export function Snippet({ label, text }: { label: string; text: string }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>

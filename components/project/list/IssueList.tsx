@@ -7,6 +7,7 @@ import { Avatar } from "@/components/icons/Avatar";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { PriorityIcon } from "@/components/icons/PriorityIcon";
 import { StatusIcon } from "@/components/icons/StatusIcon";
+import { AgentAvatar, cardRunStatus, RunStatusBadge } from "@/components/issue/AgentBadges";
 import { DueDate } from "@/components/issue/DueDate";
 import { LabelChip } from "@/components/issue/LabelChip";
 import { useCan } from "@/components/providers/workspace-provider";
@@ -99,6 +100,7 @@ export function IssueList({
             <ul>
               {issues.map((issue) => {
                 const selected = issue.id === current;
+                const runStatus = cardRunStatus(issue.agentRuns);
                 return (
                   <li key={issue.id}>
                     <button
@@ -133,8 +135,19 @@ export function IssueList({
                         </span>
                       ) : null}
                       {issue.dueDate ? <DueDate value={issue.dueDate} className="hidden sm:inline-flex" /> : null}
+                      {runStatus ? (
+                        <RunStatusBadge
+                          status={runStatus}
+                          name={issue.assigneeAgent?.name}
+                          className="hidden sm:inline-flex"
+                        />
+                      ) : null}
                       <span className="flex w-5 shrink-0 justify-end">
-                        {issue.assignee ? <Avatar person={issue.assignee} /> : null}
+                        {issue.assigneeAgent ? (
+                          <AgentAvatar name={issue.assigneeAgent.name} />
+                        ) : issue.assignee ? (
+                          <Avatar person={issue.assignee} />
+                        ) : null}
                       </span>
                     </button>
                   </li>

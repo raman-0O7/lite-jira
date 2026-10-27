@@ -3,6 +3,7 @@
  * columns. Issue cards live inside the project detail cache.
  */
 
+import type { AgentRunStatus } from "@/lib/api/agents";
 import { request } from "@/lib/api/http";
 
 // ---------- Shared types ----------
@@ -59,6 +60,19 @@ export type IssueCard = {
   source?: "NATIVE" | "GITHUB";
   githubLink?: GitHubIssueStub | null;
   pullRequests?: PullRequestStub[];
+  // Agents (Feature 12): the assigned agent and its latest run.
+  assigneeAgent?: AgentStub | null;
+  agentRuns?: AgentRunStub[];
+};
+
+export type AgentStub = { id: string; name: string; kind: "CLAUDE_CODE" | "MCP" };
+
+export type AgentRunStub = {
+  id: string;
+  status: AgentRunStatus;
+  sessionUrl: string | null;
+  prUrl: string | null;
+  error: string | null;
 };
 
 export type ColumnWithIssues = {

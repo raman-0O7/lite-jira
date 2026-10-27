@@ -450,13 +450,22 @@ export async function importGitHubIssue(
   });
 }
 
-/** Move an issue to the first column of a category, unless it's already in one. */
-export async function moveToCategory(ctx: Ctx, issueId: string, category: ColumnCategory) {
+/**
+ * Move an issue to the first column of a category, unless it's already in one
+ * (or, with `onlyFrom`, unless it's in a column of another category).
+ */
+export async function moveToCategory(
+  ctx: Ctx,
+  issueId: string,
+  category: ColumnCategory,
+  onlyFrom?: ColumnCategory[],
+) {
   const issue = await db.issue.findUnique({
     where: { id: issueId },
     select: { projectId: true, column: { select: { category: true } } },
   });
   if (!issue || issue.column.category === category) return false;
+  if (onlyFrom && !onlyFrom.includes(issue.column.category)) return false;
   const column = await firstColumn(issue.projectId, category);
   if (!column) return false;
   await moveIssue(ctx, { issueId, toColumnId: column.id, toPosition: 1_000_000 });

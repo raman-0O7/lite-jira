@@ -93,18 +93,20 @@ app/
   (app)/[workspace]/projects        # projects list (workspace-scoped)
   (app)/[workspace]/projects/[key]  # project board (Kanban), ?issue=KEY opens an issue
   (app)/[workspace]/issues/[key]    # issue link (WEB-42) → its board
-  (app)/[workspace]/settings        # members, invites, guest access; rename/leave/delete; integrations; API & MCP
+  (app)/[workspace]/settings        # members, invites, guest access; rename/leave/delete; integrations; agents; API & MCP
   (auth)/oauth/consent              # OAuth consent for MCP clients
   (app)/projects, boards            # post-login landing + legacy redirects
   api/                              # thin route handlers over lib/services
   api/mcp                           # remote MCP server (OAuth or `kanso_` API token)
   api/github/webhooks, callback     # GitHub App webhooks and install/link redirect
+  api/cron/agent-watchdog           # fails agent runs nobody claimed (Bearer CRON_SECRET)
   .well-known/                      # OAuth discovery, forwarded to Better Auth
 lib/
   services/      # all business logic: authorize → validate → write + Activity
   query/         # issue query language (assignee:me type:bug …)
   mcp/           # MCP tools, resources, prompts; name resolution; rate limit
   github/        # GitHub App client, webhook handlers, status sync
+  agents/        # agent dispatcher, Claude Code routine + webhook adapters, run lifecycle
   api/           # client fetchers + route ctx/handler helpers
   permissions.ts # role matrix + agent cap
   validations/   # Zod schemas
@@ -134,5 +136,13 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   assigned issues, sync status both ways, and link PRs with checks. Setup:
   [`docs/github-app.md`](docs/github-app.md); spec:
   [`docs/features/11-github-app.md`](docs/features/11-github-app.md).
+- **Agents**: Settings → Agents adds Claude Code routines (fired with the
+  routine's own trigger token; Kanso never handles Claude.ai credentials) or
+  self-hosted MCP agents (agent tokens, optional signed webhook). Assigning an
+  issue to an agent dispatches a run; the agent claims it over MCP, opens a PR,
+  and a person merges. Agent secrets are encrypted with `ENCRYPTION_KEY`. Point
+  a scheduler at `GET /api/cron/agent-watchdog` with `CRON_SECRET` to fail runs
+  nobody claimed within `AGENT_CLAIM_TIMEOUT_MINUTES` (it also runs whenever
+  runs are read). Spec: [`docs/features/12-agents.md`](docs/features/12-agents.md).
 - **Out of scope** (future work): password reset, email verification, profile
   editing.

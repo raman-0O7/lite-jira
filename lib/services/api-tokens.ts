@@ -64,7 +64,7 @@ const active = () => ({
 export async function listApiTokens(ctx: Ctx) {
   authorize(ctx, "token.manage");
   const tokens = await db.apiToken.findMany({
-    where: { workspaceId: ctx.workspaceId, userId: actingUserId(ctx) ?? "", revokedAt: null },
+    where: { workspaceId: ctx.workspaceId, userId: actingUserId(ctx) ?? "", agentId: null, revokedAt: null },
     orderBy: { createdAt: "desc" },
     select: tokenSelect,
   });
@@ -80,7 +80,7 @@ export async function createApiToken(ctx: Ctx, input: unknown) {
 
   return db.$transaction(async (tx) => {
     const count = await tx.apiToken.count({
-      where: { workspaceId: ctx.workspaceId, userId, ...active() },
+      where: { workspaceId: ctx.workspaceId, userId, agentId: null, ...active() },
     });
     if (count >= MAX_ACTIVE) {
       throw new ServiceError(409, `You can have at most ${MAX_ACTIVE} active tokens here.`);
@@ -124,6 +124,7 @@ export async function revokeApiToken(ctx: Ctx, tokenId: string) {
         id: tokenId,
         workspaceId: ctx.workspaceId,
         userId: actingUserId(ctx) ?? "",
+        agentId: null,
         revokedAt: null,
       },
       data: { revokedAt: new Date() },
@@ -152,9 +153,12 @@ export async function ctxForApiToken(secret: string): Promise<Ctx | null> {
       expiresAt: true,
       revokedAt: true,
       lastUsedAt: true,
+      agent: { select: { id: true, enabled: true } },
     },
   });
   if (!token || token.revokedAt) return null;
+  // An agent's token stops working the moment the agent is disabled.
+  if (token.agent && !token.agent.enabled) return null;
   if (token.expiresAt && token.expiresAt.getTime() <= Date.now()) return null;
 
   const membership = await db.membership.findUnique({
@@ -168,7 +172,9 @@ export async function ctxForApiToken(secret: string): Promise<Ctx | null> {
   }
 
   return {
-    actor: { type: "user", userId: token.userId },
+    actor: token.agent
+      ? { type: "agent", agentId: token.agent.id, onBehalfOf: token.userId }
+      : { type: "user", userId: token.userId },
     workspaceId: token.workspaceId,
     role: membership.role,
     via: "api_token",
@@ -177,4 +183,28 @@ export async function ctxForApiToken(secret: string): Promise<Ctx | null> {
       projectIds: token.projectIds.length > 0 ? token.projectIds : null,
     },
   };
+}
+
+/**
+ * Mint a write token for an agent (Feature 12), held by the agent's owner.
+ * Requests with it act as the agent. Returns the secret once.
+ */
+export async function mintAgentToken(
+  tx: Prisma.TransactionClient,
+  agent: { id: string; workspaceId: string; ownerUserId: string; name: string },
+) {
+  const secret = `${API_TOKEN_PREFIX}${randomBase62(40)}`;
+  const token = await tx.apiToken.create({
+    data: {
+      userId: agent.ownerUserId,
+      workspaceId: agent.workspaceId,
+      agentId: agent.id,
+      name: `Agent: ${agent.name}`.slice(0, 100),
+      prefix: secret.slice(0, API_TOKEN_PREFIX.length + 6),
+      tokenHash: hashApiToken(secret),
+      access: "WRITE",
+    },
+    select: { id: true, prefix: true, createdAt: true },
+  });
+  return { token, secret };
 }

@@ -40,7 +40,18 @@ export type ActivityAction =
   | "github.uninstalled"
   | "github.repo_connected"
   | "github.repo_updated"
-  | "github.repo_disconnected";
+  | "github.repo_disconnected"
+  | "agent.created"
+  | "agent.updated"
+  | "agent.deleted"
+  | "agent.token_created"
+  | "agent.assigned"
+  | "agent.claimed"
+  | "agent.progress"
+  | "agent.pr_opened"
+  | "agent.done"
+  | "agent.failed"
+  | "agent.released";
 
 type ActivityEntry = {
   action: ActivityAction;
@@ -91,7 +102,18 @@ export async function recordActivity(
 // ---------- Issue timeline ----------
 
 /** The actions an issue's timeline shows; comments render from their own rows. */
-const ISSUE_TIMELINE_ACTIONS = ["issue.created", "issue.updated", "issue.moved"];
+const ISSUE_TIMELINE_ACTIONS = [
+  "issue.created",
+  "issue.updated",
+  "issue.moved",
+  "agent.assigned",
+  "agent.claimed",
+  "agent.progress",
+  "agent.pr_opened",
+  "agent.done",
+  "agent.failed",
+  "agent.released",
+];
 
 type Person = { id: string; name: string; image: string | null };
 
@@ -100,6 +122,7 @@ export type IssueActivityRefs = {
   columns: Record<string, { id: string; name: string; category: ColumnCategory }>;
   labels: Record<string, { id: string; name: string; color: string }>;
   issues: Record<string, { id: string; key: string; title: string }>;
+  agents: Record<string, { id: string; name: string; kind: string }>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -142,9 +165,12 @@ export async function listIssueActivity(ctx: Ctx, issueId: string) {
   const columns = new Set<string>();
   const labels = new Set<string>();
   const issues = new Set<string>();
+  const agents = new Set<string>();
   for (const row of rows) {
     if (row.actorUserId) people.add(row.actorUserId);
+    if (row.actorAgentId) agents.add(row.actorAgentId);
     const data = isRecord(row.data) ? row.data : {};
+    strings(data.agentId).forEach((id) => agents.add(id));
     strings(data.assigneeUserId).forEach((id) => people.add(id));
     strings(data.columnId, data.fromColumnId, data.toColumnId).forEach((id) => columns.add(id));
     strings(data.parentId).forEach((id) => issues.add(id));
@@ -153,11 +179,12 @@ export async function listIssueActivity(ctx: Ctx, issueId: string) {
       if (!isRecord(value)) continue;
       if (field === "assigneeUserId") strings(value.from, value.to).forEach((id) => people.add(id));
       if (field === "epicId") strings(value.from, value.to).forEach((id) => issues.add(id));
+      if (field === "assigneeAgentId") strings(value.from, value.to).forEach((id) => agents.add(id));
       if (field === "labels") strings(value.added, value.removed).forEach((id) => labels.add(id));
     }
   }
 
-  const [personRows, columnRows, labelRows, issueRows] = await Promise.all([
+  const [personRows, columnRows, labelRows, issueRows, agentRows] = await Promise.all([
     people.size
       ? db.user.findMany({ where: { id: { in: [...people] } }, select: { id: true, name: true, image: true } })
       : [],
@@ -179,6 +206,12 @@ export async function listIssueActivity(ctx: Ctx, issueId: string) {
           select: { id: true, number: true, title: true },
         })
       : [],
+    agents.size
+      ? db.agent.findMany({
+          where: { id: { in: [...agents] }, workspaceId: ctx.workspaceId },
+          select: { id: true, name: true, kind: true },
+        })
+      : [],
   ]);
 
   const refs: IssueActivityRefs = {
@@ -188,6 +221,7 @@ export async function listIssueActivity(ctx: Ctx, issueId: string) {
     issues: Object.fromEntries(
       issueRows.map((i) => [i.id, { id: i.id, key: `${issue.project.key}-${i.number}`, title: i.title }]),
     ),
+    agents: Object.fromEntries(agentRows.map((a) => [a.id, a])),
   };
 
   const entries = rows.map((row) => ({
@@ -196,6 +230,7 @@ export async function listIssueActivity(ctx: Ctx, issueId: string) {
     createdAt: row.createdAt,
     actorType: row.actorType,
     actorAgentId: row.actorAgentId,
+    agent: row.actorAgentId ? (refs.agents[row.actorAgentId] ?? null) : null,
     actor: row.actorUserId ? (refs.people[row.actorUserId] ?? null) : null,
     data: isRecord(row.data) ? row.data : {},
   }));

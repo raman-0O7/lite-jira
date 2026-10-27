@@ -9,6 +9,7 @@ import { Avatar } from "@/components/icons/Avatar";
 import { GitHubMark } from "@/components/icons/GitHubMark";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { PriorityIcon } from "@/components/icons/PriorityIcon";
+import { AgentAvatar, cardRunStatus, RunStatusBadge } from "@/components/issue/AgentBadges";
 import { DueDate } from "@/components/issue/DueDate";
 import { PullRequestBadge } from "@/components/issue/GitHubBadges";
 import { LabelChip } from "@/components/issue/LabelChip";
@@ -39,8 +40,10 @@ export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.
     issue.estimate !== null ||
     issue.dueDate !== null ||
     issue.assignee !== null ||
+    Boolean(issue.assigneeAgent) ||
     Boolean(issue.pullRequests?.length) ||
     issue.source === "GITHUB";
+  const runStatus = cardRunStatus(issue.agentRuns);
   return (
     <>
       <div className="flex h-4 items-center gap-1.5">
@@ -84,7 +87,12 @@ export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.
             </span>
           ) : null}
           {issue.pullRequests?.length ? <PullRequestBadge pullRequests={issue.pullRequests} /> : null}
-          {issue.assignee ? <Avatar person={issue.assignee} className="ml-auto" /> : null}
+          {runStatus ? <RunStatusBadge status={runStatus} name={issue.assigneeAgent?.name} /> : null}
+          {issue.assigneeAgent ? (
+            <AgentAvatar name={issue.assigneeAgent.name} className="ml-auto" />
+          ) : issue.assignee ? (
+            <Avatar person={issue.assignee} className="ml-auto" />
+          ) : null}
         </div>
       ) : null}
     </>

@@ -41,6 +41,13 @@ export const cardSelect = {
     orderBy: { createdAt: "asc" },
     select: { id: true, repoFullName: true, number: true, url: true, title: true, state: true, checks: true },
   },
+  assigneeAgent: { select: { id: true, name: true, kind: true } },
+  // The latest run drives the card's agent badge.
+  agentRuns: {
+    orderBy: { createdAt: "desc" },
+    take: 1,
+    select: { id: true, status: true, sessionUrl: true, prUrl: true, error: true },
+  },
 } satisfies Prisma.IssueSelect;
 
 type CardRow = Prisma.IssueGetPayload<{ select: typeof cardSelect }>;

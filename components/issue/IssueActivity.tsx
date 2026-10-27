@@ -61,6 +61,33 @@ function describe(
     );
   };
   const data = entry.data;
+  const agent = (id: unknown) => <Strong>{(typeof id === "string" ? refs.agents?.[id]?.name : undefined) ?? "a deleted agent"}</Strong>;
+  const link = (href: unknown, label: string) =>
+    typeof href === "string" ? (
+      <a href={href} target="_blank" rel="noreferrer" className="font-medium text-primary-text hover:underline">
+        {label}
+      </a>
+    ) : (
+      label
+    );
+
+  switch (entry.action) {
+    case "agent.assigned":
+      // A first assignment already reads "assigned it to …" from the field change.
+      return data.retry ? [<>retried {agent(data.agentId)}’s run</>] : [];
+    case "agent.claimed":
+      return [<>started working on it</>];
+    case "agent.progress":
+      return data.status === "NEEDS_INPUT" ? [<>needs input</>] : [];
+    case "agent.pr_opened":
+      return [<>opened a {link(data.prUrl, "pull request")}</>];
+    case "agent.done":
+      return [<>finished: the {link(data.prUrl, "pull request")} was merged</>];
+    case "agent.failed":
+      return [<>run failed{typeof data.error === "string" ? <>: <Strong>{data.error}</Strong></> : null}</>];
+    case "agent.released":
+      return [<>gave the issue back{typeof data.reason === "string" ? <>: <Strong>{data.reason}</Strong></> : null}</>];
+  }
 
   if (entry.action === "issue.created") {
     return [
@@ -92,7 +119,13 @@ function describe(
       case "type":
         parts.push(<>changed the type to <Strong>{ISSUE_TYPE_LABEL[value.to as IssueType] ?? String(value.to)}</Strong></>);
         break;
+      case "assigneeAgentId":
+        if (value.to) parts.push(<>assigned it to {agent(value.to)}</>);
+        else if (!changes.assigneeUserId) parts.push(<>unassigned {agent(value.from)}</>);
+        break;
       case "assigneeUserId":
+        // Assigning an agent clears the person; the agent sentence covers it.
+        if (!value.to && changes.assigneeAgentId) break;
         if (!value.to) parts.push(<>removed the assignee</>);
         else if (value.to === entry.actor?.id) parts.push(<>self-assigned the issue</>);
         else parts.push(<>assigned it to <Strong>{person(value.to)}</Strong></>);
@@ -132,6 +165,7 @@ function describe(
 }
 
 function actorName(entry: IssueActivityEntry) {
+  if (entry.agent) return entry.agent.name;
   if (entry.actor) return entry.actor.name;
   if (entry.actorType === "AGENT") return "An agent";
   if (entry.actorType === "GITHUB") return "GitHub";
@@ -142,7 +176,7 @@ function EventRow({ entry, part }: { entry: IssueActivityEntry; part: React.Reac
   return (
     <li className="relative flex items-start gap-3 py-1.5 text-xs text-muted-foreground">
       <span className="relative z-10 flex size-5 shrink-0 items-center justify-center rounded-full bg-background">
-        {entry.actorType === "AGENT" ? (
+        {entry.actorType === "AGENT" || entry.agent ? (
           <Bot className="size-3.5 text-review" />
         ) : entry.actor ? (
           <Avatar person={entry.actor} size="xs" />
@@ -173,7 +207,11 @@ function CommentRow({
   return (
     <li className="relative flex items-start gap-3 py-2">
       <span className="relative z-10 shrink-0 rounded-full bg-background">
-        {comment.author ? (
+        {comment.authorAgent ? (
+          <span className="flex size-5 items-center justify-center rounded-full bg-chip">
+            <Bot className="size-3.5 text-review" />
+          </span>
+        ) : comment.author ? (
           <Avatar person={comment.author} size="sm" />
         ) : (
           <span className="block size-5 rounded-full bg-chip" />
@@ -181,7 +219,14 @@ function CommentRow({
       </span>
       <div className="group min-w-0 flex-1 rounded-lg border bg-surface px-3 py-2 shadow-card">
         <div className="mb-1 flex items-center gap-2 text-xs">
-          <span className="font-medium text-foreground">{comment.author?.name ?? "Deleted user"}</span>
+          <span className="font-medium text-foreground">
+            {comment.authorAgent?.name ?? comment.author?.name ?? "Deleted user"}
+          </span>
+          {comment.authorAgent ? (
+            <span className="rounded bg-chip px-1 text-2xs text-muted-foreground">
+              Agent{comment.author ? ` · for ${comment.author.name}` : ""}
+            </span>
+          ) : null}
           <span className="text-muted-foreground" title={format(new Date(comment.createdAt), "PPpp")}>
             {ago(comment.createdAt)}
             {comment.editedAt ? " · edited" : ""}

@@ -58,6 +58,9 @@ describe("comments", () => {
 
   it("from an agent are attributed to the agent and its user", async () => {
     const { owner, issue } = await setup();
+    await db.agent.create({
+      data: { id: "agent_claude", workspaceId: owner.ctx.workspaceId, name: "Claude", kind: "MCP", ownerUserId: owner.user.id, configEnc: "x" },
+    });
     const agent: Ctx = {
       ...owner.ctx,
       actor: { type: "agent", agentId: "agent_claude", onBehalfOf: owner.user.id },

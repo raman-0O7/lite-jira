@@ -15,6 +15,8 @@ describe("role matrix", () => {
     ["project.delete", { OWNER: true, ADMIN: true, MEMBER: false, GUEST: false }],
     ["comment.moderate", { OWNER: true, ADMIN: true, MEMBER: false, GUEST: false }],
     ["members.manage", { OWNER: true, ADMIN: true, MEMBER: false, GUEST: false }],
+    ["agent.manage", { OWNER: true, ADMIN: true, MEMBER: false, GUEST: false }],
+    ["agent.dispatch", { OWNER: true, ADMIN: true, MEMBER: true, GUEST: false }],
     ["workspace.delete", { OWNER: true, ADMIN: false, MEMBER: false, GUEST: false }],
   ];
 
@@ -40,6 +42,8 @@ describe("agent cap", () => {
       "comment.moderate",
       "members.manage",
       "integrations.manage",
+      "agent.manage",
+      "agent.dispatch",
       "workspace.delete",
     ] as const) {
       expect(can({ actor: agent, role: "OWNER" }, action), action).toBe(false);

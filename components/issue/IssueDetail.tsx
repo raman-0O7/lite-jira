@@ -11,6 +11,7 @@ import { Avatar } from "@/components/icons/Avatar";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { DueDatePicker } from "@/components/issue/DueDatePicker";
 import { ago, IssueActivity, MARKDOWN_CLASS } from "@/components/issue/IssueActivity";
+import { IssueAgent } from "@/components/issue/IssueAgent";
 import {
   AssigneePicker,
   EpicPicker,
@@ -33,7 +34,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { agentKeys, fetchAgents } from "@/lib/api/agents";
 import {
+  assignAgent,
   fetchIssue,
   issueKeys,
   moveIssue,
@@ -247,6 +250,12 @@ export function IssueDetail({
     queryKey: memberKeys.list(slug),
     queryFn: () => fetchMembers(slug),
   });
+  const canDispatch = useCan("agent.dispatch");
+  const agentsQuery = useQuery({
+    queryKey: agentKeys.list(slug),
+    queryFn: () => fetchAgents(slug),
+    enabled: canDispatch,
+  });
 
   const issue = issueQuery.data;
   const columns = projectQuery.data?.columns ?? [];
@@ -350,10 +359,37 @@ export function IssueDetail({
   }
 
   function changeAssignee(next: string | null) {
-    if (!issue || next === issue.assigneeUserId) return;
+    if (!issue || (next === issue.assigneeUserId && !issue.assigneeAgent)) return;
     const member = membersQuery.data?.find((m) => m.id === next);
     const assignee: PersonStub | null = member ? { id: member.id, name: member.name, image: member.image } : null;
-    commit({ assigneeUserId: next }, { assignee }, { assigneeUserId: next });
+    // A person (or nobody) replaces an agent; the server cancels its run.
+    commit({ assigneeUserId: next }, { assignee, assigneeAgent: null, agentRuns: [] }, { assigneeUserId: next });
+  }
+
+  const assign = useMutation({
+    mutationFn: (vars: { agentId: string; previous: ReturnType<typeof snapshot> }) =>
+      assignAgent(issueId, vars.agentId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<IssueFull>(issueKeys.detail(issueId), updated);
+      patchCard({ assignee: null, assigneeAgent: updated.assigneeAgent, agentRuns: updated.agentRuns });
+      queryClient.invalidateQueries({ queryKey: issueKeys.activity(issueId) });
+      queryClient.invalidateQueries({ queryKey: agentKeys.runs(issueId) });
+    },
+    onError: (error: Error, vars) => {
+      restore(vars.previous);
+      toast.error(error.message);
+    },
+  });
+
+  function changeAgent(agentId: string) {
+    if (!issue || agentId === issue.assigneeAgent?.id) return;
+    const agent = agentsQuery.data?.find((a) => a.id === agentId);
+    if (!agent) return;
+    const previous = snapshot();
+    const stub = { id: agent.id, name: agent.name, kind: agent.kind };
+    patchCard({ assignee: null, assigneeAgent: stub });
+    patchFull({ assignee: null, assigneeUserId: null, assigneeAgent: stub });
+    assign.mutate({ agentId, previous });
   }
 
   function changeLabels(nextIds: string[]) {
@@ -492,6 +528,9 @@ export function IssueDetail({
                 (issue.assignee ? [{ ...issue.assignee, email: "", role: "MEMBER", joinedAt: "", projectIds: [] }] : [])
               }
               onChange={changeAssignee}
+              agents={agentsQuery.data}
+              agentValue={issue.assigneeAgent ?? null}
+              onAgentChange={canDispatch ? changeAgent : undefined}
               disabled={!canEdit || !membersQuery.data}
             />
           </PropertyRow>
@@ -595,6 +634,8 @@ export function IssueDetail({
             </span>
           </PropertyRow>
         </div>
+
+        <IssueAgent issue={issue} projectId={projectId} />
 
         <IssueGitHub issue={issue} />
 

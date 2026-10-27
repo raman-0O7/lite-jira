@@ -1,5 +1,5 @@
 import { request } from "@/lib/api/http";
-import type { PersonStub } from "@/lib/api/projects";
+import type { AgentStub, PersonStub } from "@/lib/api/projects";
 
 export type IssueComment = {
   id: string;
@@ -8,6 +8,8 @@ export type IssueComment = {
   editedAt: string | null;
   authorAgentId: string | null;
   author: PersonStub | null;
+  /** Set when an agent wrote it (on behalf of `author`, its owner). */
+  authorAgent?: AgentStub | null;
 };
 
 export async function fetchComments(issueId: string) {

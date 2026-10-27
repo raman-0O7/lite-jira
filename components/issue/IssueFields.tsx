@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, Circle, Layers, UserRound } from "lucide-react";
+import { Bot, Check, ChevronDown, Circle, Layers, UserRound } from "lucide-react";
 import { useState } from "react";
 
 import { Avatar } from "@/components/icons/Avatar";
@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Member } from "@/lib/api/members";
-import type { ColumnCategory, IssueType, Priority } from "@/lib/api/projects";
+import type { AgentStub, ColumnCategory, IssueType, Priority } from "@/lib/api/projects";
 import { type StatusVariant, variantForCategory } from "@/lib/status";
 import { ISSUE_TYPE_LABEL, ISSUE_TYPES, PRIORITIES, PRIORITY_LABEL } from "@/lib/task-meta";
 import { cn } from "@/lib/utils";
@@ -200,22 +200,33 @@ export function TypePicker({
   );
 }
 
-/** Workspace members who can be assigned (everyone but guests). */
+/**
+ * Workspace members who can be assigned (everyone but guests), and, when
+ * `agents` is given, the workspace's enabled agents below them.
+ */
 export function AssigneePicker({
   value,
   members,
   onChange,
+  agents,
+  agentValue = null,
+  onAgentChange,
   look = "row",
   disabled,
 }: {
   value: string | null;
   members: Member[];
   onChange: (next: string | null) => void;
+  agents?: (AgentStub & { enabled?: boolean })[];
+  /** The assigned agent, if any; it takes the place of a person. */
+  agentValue?: AgentStub | null;
+  onAgentChange?: (agentId: string) => void;
   look?: PickerLook;
   disabled?: boolean;
 }) {
   const assignable = members.filter((m) => m.role !== "GUEST");
   const current = members.find((m) => m.id === value);
+  const pickable = (agents ?? []).filter((a) => a.enabled !== false || a.id === agentValue?.id);
   return (
     <Picker
       look={look}
@@ -223,7 +234,12 @@ export function AssigneePicker({
       disabled={disabled}
       contentClassName="max-h-72 overflow-y-auto"
       trigger={
-        current ? (
+        agentValue ? (
+          <>
+            <Bot className="size-3.5 text-review" />
+            <span className="truncate">{agentValue.name}</span>
+          </>
+        ) : current ? (
           <>
             <Avatar person={current} size="xs" title={false} />
             <span className="truncate">{current.name}</span>
@@ -236,16 +252,27 @@ export function AssigneePicker({
         )
       }
     >
-      <Option selected={value === null} onSelect={() => onChange(null)}>
+      <Option selected={value === null && !agentValue} onSelect={() => onChange(null)}>
         <UserRound className="text-muted-foreground" />
         Unassigned
       </Option>
       {assignable.map((member) => (
-        <Option key={member.id} selected={member.id === value} onSelect={() => onChange(member.id)}>
+        <Option key={member.id} selected={!agentValue && member.id === value} onSelect={() => onChange(member.id)}>
           <Avatar person={member} size="xs" title={false} />
           <span className="truncate">{member.name}</span>
         </Option>
       ))}
+      {onAgentChange && pickable.length ? (
+        <>
+          <div className="px-2 pt-2 pb-1 text-2xs font-medium text-muted-foreground">Agents</div>
+          {pickable.map((agent) => (
+            <Option key={agent.id} selected={agent.id === agentValue?.id} onSelect={() => onAgentChange(agent.id)}>
+              <Bot className="text-review" />
+              <span className="truncate">{agent.name}</span>
+            </Option>
+          ))}
+        </>
+      ) : null}
     </Picker>
   );
 }

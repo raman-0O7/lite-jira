@@ -19,6 +19,7 @@ import {
   type Workflow,
 } from "@/lib/mcp/resolve";
 import { listIssueActivity } from "@/lib/services/activity";
+import { claimIssue, listAgentQueue, releaseIssue, reportProgress } from "@/lib/services/agents";
 import { addComment, listComments } from "@/lib/services/comments";
 import type { Ctx } from "@/lib/services/context";
 import { badRequest, forbidden } from "@/lib/services/errors";
@@ -521,6 +522,89 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
         const issue = await getIssueByKey(ctx, args.key);
         const comment = await addComment(ctx, issue.id, { body: args.body });
         return ok({ key: issue.key, commentId: comment.id, at: comment.createdAt.toISOString() });
+      }),
+  );
+
+  // ----- agents (docs/features/12-agents.md) -----
+
+  server.registerTool(
+    "list_agent_queue",
+    {
+      title: "Agent work queue",
+      description:
+        "Issues assigned to this agent (agent token) or to your agents (signed in), not yet done. Claim one with claim_issue before working on it.",
+      inputSchema: z.object({ workspace }),
+      annotations: READ,
+    },
+    (args) =>
+      run(async () => {
+        const ctx = await ctxForCall(principal, args.workspace);
+        return ok({ issues: await listAgentQueue(ctx) });
+      }),
+  );
+
+  server.registerTool(
+    "claim_issue",
+    {
+      title: "Claim issue (agent)",
+      description:
+        "Start work on an issue assigned to your agent: locks it to the agent, marks the run as working, and moves it to In Progress. Returns the issue, the branch to use, and the rules.",
+      inputSchema: z.object({ workspace, key: issueKey }),
+      annotations: SET,
+      scopeChallenge: challenge,
+    },
+    (args) =>
+      run(async () => {
+        const ctx = await writeCtx(principal, args.workspace);
+        const claimed = await claimIssue(ctx, args.key);
+        return ok({
+          issue: issueDetail(claimed.issue),
+          run: claimed.run,
+          branch: claimed.branch,
+          rules: [
+            `Work on a new branch named ${claimed.branch}, push it, and open a pull request that mentions ${claimed.issue.key}.`,
+            "Never merge the pull request: a person reviews and merges.",
+            "Use report_progress for updates; status needs_input if you're blocked.",
+            "If you can't finish, call release_issue with the reason.",
+          ],
+        });
+      }),
+  );
+
+  server.registerTool(
+    "report_progress",
+    {
+      title: "Report progress (agent)",
+      description: "Post an update on a claimed issue as your agent. Set status needs_input when you're blocked on a person.",
+      inputSchema: z.object({
+        workspace,
+        key: issueKey,
+        message: z.string().min(1).max(10_000).describe("Markdown update for the people following this issue"),
+        status: z.enum(["working", "needs_input"]).optional(),
+      }),
+      annotations: ADD,
+      scopeChallenge: challenge,
+    },
+    (args) =>
+      run(async () => {
+        const ctx = await writeCtx(principal, args.workspace);
+        return ok({ key: args.key, ...(await reportProgress(ctx, args.key, args)) });
+      }),
+  );
+
+  server.registerTool(
+    "release_issue",
+    {
+      title: "Release issue (agent)",
+      description: "Give a claimed issue back without finishing it. The run ends as failed with your reason.",
+      inputSchema: z.object({ workspace, key: issueKey, reason: z.string().max(2000).optional() }),
+      annotations: SET,
+      scopeChallenge: challenge,
+    },
+    (args) =>
+      run(async () => {
+        const ctx = await writeCtx(principal, args.workspace);
+        return ok({ key: args.key, ...(await releaseIssue(ctx, args.key, { reason: args.reason })) });
       }),
   );
 

@@ -1,6 +1,7 @@
 import type { ChecksState, PullRequestState } from "@prisma/client";
 import { z } from "zod";
 
+import { onPullRequestLinked } from "@/lib/agents/lifecycle";
 import { db } from "@/lib/db";
 import { checkSuites, type GhCheckSuite } from "@/lib/github/client";
 import { parseKey } from "@/lib/services/issue-shapes";
@@ -242,12 +243,15 @@ async function onPullRequest(payload: z.infer<typeof pullRequestPayload>) {
       state,
       mergedAt: pr.merged_at ? new Date(pr.merged_at) : null,
     };
-    await db.pullRequestLink.upsert({
+    const link = await db.pullRequestLink.upsert({
       where,
       create: { issueId: issue.id, repoFullName, number: pr.number, ...fields },
       // A new head commit hasn't been checked yet.
       update: { ...fields, ...(existing?.headSha !== pr.head.sha ? { checks: "NONE" as const } : {}) },
+      select: { url: true, state: true },
     });
+
+    await onPullRequestLinked(ctx, issue.id, link);
 
     if (state === "MERGED" && repo.moveOnMerge) {
       await moveToCategory(ctx, issue.id, "DONE");

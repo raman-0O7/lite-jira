@@ -20,7 +20,7 @@ export type McpPrincipal =
 export function principalUserId(principal: McpPrincipal): string {
   if (principal.kind === "oauth") return principal.userId;
   const { actor } = principal.ctx;
-  return actor.type === "user" ? actor.userId : "";
+  return actor.type === "user" ? actor.userId : actor.type === "agent" ? actor.onBehalfOf : "";
 }
 
 export function canWrite(principal: McpPrincipal): boolean {

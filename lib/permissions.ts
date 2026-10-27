@@ -24,6 +24,8 @@ export type Action =
   | "comment.moderate"
   | "members.manage"
   | "integrations.manage"
+  | "agent.manage"
+  | "agent.dispatch"
   | "workspace.update"
   | "workspace.delete"
   | "token.manage";
@@ -37,12 +39,14 @@ const WRITE: Action[] = [
   "column.write",
   "issue.write",
   "label.write",
+  "agent.dispatch",
 ];
 const ADMIN: Action[] = [
   "project.delete",
   "comment.moderate",
   "members.manage",
   "integrations.manage",
+  "agent.manage",
   "workspace.update",
 ];
 
@@ -62,6 +66,9 @@ const AGENT_NEVER: ReadonlySet<Action> = new Set([
   "comment.moderate",
   "members.manage",
   "integrations.manage",
+  "agent.manage",
+  // Only people hand work to agents.
+  "agent.dispatch",
   "workspace.update",
   "workspace.delete",
   // A token can't mint or revoke tokens.

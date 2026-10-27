@@ -13,6 +13,7 @@ const commentSelect = {
   editedAt: true,
   authorAgentId: true,
   author: { select: { id: true, name: true, image: true } },
+  authorAgent: { select: { id: true, name: true, kind: true } },
 } as const;
 
 async function findIssue(ctx: Ctx, issueId: string) {

@@ -6,6 +6,7 @@
 
 import { request } from "@/lib/api/http";
 import type {
+  AgentStub,
   IssueCard,
   IssueType,
   LabelStub,
@@ -126,11 +127,22 @@ type ColumnRef = { id: string; name: string; category: "TODO" | "IN_PROGRESS" | 
 /** One row of an issue's history; `data` depends on the action (see lib/services/issues.ts). */
 export type IssueActivityEntry = {
   id: string;
-  action: "issue.created" | "issue.updated" | "issue.moved";
+  action:
+    | "issue.created"
+    | "issue.updated"
+    | "issue.moved"
+    | "agent.assigned"
+    | "agent.claimed"
+    | "agent.progress"
+    | "agent.pr_opened"
+    | "agent.done"
+    | "agent.failed"
+    | "agent.released";
   createdAt: string;
   actorType: "USER" | "AGENT" | "GITHUB" | "SYSTEM";
   actorAgentId: string | null;
   actor: PersonStub | null;
+  agent: AgentStub | null;
   data: Record<string, unknown>;
 };
 
@@ -141,9 +153,21 @@ export type IssueActivity = {
     columns: Record<string, ColumnRef>;
     labels: Record<string, LabelStub>;
     issues: Record<string, { id: string; key: string; title: string }>;
+    agents: Record<string, AgentStub>;
   };
 };
 
 export async function fetchIssueActivity(issueId: string) {
   return request<IssueActivity>(`/api/issues/${issueId}/activity`, "Failed to load activity");
+}
+
+// ---------- Agents ----------
+
+/** Assign the issue to an agent (starts a run) or clear the agent with null. */
+export async function assignAgent(id: string, agentId: string | null) {
+  const data = await request<{ issue: IssueFull }>(`/api/issues/${id}/agent`, "Couldn’t assign the agent", {
+    method: "PUT",
+    body: { agentId },
+  });
+  return data.issue;
 }

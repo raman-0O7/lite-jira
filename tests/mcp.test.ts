@@ -1,11 +1,13 @@
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { flushDeferred } from "@/lib/defer";
 import { MCP_SCOPES } from "@/lib/mcp/config";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import { hitRateLimit, resetRateLimits } from "@/lib/mcp/rate-limit";
 import { createKansoMcpServer } from "@/lib/mcp/server";
 import { listIssueActivity } from "@/lib/services/activity";
+import { assignAgent, createAgent } from "@/lib/services/agents";
 import { createApiToken, ctxForApiToken } from "@/lib/services/api-tokens";
 import { listComments } from "@/lib/services/comments";
 import { getIssueByKey } from "@/lib/services/issues";
@@ -117,6 +119,10 @@ describe("MCP server", () => {
       "create_subtasks",
       "assign_issue",
       "add_comment",
+      "list_agent_queue",
+      "claim_issue",
+      "report_progress",
+      "release_issue",
       "bulk_update_issues",
     ]);
     expect(tools.find((t) => t.name === "get_issue")!.annotations.readOnlyHint).toBe(true);
@@ -263,6 +269,48 @@ describe("MCP server", () => {
     expect((await tool(apiPrincipal, "list_projects", { workspace: second.slug })).text).toContain(
       "only works in",
     );
+  });
+});
+
+describe("agent tools", () => {
+  it("an agent token sees its queue, claims, reports, and releases over MCP", async () => {
+    const { owner, web } = await setup();
+    const { agent, secrets } = await createAgent(owner.ctx, { kind: "MCP", name: "Bot", webhookUrl: null });
+    const issue = await makeIssue(owner.ctx, web.todo.id, "Fix login");
+    await assignAgent(owner.ctx, issue.id, { agentId: agent.id });
+    await flushDeferred();
+    const principal: McpPrincipal = { kind: "api_token", ctx: (await ctxForApiToken(secrets.token!))! };
+
+    const queue = await tool(principal, "list_agent_queue");
+    expect(queue.data!.issues.map((i) => i.key)).toEqual(["WEB-1"]);
+
+    const claim = await tool(principal, "claim_issue", { key: "WEB-1" });
+    expect(claim.isError).toBe(false);
+    expect(claim.data).toMatchObject({ branch: "web-1-fix-login", run: { status: "RUNNING" } });
+
+    const report = await tool(principal, "report_progress", { key: "WEB-1", message: "PR coming" });
+    expect(report.isError).toBe(false);
+    expect((await listComments(owner.ctx, issue.id)).at(-1)).toMatchObject({ body: "PR coming", authorAgentId: agent.id });
+
+    expect((await tool(principal, "release_issue", { key: "WEB-1", reason: "Stuck" })).isError).toBe(false);
+    // Still assigned, so the agent can pick it up again (a new run).
+    const again = await tool(principal, "claim_issue", { key: "WEB-1" });
+    expect(again.data).toMatchObject({ run: { status: "RUNNING" } });
+  });
+
+  it("an OAuth user can't claim an issue assigned to someone else's agent", async () => {
+    const { owner, web } = await setup();
+    const { agent } = await createAgent(owner.ctx, { kind: "MCP", name: "Bot", webhookUrl: null });
+    const issue = await makeIssue(owner.ctx, web.todo.id);
+    await assignAgent(owner.ctx, issue.id, { agentId: agent.id });
+    await flushDeferred();
+    const other = await makeUser("Mo");
+    await addMember(owner.workspace.id, other, "ADMIN");
+    const claim = await tool(oauth(other.id), "claim_issue", { key: "WEB-1", workspace: owner.workspace.slug });
+    expect(claim.isError).toBe(true);
+    expect(claim.text).toContain("isn't your agent");
+    const mine = await tool(oauth(owner.user.id), "claim_issue", { key: "WEB-1", workspace: owner.workspace.slug });
+    expect(mine.isError).toBe(false);
   });
 });
 

@@ -31,6 +31,8 @@ model User {
   oauthAccessTokens  OauthAccessToken[]
   oauthConsents      OauthConsent[]
   githubLink         GitHubUserLink?
+  agentsOwned        Agent[]             @relation("AgentOwner")
+  agentRunsRequested AgentRun[]          @relation("AgentRunRequester")
 }
 
 model Session {
@@ -89,6 +91,8 @@ model Workspace {
   invites             Invite[]
   apiTokens           ApiToken[]
   githubInstallations GitHubInstallation[]
+  agents              Agent[]
+  agentRuns           AgentRun[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 }
@@ -160,6 +164,7 @@ model Activity {
   actorUserId  String?
   actorUser    User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
   actorAgentId String?
+  actorAgent   Agent?    @relation(fields: [actorAgentId], references: [id], onDelete: SetNull)
   action       String
   data         Json      @default("{}")
   createdAt    DateTime  @default(now())
@@ -253,9 +258,11 @@ model Issue {
   assigneeUserId     String?
   assignee           User?             @relation("IssueAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
   assigneeAgentId    String?
+  assigneeAgent      Agent?            @relation("IssueAgentAssignee", fields: [assigneeAgentId], references: [id], onDelete: SetNull)
   reporterUserId     String?
   reporter           User?             @relation("IssueReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
   claimedByAgentId   String?
+  claimedByAgent     Agent?            @relation("IssueAgentClaim", fields: [claimedByAgentId], references: [id], onDelete: SetNull)
   claimedAt          DateTime?
   source             IssueSource       @default(NATIVE)
   labels             Label[]           @relation("IssueLabels")
@@ -264,6 +271,7 @@ model Issue {
   linksTo            IssueLink[]       @relation("IssueLinkTo")
   githubLink         GitHubIssueLink?
   pullRequests       PullRequestLink[]
+  agentRuns          AgentRun[]
   archivedAt         DateTime?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
@@ -314,6 +322,7 @@ model Comment {
   authorUserId  String?
   author        User?     @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
   authorAgentId String?
+  authorAgent   Agent?    @relation(fields: [authorAgentId], references: [id], onDelete: SetNull)
   body          String
   editedAt      DateTime?
   createdAt     DateTime  @default(now())
@@ -384,9 +393,13 @@ model ApiToken {
   lastUsedAt  DateTime?
   expiresAt   DateTime?
   revokedAt   DateTime?
+  // Set for an agent's own token (Feature 12): requests act as the agent.
+  agentId     String?
+  agent       Agent?         @relation(fields: [agentId], references: [id], onDelete: Cascade)
   createdAt   DateTime       @default(now())
 
   @@index([userId, workspaceId])
+  @@index([agentId])
 }
 
 enum ApiTokenAccess {
@@ -677,4 +690,71 @@ model GitHubDelivery {
   id         String   @id
   event      String
   receivedAt DateTime @default(now())
+}
+
+// ---------- Agents (docs/features/12-agents.md) ----------
+
+model Agent {
+  id          String     @id @default(cuid())
+  workspaceId String
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  kind        AgentKind
+  // The user the agent acts for (its role, capped by AGENT_NEVER).
+  ownerUserId String
+  owner       User       @relation("AgentOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  // AES-256-GCM JSON (lib/crypto.ts): fire URL + token, or webhook URL + secret.
+  configEnc   String
+  enabled     Boolean    @default(true)
+  runs        AgentRun[]
+  tokens      ApiToken[]
+  assigned    Issue[]    @relation("IssueAgentAssignee")
+  claimed     Issue[]    @relation("IssueAgentClaim")
+  comments    Comment[]
+  activities  Activity[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([workspaceId, name])
+}
+
+enum AgentKind {
+  CLAUDE_CODE
+  MCP
+}
+
+model AgentRun {
+  id                String         @id @default(cuid())
+  workspaceId       String
+  workspace         Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  issueId           String
+  issue             Issue          @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  agentId           String
+  agent             Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  requestedByUserId String?
+  requestedBy       User?          @relation("AgentRunRequester", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  status            AgentRunStatus @default(QUEUED)
+  externalSessionId String?
+  sessionUrl        String?
+  prUrl             String?
+  error             String?
+  dispatchedAt      DateTime?
+  claimedAt         DateTime?
+  finishedAt        DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([issueId, createdAt])
+  @@index([status, createdAt])
+}
+
+enum AgentRunStatus {
+  QUEUED
+  DISPATCHED
+  RUNNING
+  NEEDS_INPUT
+  PR_OPEN
+  DONE
+  FAILED
+  CANCELLED
 }

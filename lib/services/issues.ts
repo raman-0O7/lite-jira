@@ -47,6 +47,7 @@ async function findIssueInWorkspace(
       parentId: true,
       epicId: true,
       assigneeUserId: true,
+      assigneeAgentId: true,
       labels: { select: { id: true } },
       project: { select: { key: true } },
       column: { select: { category: true } },
@@ -267,6 +268,17 @@ export async function updateIssue(ctx: Ctx, issueId: string, input: unknown) {
       if (next) await assertAssignable(tx, ctx, next);
       data.assigneeUserId = next;
       change(changes, "assigneeUserId", before.assigneeUserId, next);
+      // One assignee: choosing a person (or nobody) takes the issue off its agent.
+      if (before.assigneeAgentId) {
+        data.assigneeAgentId = null;
+        data.claimedByAgentId = null;
+        data.claimedAt = null;
+        change(changes, "assigneeAgentId", before.assigneeAgentId, null);
+        await tx.agentRun.updateMany({
+          where: { issueId, status: { in: ["QUEUED", "DISPATCHED", "RUNNING", "NEEDS_INPUT", "PR_OPEN"] } },
+          data: { status: "CANCELLED", error: "Reassigned", finishedAt: new Date() },
+        });
+      }
     }
 
     // ---- plain fields ----
