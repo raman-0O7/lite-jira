@@ -10,28 +10,45 @@ datasource db {
 
 // ---------- Better Auth ----------
 model User {
-  id            String    @id
-  name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  sessions      Session[]
-  accounts      Account[]
-  boards        Board[]
+  id                 String              @id
+  name               String
+  email              String              @unique
+  emailVerified      Boolean             @default(false)
+  image              String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  sessions           Session[]
+  accounts           Account[]
+  memberships        Membership[]
+  activities         Activity[]
+  assignedIssues     Issue[]             @relation("IssueAssignee")
+  reportedIssues     Issue[]             @relation("IssueReporter")
+  comments           Comment[]
+  invitesSent        Invite[]            @relation("InviteSender")
+  apiTokens          ApiToken[]
+  oauthClients       OauthClient[]
+  oauthRefreshTokens OauthRefreshToken[]
+  oauthAccessTokens  OauthAccessToken[]
+  oauthConsents      OauthConsent[]
+  githubLink         GitHubUserLink?
+  agentsOwned        Agent[]             @relation("AgentOwner")
+  agentRunsRequested AgentRun[]          @relation("AgentRunRequester")
 }
 
 model Session {
-  id        String   @id
-  token     String   @unique
-  expiresAt DateTime
-  ipAddress String?
-  userAgent String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String              @id
+  token              String              @unique
+  expiresAt          DateTime
+  ipAddress          String?
+  userAgent          String?
+  userId             String
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  oauthRefreshTokens OauthRefreshToken[]
+  oauthAccessTokens  OauthAccessToken[]
+
+  @@index([userId])
 }
 
 model Account {
@@ -49,6 +66,8 @@ model Account {
   password              String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
 }
 
 model Verification {
@@ -60,57 +79,233 @@ model Verification {
   updatedAt  DateTime @updatedAt
 }
 
-// ---------- App ----------
-model Board {
-  id        String   @id @default(cuid())
-  name      String
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  columns   Column[]
-  labels    Label[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// ---------- Workspaces ----------
+model Workspace {
+  id                  String               @id @default(cuid())
+  name                String
+  slug                String               @unique
+  personal            Boolean              @default(false)
+  memberships         Membership[]
+  projects            Project[]
+  activities          Activity[]
+  invites             Invite[]
+  apiTokens           ApiToken[]
+  githubInstallations GitHubInstallation[]
+  agents              Agent[]
+  agentRuns           AgentRun[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+}
+
+model Membership {
+  id            String          @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          Role            @default(MEMBER)
+  projectAccess ProjectAccess[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+// The projects a guest can see. Members and above see every project.
+model ProjectAccess {
+  id           String     @id @default(cuid())
+  projectId    String
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  membershipId String
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([projectId, membershipId])
+  @@index([membershipId])
+}
+
+// email = null is a link invite. Only the token's SHA-256 is stored.
+model Invite {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email        String?
+  role         Role
+  projectIds   String[]  @default([])
+  tokenHash    String    @unique
+  invitedById  String?
+  invitedBy    User?     @relation("InviteSender", fields: [invitedById], references: [id], onDelete: SetNull)
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  acceptedById String?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+// Append-only history of every mutation. projectId/issueId are plain ids (no
+// FK) so history survives deletes; actorAgentId gets its FK with the Agent model.
+model Activity {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId    String?
+  issueId      String?
+  actorType    ActorType
+  actorUserId  String?
+  actorUser    User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorAgentId String?
+  actorAgent   Agent?    @relation(fields: [actorAgentId], references: [id], onDelete: SetNull)
+  action       String
+  data         Json      @default("{}")
+  createdAt    DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([issueId, createdAt])
+}
+
+enum ActorType {
+  USER
+  AGENT
+  GITHUB
+  SYSTEM
+}
+
+// ---------- Projects & issues ----------
+model Project {
+  id           String          @id @default(cuid())
+  name         String
+  // Issue key prefix ("WEB" → WEB-42). Unique per workspace, immutable.
+  key          String
+  // Last issue number handed out; incremented atomically, never reused.
+  issueCounter Int             @default(0)
+  mode         ProjectMode     @default(KANBAN)
+  workspaceId  String
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  columns      Column[]
+  labels       Label[]
+  issues       Issue[]
+  sprints      Sprint[]
+  access       ProjectAccess[]
+  repos        ProjectRepo[]
+  archivedAt   DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId])
+}
+
+enum ProjectMode {
+  KANBAN
+  SCRUM
 }
 
 model Column {
-  id        String   @id @default(cuid())
+  id        String         @id @default(cuid())
   name      String
   position  Int
-  boardId   String
-  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  tasks     Task[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // What the column means, independent of its name (drives "done" for sync/agents).
+  category  ColumnCategory @default(IN_PROGRESS)
+  projectId String
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues    Issue[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
-  @@index([boardId])
+  @@index([projectId])
 }
 
-model Task {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
-  priority    Priority  @default(MEDIUM)
-  dueDate     DateTime?
-  position    Int
-  columnId    String
-  column      Column    @relation(fields: [columnId], references: [id], onDelete: Cascade)
-  labels      Label[]   @relation("TaskLabels")
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+enum ColumnCategory {
+  TODO
+  IN_PROGRESS
+  DONE
+}
 
+model Issue {
+  id                 String            @id @default(cuid())
+  projectId          String
+  project            Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number             Int
+  type               IssueType         @default(TASK)
+  title              String
+  description        String?
+  acceptanceCriteria String?
+  priority           Priority          @default(MEDIUM)
+  dueDate            DateTime?
+  estimate           Int?
+  position           Int
+  columnId           String
+  column             Column            @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  parentId           String?
+  parent             Issue?            @relation("SubIssues", fields: [parentId], references: [id], onDelete: Cascade)
+  subIssues          Issue[]           @relation("SubIssues")
+  epicId             String?
+  epic               Issue?            @relation("EpicIssues", fields: [epicId], references: [id], onDelete: SetNull)
+  epicIssues         Issue[]           @relation("EpicIssues")
+  sprintId           String?
+  sprint             Sprint?           @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  assigneeUserId     String?
+  assignee           User?             @relation("IssueAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  assigneeAgentId    String?
+  assigneeAgent      Agent?            @relation("IssueAgentAssignee", fields: [assigneeAgentId], references: [id], onDelete: SetNull)
+  reporterUserId     String?
+  reporter           User?             @relation("IssueReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  claimedByAgentId   String?
+  claimedByAgent     Agent?            @relation("IssueAgentClaim", fields: [claimedByAgentId], references: [id], onDelete: SetNull)
+  claimedAt          DateTime?
+  source             IssueSource       @default(NATIVE)
+  labels             Label[]           @relation("IssueLabels")
+  comments           Comment[]
+  linksFrom          IssueLink[]       @relation("IssueLinkFrom")
+  linksTo            IssueLink[]       @relation("IssueLinkTo")
+  githubLink         GitHubIssueLink?
+  pullRequests       PullRequestLink[]
+  agentRuns          AgentRun[]
+  archivedAt         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@unique([projectId, number])
   @@index([columnId])
+  @@index([parentId])
+  @@index([epicId])
+  @@index([assigneeUserId])
+}
+
+enum IssueType {
+  EPIC
+  STORY
+  TASK
+  BUG
+  SUBTASK
+}
+
+enum IssueSource {
+  NATIVE
+  GITHUB
 }
 
 model Label {
   id        String   @id @default(cuid())
   name      String
   color     String
-  boardId   String
-  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  tasks     Task[]   @relation("TaskLabels")
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues    Issue[]  @relation("IssueLabels")
   createdAt DateTime @default(now())
 
-  @@index([boardId])
+  @@index([projectId])
 }
 
 enum Priority {
@@ -118,4 +313,448 @@ enum Priority {
   MEDIUM
   HIGH
   URGENT
+}
+
+model Comment {
+  id            String    @id @default(cuid())
+  issueId       String
+  issue         Issue     @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  authorUserId  String?
+  author        User?     @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  authorAgentId String?
+  authorAgent   Agent?    @relation(fields: [authorAgentId], references: [id], onDelete: SetNull)
+  body          String
+  editedAt      DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([issueId, createdAt])
+}
+
+// Scrum projects only. Schema lands in 07; UI in Feature 15.
+model Sprint {
+  id        String      @id @default(cuid())
+  projectId String
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  goal      String?
+  startDate DateTime?
+  endDate   DateTime?
+  state     SprintState @default(PLANNED)
+  issues    Issue[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([projectId])
+}
+
+enum SprintState {
+  PLANNED
+  ACTIVE
+  CLOSED
+}
+
+// Schema lands in 07; UI in Feature 16.
+model IssueLink {
+  id          String        @id @default(cuid())
+  fromIssueId String
+  fromIssue   Issue         @relation("IssueLinkFrom", fields: [fromIssueId], references: [id], onDelete: Cascade)
+  toIssueId   String
+  toIssue     Issue         @relation("IssueLinkTo", fields: [toIssueId], references: [id], onDelete: Cascade)
+  type        IssueLinkType
+  createdAt   DateTime      @default(now())
+
+  @@unique([fromIssueId, toIssueId, type])
+  @@index([toIssueId])
+}
+
+enum IssueLinkType {
+  BLOCKS
+  RELATES
+  DUPLICATES
+}
+
+// ---------- API tokens (Feature 10) ----------
+
+// A personal access token for the MCP server, bound to one workspace. Only the
+// SHA-256 of the secret is stored; `prefix` is the first characters, for display.
+// Effective access is the owner's current role capped by `access` and
+// `projectIds` (empty = every project the owner can see).
+model ApiToken {
+  id          String         @id @default(cuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  prefix      String
+  tokenHash   String         @unique
+  access      ApiTokenAccess @default(READ)
+  projectIds  String[]       @default([])
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  // Set for an agent's own token (Feature 12): requests act as the agent.
+  agentId     String?
+  agent       Agent?         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+
+  @@index([userId, workspaceId])
+  @@index([agentId])
+}
+
+enum ApiTokenAccess {
+  READ
+  WRITE
+}
+
+// ---------- OAuth provider (Better Auth mcp/oauth-provider + jwt plugins) ----------
+// Generated with `npx auth generate`; field names are owned by Better Auth.
+
+model Jwks {
+  id         String    @id
+  publicKey  String
+  privateKey String
+  createdAt  DateTime
+  expiresAt  DateTime?
+  alg        String?
+  crv        String?
+}
+
+model OauthClient {
+  id                               String                @id
+  clientId                         String
+  clientSecret                     String?
+  clientDiscoveryId                String?
+  disabled                         Boolean?              @default(false)
+  skipConsent                      Boolean?
+  enableEndSession                 Boolean?
+  subjectType                      String?
+  scopes                           String[]
+  clientCredentialsScopes          String[]              @default([])
+  userId                           String?
+  user                             User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt                        DateTime?
+  updatedAt                        DateTime?
+  name                             String?
+  uri                              String?
+  icon                             String?
+  contacts                         String[]
+  tos                              String?
+  policy                           String?
+  softwareId                       String?
+  softwareVersion                  String?
+  softwareStatement                String?
+  redirectUris                     String[]
+  postLogoutRedirectUris           String[]
+  backchannelLogoutUri             String?
+  backchannelLogoutSessionRequired Boolean?
+  tokenEndpointAuthMethod          String?
+  applicationType                  String?
+  jwks                             String?
+  jwksUri                          String?
+  grantTypes                       String[]
+  responseTypes                    String[]
+  requirePKCE                      Boolean?
+  dpopBoundAccessTokens            Boolean?              @default(false)
+  referenceId                      String?
+  metadata                         Json?
+  oauthClientResources             OauthClientResource[]
+  oauthRefreshTokens               OauthRefreshToken[]
+  oauthAccessTokens                OauthAccessToken[]
+  oauthConsents                    OauthConsent[]
+
+  @@unique([clientId])
+  @@index([userId])
+}
+
+model OauthResource {
+  id                            String                @id
+  identifier                    String
+  name                          String
+  accessTokenTtl                Int?
+  refreshTokenTtl               Int?
+  signingAlgorithm              String?
+  signingKeyId                  String?
+  allowedScopes                 String[]
+  customClaims                  Json?
+  dpopBoundAccessTokensRequired Boolean?              @default(false)
+  disabled                      Boolean?              @default(false)
+  createdAt                     DateTime?
+  updatedAt                     DateTime?
+  policyVersion                 Int?                  @default(1)
+  metadata                      Json?
+  oauthClientResources          OauthClientResource[]
+
+  @@unique([identifier])
+}
+
+model OauthClientResource {
+  id            String        @id
+  clientId      String
+  oauthclient   OauthClient   @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  resourceId    String
+  oauthresource OauthResource @relation(fields: [resourceId], references: [identifier], onDelete: Cascade)
+  metadata      Json?
+  createdAt     DateTime?
+
+  @@unique([clientId, resourceId], map: "oauthClientResource_clientId_resourceId_uidx")
+  @@index([clientId])
+  @@index([resourceId])
+}
+
+model OauthRefreshToken {
+  id                      String             @id
+  token                   String
+  clientId                String
+  oauthclient             OauthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  sessionId               String?
+  session                 Session?           @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  userId                  String
+  user                    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referenceId             String?
+  authorizationCodeId     String?
+  resources               String[]
+  requestedUserInfoClaims String[]
+  expiresAt               DateTime
+  createdAt               DateTime
+  revoked                 DateTime?
+  rotatedAt               DateTime?
+  rotationReplayResponse  String?
+  rotationReplayExpiresAt DateTime?
+  authTime                DateTime?
+  confirmation            Json?
+  scopes                  String[]
+  oauthAccessTokens       OauthAccessToken[]
+
+  @@unique([token])
+  @@index([clientId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([authorizationCodeId])
+}
+
+model OauthAccessToken {
+  id                      String             @id
+  token                   String
+  clientId                String
+  oauthclient             OauthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  sessionId               String?
+  session                 Session?           @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  userId                  String?
+  user                    User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referenceId             String?
+  authorizationCodeId     String?
+  resources               String[]
+  requestedUserInfoClaims String[]
+  refreshId               String?
+  oauthrefreshtoken       OauthRefreshToken? @relation(fields: [refreshId], references: [id], onDelete: Cascade)
+  expiresAt               DateTime
+  createdAt               DateTime
+  revoked                 DateTime?
+  confirmation            Json?
+  scopes                  String[]
+
+  @@unique([token])
+  @@index([clientId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([authorizationCodeId])
+  @@index([refreshId])
+}
+
+model OauthConsent {
+  id                      String      @id
+  clientId                String
+  oauthclient             OauthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  userId                  String?
+  user                    User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referenceId             String?
+  resources               String[]
+  requestedUserInfoClaims String[]
+  scopes                  String[]
+  createdAt               DateTime
+  updatedAt               DateTime
+
+  @@index([clientId])
+  @@index([userId])
+}
+
+model OauthClientAssertion {
+  id        String   @id
+  expiresAt DateTime
+}
+
+// ---------- GitHub App (docs/features/11-github-app.md) ----------
+
+model GitHubInstallation {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  // GitHub's installation id.
+  installationId Int           @unique
+  accountLogin   String
+  accountType    String
+  createdById    String?
+  suspendedAt    DateTime?
+  repos          ProjectRepo[]
+  createdAt      DateTime      @default(now())
+
+  @@index([workspaceId])
+}
+
+// Who a user is on GitHub. No user token is kept.
+model GitHubUserLink {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  githubUserId Int      @unique
+  login        String
+  createdAt    DateTime @default(now())
+}
+
+model ProjectRepo {
+  id             String             @id @default(cuid())
+  projectId      String
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  installationId String
+  installation   GitHubInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  // "owner/name", stored lowercase.
+  repoFullName   String
+  importAssigned Boolean            @default(true)
+  statusSync     Boolean            @default(true)
+  moveOnMerge    Boolean            @default(true)
+  issueLinks     GitHubIssueLink[]
+  createdAt      DateTime           @default(now())
+
+  @@unique([installationId, repoFullName])
+  @@index([repoFullName])
+  @@index([projectId])
+}
+
+model GitHubIssueLink {
+  id            String           @id @default(cuid())
+  issueId       String           @unique
+  issue         Issue            @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  projectRepoId String?
+  projectRepo   ProjectRepo?     @relation(fields: [projectRepoId], references: [id], onDelete: SetNull)
+  repoFullName  String
+  number        Int
+  url           String
+  state         GitHubIssueState @default(OPEN)
+  lastSyncedAt  DateTime         @default(now())
+
+  @@unique([repoFullName, number])
+}
+
+enum GitHubIssueState {
+  OPEN
+  CLOSED
+}
+
+model PullRequestLink {
+  id           String           @id @default(cuid())
+  issueId      String
+  issue        Issue            @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  repoFullName String
+  number       Int
+  url          String
+  title        String
+  branch       String
+  headSha      String?
+  state        PullRequestState @default(OPEN)
+  checks       ChecksState      @default(NONE)
+  mergedAt     DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([issueId, repoFullName, number])
+  @@index([repoFullName, number])
+  @@index([repoFullName, headSha])
+}
+
+enum PullRequestState {
+  OPEN
+  MERGED
+  CLOSED
+}
+
+enum ChecksState {
+  NONE
+  PENDING
+  PASS
+  FAIL
+}
+
+// Webhook deliveries already handled (X-GitHub-Delivery), for dedupe.
+model GitHubDelivery {
+  id         String   @id
+  event      String
+  receivedAt DateTime @default(now())
+}
+
+// ---------- Agents (docs/features/12-agents.md) ----------
+
+model Agent {
+  id          String     @id @default(cuid())
+  workspaceId String
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  kind        AgentKind
+  // The user the agent acts for (its role, capped by AGENT_NEVER).
+  ownerUserId String
+  owner       User       @relation("AgentOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  // AES-256-GCM JSON (lib/crypto.ts): fire URL + token, or webhook URL + secret.
+  configEnc   String
+  enabled     Boolean    @default(true)
+  runs        AgentRun[]
+  tokens      ApiToken[]
+  assigned    Issue[]    @relation("IssueAgentAssignee")
+  claimed     Issue[]    @relation("IssueAgentClaim")
+  comments    Comment[]
+  activities  Activity[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([workspaceId, name])
+}
+
+enum AgentKind {
+  CLAUDE_CODE
+  MCP
+}
+
+model AgentRun {
+  id                String         @id @default(cuid())
+  workspaceId       String
+  workspace         Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  issueId           String
+  issue             Issue          @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  agentId           String
+  agent             Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  requestedByUserId String?
+  requestedBy       User?          @relation("AgentRunRequester", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  status            AgentRunStatus @default(QUEUED)
+  externalSessionId String?
+  sessionUrl        String?
+  prUrl             String?
+  error             String?
+  dispatchedAt      DateTime?
+  claimedAt         DateTime?
+  finishedAt        DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([issueId, createdAt])
+  @@index([status, createdAt])
+}
+
+enum AgentRunStatus {
+  QUEUED
+  DISPATCHED
+  RUNNING
+  NEEDS_INPUT
+  PR_OPEN
+  DONE
+  FAILED
+  CANCELLED
 }

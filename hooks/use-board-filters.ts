@@ -16,7 +16,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { Priority } from "@/lib/api/boards";
+import type { Priority } from "@/lib/api/projects";
 import {
   activeFilterCount,
   filtersFromSearchParams,
@@ -41,6 +41,8 @@ export type UseBoardFilters = {
   toggleLabel: (labelId: string) => void;
   /** Toggle one due quick-filter in/out of the selection. */
   toggleDue: (due: DueFilter) => void;
+  /** Replace whole filter types at once (e.g. clear just the priorities). */
+  update: (patch: Partial<Omit<FilterState, "text">>) => void;
   /** Reset every filter to empty. */
   clear: () => void;
   /** Number of active filter *types* (for the badge). */
@@ -155,6 +157,13 @@ export function useBoardFilters(): UseBoardFilters {
     [pushFilters, urlFilters, textDraft],
   );
 
+  const update = useCallback(
+    (patch: Partial<Omit<FilterState, "text">>) => {
+      pushFilters({ ...urlFilters, text: textDraft, ...patch });
+    },
+    [pushFilters, urlFilters, textDraft],
+  );
+
   const clear = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setTextDraft("");
@@ -175,6 +184,7 @@ export function useBoardFilters(): UseBoardFilters {
     togglePriority,
     toggleLabel,
     toggleDue,
+    update,
     clear,
     count: activeFilterCount(filters),
     isEmpty: isFiltersEmpty(filters),

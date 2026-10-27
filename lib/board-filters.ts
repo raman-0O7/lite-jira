@@ -13,7 +13,7 @@
  * dueDate, no description), only filters that need that field can exclude it.
  */
 
-import type { Priority, TaskStub } from "@/lib/api/boards";
+import type { Priority, IssueCard } from "@/lib/api/projects";
 import { dueStatus } from "@/lib/task-meta";
 
 /** Quick due-date filters, OR-combined within the "due" type. */
@@ -47,11 +47,11 @@ export const EMPTY_FILTERS: FilterState = {
 };
 
 /**
- * A task as far as the filters care. The board payload's TaskStub has no
+ * A task as far as the filters care. The board payload's IssueCard has no
  * `description` (it lives only on the full task fetched in the modal), so we
  * accept it as an optional extra field and degrade gracefully when absent.
  */
-export type FilterableTask = TaskStub & { description?: string | null };
+export type FilterableTask = IssueCard & { description?: string | null };
 
 // ---------------------------------------------------------------------------
 // Predicates (one per filter type) + the combined matcher.

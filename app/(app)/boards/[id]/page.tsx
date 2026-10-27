@@ -1,22 +1,23 @@
-import { Suspense } from "react";
+import { notFound, redirect } from "next/navigation";
 
-import { BoardView } from "@/components/board/BoardView";
+import { ctxForProject } from "@/lib/api/context";
+import { ServiceError } from "@/lib/services/errors";
+import { getProject } from "@/lib/services/projects";
+import { workspaceSlugForCtx } from "@/lib/services/workspaces";
 
-// The (app) layout guards this route and mounts the QueryClient.
-// BoardView (client) fetches the board + columns and handles column CRUD/reorder.
-//
-// F05: BoardView reads filter state from the URL via useSearchParams, so it must
-// sit under a Suspense boundary (otherwise a static prerender of this route
-// fails the build with the "missing Suspense boundary" error).
-export default async function BoardPage({
+// Phase 1 URL (board ids are project ids): redirect to the project in its workspace.
+export default async function LegacyBoardRedirect({
   params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+}: PageProps<"/boards/[id]">) {
   const { id } = await params;
-  return (
-    <Suspense>
-      <BoardView boardId={id} />
-    </Suspense>
-  );
+  let target: string;
+  try {
+    const ctx = await ctxForProject(id);
+    const project = await getProject(ctx, id);
+    target = `/${await workspaceSlugForCtx(ctx)}/projects/${project.key}`;
+  } catch (error) {
+    if (error instanceof ServiceError) notFound();
+    throw error;
+  }
+  redirect(target);
 }

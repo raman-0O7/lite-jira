@@ -1,8 +1,10 @@
-# Lite Jira — Task Management
+# Kanso
 
-A solo, self-hosted Kanban task manager: multiple boards, customizable columns,
-drag-and-drop tasks, and auth. See [`docs/PLAN.md`](docs/PLAN.md) for the full
-architecture and feature roadmap.
+Issue tracking for teams and solo freelancers, built to work with AI agents:
+workspaces with roles, projects with issue keys (`WEB-42`), issue types,
+sub-issues, epics, comments, and a Kanban board. Phase 1 is described in
+[`docs/PLAN.md`](docs/PLAN.md); the current roadmap is
+[`docs/PLAN-v2.md`](docs/PLAN-v2.md).
 
 ## Stack
 
@@ -40,6 +42,9 @@ architecture and feature roadmap.
    completes the OAuth flow once both credentials are set; without them it shows
    a "GitHub sign-in is unavailable" toast. Email/password sign-up and login work
    with no GitHub credentials at all.
+   Invite emails are optional too: set `RESEND_API_KEY` and `EMAIL_FROM` to send
+   them through [Resend](https://resend.com). Without them, the inviter gets a
+   link to share and the server logs the email instead.
 
 3. **Start Postgres**
 
@@ -59,9 +64,10 @@ architecture and feature roadmap.
    pnpm dev
    ```
 
-   Visit http://localhost:3000. Sign up at `/signup`, then you land on `/boards`.
-   Hitting `/boards` while logged out redirects to `/login`; visiting `/login` or
-   `/signup` while logged in redirects to `/boards`. Route protection is enforced
+   Visit http://localhost:3000. Sign up at `/signup`: every account gets a
+   personal workspace and lands on `/{workspace}/boards`. Hitting a protected page
+   while logged out redirects to `/login`; visiting `/login` or `/signup` while
+   logged in redirects to your workspace. Route protection is enforced
    server-side in `app/(app)/layout.tsx` via `requireUser()`.
 
 ## Common commands
@@ -71,6 +77,8 @@ architecture and feature roadmap.
 | `pnpm dev` | Start the Next.js dev server |
 | `pnpm build` | Production build |
 | `pnpm lint` | Lint with ESLint |
+| `pnpm typecheck` | Generate Next route types, then `tsc --noEmit` |
+| `pnpm test` | Run Vitest against the `task_management_test` database (override with `TEST_DATABASE_URL`; the name must end in `_test`) |
 | `pnpm prisma migrate dev` | Apply migrations + regenerate client |
 | `pnpm prisma studio` | Browse the database |
 | `docker compose up -d` | Start Postgres |
@@ -80,31 +88,61 @@ architecture and feature roadmap.
 
 ```
 app/
-  (auth)/login/page.tsx        # public — email/password + GitHub sign-in
-  (auth)/signup/page.tsx       # public — create account, then sign in
-  (auth)/layout.tsx            # centered card layout for auth pages
-  (app)/layout.tsx             # protected app shell + auth guard (requireUser)
-  (app)/boards/page.tsx        # protected placeholder (prints session email)
-  api/auth/[...all]/route.ts   # Better Auth handler
-  layout.tsx  globals.css
+  (auth)/login, signup              # public auth pages (?next= returns after sign-in)
+  (auth)/invite/[token]             # accept a workspace invite
+  (app)/[workspace]/projects        # projects list (workspace-scoped)
+  (app)/[workspace]/projects/[key]  # project board (Kanban), ?issue=KEY opens an issue
+  (app)/[workspace]/issues/[key]    # issue as a full page (WEB-42)
+  (app)/[workspace]/settings        # members, invites, guest access; rename/leave/delete; integrations; agents; API & MCP
+  (auth)/oauth/consent              # OAuth consent for MCP clients
+  (app)/projects, boards            # post-login landing + legacy redirects
+  api/                              # thin route handlers over lib/services
+  api/mcp                           # remote MCP server (OAuth or `kanso_` API token)
+  api/github/webhooks, callback     # GitHub App webhooks and install/link redirect
+  api/cron/agent-watchdog           # fails agent runs nobody claimed (Bearer CRON_SECRET)
+  .well-known/                      # OAuth discovery, forwarded to Better Auth
 lib/
-  auth.ts        # Better Auth server instance + getSession() / requireUser()
-  auth-client.ts # Better Auth React client
-  db.ts          # Prisma singleton
-  validations/   # Zod schemas (auth, board, column, task, label)
+  services/      # all business logic: authorize → validate → write + Activity
+  query/         # issue query language (assignee:me type:bug …)
+  mcp/           # MCP tools, resources, prompts; name resolution; rate limit
+  github/        # GitHub App client, webhook handlers, status sync
+  agents/        # agent dispatcher, Claude Code routine + webhook adapters, run lifecycle
+  api/           # client fetchers + route ctx/handler helpers
+  permissions.ts # role matrix + agent cap
+  validations/   # Zod schemas
+  auth.ts, db.ts
 components/
+  board/         # board, cards, issue modal (rebuilt in Feature 09)
+  workspace/     # workspace switcher, settings pages, invite actions
   ui/            # shadcn primitives
-  auth/          # login/signup forms, GitHub button, auth card
-  app-shell/     # top bar + user menu (logout)
-prisma/
-  schema.prisma  # data model (single source of truth)
-docker-compose.yml
+prisma/schema.prisma
+tests/           # Vitest (services, permissions, query language)
 ```
+
+See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
+`docs/features/` for each feature's spec.
 
 ## Auth notes
 
 - **Route protection** is server-side in `app/(app)/layout.tsx` (`requireUser()`),
   not middleware. Better Auth validates the session against the database, which
   is reliable in a Server Component but not in Next's middleware runtime.
+- **MCP server** at `/api/mcp`: clients sign in with OAuth 2.1 (Better Auth
+  `mcp()` + CIMD, with dynamic registration as a fallback) or send a personal
+  API token (`Authorization: Bearer kanso_…`, created in Settings → API & MCP).
+  Both act as the user, capped by the credential. See
+  [`docs/features/10-mcp-server.md`](docs/features/10-mcp-server.md).
+- **GitHub App** (optional): install from Settings → Integrations to import
+  assigned issues, sync status both ways, and link PRs with checks. Setup:
+  [`docs/github-app.md`](docs/github-app.md); spec:
+  [`docs/features/11-github-app.md`](docs/features/11-github-app.md).
+- **Agents**: Settings → Agents adds Claude Code routines (fired with the
+  routine's own trigger token; Kanso never handles Claude.ai credentials) or
+  self-hosted MCP agents (agent tokens, optional signed webhook). Assigning an
+  issue to an agent dispatches a run; the agent claims it over MCP, opens a PR,
+  and a person merges. Agent secrets are encrypted with `ENCRYPTION_KEY`. Point
+  a scheduler at `GET /api/cron/agent-watchdog` with `CRON_SECRET` to fail runs
+  nobody claimed within `AGENT_CLAIM_TIMEOUT_MINUTES` (it also runs whenever
+  runs are read). Spec: [`docs/features/12-agents.md`](docs/features/12-agents.md).
 - **Out of scope** (future work): password reset, email verification, profile
   editing.

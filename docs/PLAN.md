@@ -1,5 +1,8 @@
 # Lite Jira — Task Management System · Master Plan
 
+> **Phase 1 (features 00–05) is complete.** Phase 2 — teams, GitHub App, MCP and
+> AI agents — is planned in [`PLAN-v2.md`](PLAN-v2.md).
+
 A solo, self-hosted Kanban task manager. Multiple boards, customizable columns,
 drag-and-drop tasks, auth. Built so each **feature** below can be handed to a
 separate sub-agent.

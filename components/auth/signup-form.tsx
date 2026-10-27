@@ -13,7 +13,7 @@ import { signupSchema } from "@/lib/validations/auth";
 
 type FieldErrors = Partial<Record<"name" | "email" | "password", string>>;
 
-export function SignupForm() {
+export function SignupForm({ next }: { next: string }) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -44,7 +44,7 @@ export function SignupForm() {
     setIsLoading(true);
     // signUp.email creates the account and signs the user in (sets the session
     // cookie) in a single call.
-    const { error } = await signUp.email({
+    const { data, error } = await signUp.email({
       name: parsed.data.name,
       email: parsed.data.email,
       password: parsed.data.password,
@@ -58,7 +58,11 @@ export function SignupForm() {
       return;
     }
 
-    router.push("/boards");
+    // Mid-OAuth, the response carries the next authorization step and the
+    // auth client navigates there itself.
+    if (data && "redirect" in data && data.redirect) return;
+
+    router.push(next);
     router.refresh();
   }
 
@@ -130,7 +134,7 @@ export function SignupForm() {
         </div>
       </div>
 
-      <GitHubButton />
+      <GitHubButton callbackURL={next} />
     </div>
   );
 }

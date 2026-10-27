@@ -13,7 +13,7 @@ import { loginSchema } from "@/lib/validations/auth";
 
 type FieldErrors = Partial<Record<"email" | "password", string>>;
 
-export function LoginForm() {
+export function LoginForm({ next }: { next: string }) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -41,7 +41,7 @@ export function LoginForm() {
     }
 
     setIsLoading(true);
-    const { error } = await signIn.email({
+    const { data, error } = await signIn.email({
       email: parsed.data.email,
       password: parsed.data.password,
     });
@@ -52,8 +52,12 @@ export function LoginForm() {
       return;
     }
 
+    // Mid-OAuth, the response carries the next authorization step and the
+    // auth client navigates there itself.
+    if (data && "redirect" in data && data.redirect) return;
+
     // Full navigation so the protected layout re-reads the new session cookie.
-    router.push("/boards");
+    router.push(next);
     router.refresh();
   }
 
@@ -105,7 +109,7 @@ export function LoginForm() {
         </div>
       </div>
 
-      <GitHubButton />
+      <GitHubButton callbackURL={next} />
     </div>
   );
 }
