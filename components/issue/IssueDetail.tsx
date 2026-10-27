@@ -21,6 +21,7 @@ import {
 } from "@/components/issue/IssueFields";
 import { LabelChip } from "@/components/issue/LabelChip";
 import { LabelPicker } from "@/components/issue/LabelPicker";
+import { IssueGitHub } from "@/components/issue/IssueGitHub";
 import { SubIssues } from "@/components/issue/SubIssues";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
@@ -594,6 +595,8 @@ export function IssueDetail({
             </span>
           </PropertyRow>
         </div>
+
+        <IssueGitHub issue={issue} />
 
         {canEdit && onDelete ? (
           <div className="mt-3 border-t pt-3">

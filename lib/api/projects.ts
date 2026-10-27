@@ -15,6 +15,17 @@ export type ProjectMode = "KANBAN" | "SCRUM";
 export type LabelStub = { id: string; name: string; color: string };
 export type PersonStub = { id: string; name: string; image: string | null };
 
+export type GitHubIssueStub = { repoFullName: string; number: number; url: string; state: "OPEN" | "CLOSED" };
+export type PullRequestStub = {
+  id: string;
+  repoFullName: string;
+  number: number;
+  url: string;
+  title: string;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  checks: "NONE" | "PENDING" | "PASS" | "FAIL";
+};
+
 /** A project as shown in the projects list. */
 export type ProjectSummary = {
   id: string;
@@ -44,6 +55,10 @@ export type IssueCard = {
   assignee: PersonStub | null;
   subIssueCount: number;
   subIssueDoneCount: number;
+  // GitHub (Feature 11). Optional: optimistic cards don't have them yet.
+  source?: "NATIVE" | "GITHUB";
+  githubLink?: GitHubIssueStub | null;
+  pullRequests?: PullRequestStub[];
 };
 
 export type ColumnWithIssues = {

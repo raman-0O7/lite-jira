@@ -30,6 +30,7 @@ model User {
   oauthRefreshTokens OauthRefreshToken[]
   oauthAccessTokens  OauthAccessToken[]
   oauthConsents      OauthConsent[]
+  githubLink         GitHubUserLink?
 }
 
 model Session {
@@ -78,17 +79,18 @@ model Verification {
 
 // ---------- Workspaces ----------
 model Workspace {
-  id          String       @id @default(cuid())
-  name        String
-  slug        String       @unique
-  personal    Boolean      @default(false)
-  memberships Membership[]
-  projects    Project[]
-  activities  Activity[]
-  invites     Invite[]
-  apiTokens   ApiToken[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id                  String               @id @default(cuid())
+  name                String
+  slug                String               @unique
+  personal            Boolean              @default(false)
+  memberships         Membership[]
+  projects            Project[]
+  activities          Activity[]
+  invites             Invite[]
+  apiTokens           ApiToken[]
+  githubInstallations GitHubInstallation[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 }
 
 model Membership {
@@ -190,6 +192,7 @@ model Project {
   issues       Issue[]
   sprints      Sprint[]
   access       ProjectAccess[]
+  repos        ProjectRepo[]
   archivedAt   DateTime?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -225,43 +228,45 @@ enum ColumnCategory {
 }
 
 model Issue {
-  id                 String      @id @default(cuid())
+  id                 String            @id @default(cuid())
   projectId          String
-  project            Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project            Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   number             Int
-  type               IssueType   @default(TASK)
+  type               IssueType         @default(TASK)
   title              String
   description        String?
   acceptanceCriteria String?
-  priority           Priority    @default(MEDIUM)
+  priority           Priority          @default(MEDIUM)
   dueDate            DateTime?
   estimate           Int?
   position           Int
   columnId           String
-  column             Column      @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  column             Column            @relation(fields: [columnId], references: [id], onDelete: Cascade)
   parentId           String?
-  parent             Issue?      @relation("SubIssues", fields: [parentId], references: [id], onDelete: Cascade)
-  subIssues          Issue[]     @relation("SubIssues")
+  parent             Issue?            @relation("SubIssues", fields: [parentId], references: [id], onDelete: Cascade)
+  subIssues          Issue[]           @relation("SubIssues")
   epicId             String?
-  epic               Issue?      @relation("EpicIssues", fields: [epicId], references: [id], onDelete: SetNull)
-  epicIssues         Issue[]     @relation("EpicIssues")
+  epic               Issue?            @relation("EpicIssues", fields: [epicId], references: [id], onDelete: SetNull)
+  epicIssues         Issue[]           @relation("EpicIssues")
   sprintId           String?
-  sprint             Sprint?     @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  sprint             Sprint?           @relation(fields: [sprintId], references: [id], onDelete: SetNull)
   assigneeUserId     String?
-  assignee           User?       @relation("IssueAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  assignee           User?             @relation("IssueAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
   assigneeAgentId    String?
   reporterUserId     String?
-  reporter           User?       @relation("IssueReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  reporter           User?             @relation("IssueReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
   claimedByAgentId   String?
   claimedAt          DateTime?
-  source             IssueSource @default(NATIVE)
-  labels             Label[]     @relation("IssueLabels")
+  source             IssueSource       @default(NATIVE)
+  labels             Label[]           @relation("IssueLabels")
   comments           Comment[]
-  linksFrom          IssueLink[] @relation("IssueLinkFrom")
-  linksTo            IssueLink[] @relation("IssueLinkTo")
+  linksFrom          IssueLink[]       @relation("IssueLinkFrom")
+  linksTo            IssueLink[]       @relation("IssueLinkTo")
+  githubLink         GitHubIssueLink?
+  pullRequests       PullRequestLink[]
   archivedAt         DateTime?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@unique([projectId, number])
   @@index([columnId])
@@ -564,4 +569,112 @@ model OauthConsent {
 model OauthClientAssertion {
   id        String   @id
   expiresAt DateTime
+}
+
+// ---------- GitHub App (docs/features/11-github-app.md) ----------
+
+model GitHubInstallation {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  // GitHub's installation id.
+  installationId Int           @unique
+  accountLogin   String
+  accountType    String
+  createdById    String?
+  suspendedAt    DateTime?
+  repos          ProjectRepo[]
+  createdAt      DateTime      @default(now())
+
+  @@index([workspaceId])
+}
+
+// Who a user is on GitHub. No user token is kept.
+model GitHubUserLink {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  githubUserId Int      @unique
+  login        String
+  createdAt    DateTime @default(now())
+}
+
+model ProjectRepo {
+  id             String             @id @default(cuid())
+  projectId      String
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  installationId String
+  installation   GitHubInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  // "owner/name", stored lowercase.
+  repoFullName   String
+  importAssigned Boolean            @default(true)
+  statusSync     Boolean            @default(true)
+  moveOnMerge    Boolean            @default(true)
+  issueLinks     GitHubIssueLink[]
+  createdAt      DateTime           @default(now())
+
+  @@unique([installationId, repoFullName])
+  @@index([repoFullName])
+  @@index([projectId])
+}
+
+model GitHubIssueLink {
+  id            String           @id @default(cuid())
+  issueId       String           @unique
+  issue         Issue            @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  projectRepoId String?
+  projectRepo   ProjectRepo?     @relation(fields: [projectRepoId], references: [id], onDelete: SetNull)
+  repoFullName  String
+  number        Int
+  url           String
+  state         GitHubIssueState @default(OPEN)
+  lastSyncedAt  DateTime         @default(now())
+
+  @@unique([repoFullName, number])
+}
+
+enum GitHubIssueState {
+  OPEN
+  CLOSED
+}
+
+model PullRequestLink {
+  id           String           @id @default(cuid())
+  issueId      String
+  issue        Issue            @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  repoFullName String
+  number       Int
+  url          String
+  title        String
+  branch       String
+  headSha      String?
+  state        PullRequestState @default(OPEN)
+  checks       ChecksState      @default(NONE)
+  mergedAt     DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([issueId, repoFullName, number])
+  @@index([repoFullName, number])
+  @@index([repoFullName, headSha])
+}
+
+enum PullRequestState {
+  OPEN
+  MERGED
+  CLOSED
+}
+
+enum ChecksState {
+  NONE
+  PENDING
+  PASS
+  FAIL
+}
+
+// Webhook deliveries already handled (X-GitHub-Delivery), for dedupe.
+model GitHubDelivery {
+  id         String   @id
+  event      String
+  receivedAt DateTime @default(now())
 }

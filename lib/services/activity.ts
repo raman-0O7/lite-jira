@@ -35,7 +35,12 @@ export type ActivityAction =
   | "member.left"
   | "member.projects_changed"
   | "api_token.created"
-  | "api_token.revoked";
+  | "api_token.revoked"
+  | "github.installed"
+  | "github.uninstalled"
+  | "github.repo_connected"
+  | "github.repo_updated"
+  | "github.repo_disconnected";
 
 type ActivityEntry = {
   action: ActivityAction;

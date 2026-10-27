@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 // Every test starts from an empty database.
 beforeEach(async () => {
   await db.$executeRawUnsafe(
-    `TRUNCATE "Activity", "Invite", "ProjectAccess", "Comment", "IssueLink", "Label", "Issue", "Sprint", "Column", "Project", "Membership", "Workspace", "Session", "Account", "Verification", "User" CASCADE`,
+    `TRUNCATE "Activity", "Invite", "ProjectAccess", "Comment", "IssueLink", "Label", "Issue", "Sprint", "Column", "Project", "Membership", "Workspace", "Session", "Account", "Verification", "User", "GitHubDelivery" CASCADE`,
   );
 });
 

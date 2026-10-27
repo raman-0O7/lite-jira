@@ -93,16 +93,18 @@ app/
   (app)/[workspace]/projects        # projects list (workspace-scoped)
   (app)/[workspace]/projects/[key]  # project board (Kanban), ?issue=KEY opens an issue
   (app)/[workspace]/issues/[key]    # issue link (WEB-42) → its board
-  (app)/[workspace]/settings        # members, invites, guest access; rename/leave/delete; API & MCP
+  (app)/[workspace]/settings        # members, invites, guest access; rename/leave/delete; integrations; API & MCP
   (auth)/oauth/consent              # OAuth consent for MCP clients
   (app)/projects, boards            # post-login landing + legacy redirects
   api/                              # thin route handlers over lib/services
   api/mcp                           # remote MCP server (OAuth or `kanso_` API token)
+  api/github/webhooks, callback     # GitHub App webhooks and install/link redirect
   .well-known/                      # OAuth discovery, forwarded to Better Auth
 lib/
   services/      # all business logic: authorize → validate → write + Activity
   query/         # issue query language (assignee:me type:bug …)
   mcp/           # MCP tools, resources, prompts; name resolution; rate limit
+  github/        # GitHub App client, webhook handlers, status sync
   api/           # client fetchers + route ctx/handler helpers
   permissions.ts # role matrix + agent cap
   validations/   # Zod schemas
@@ -128,5 +130,9 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   API token (`Authorization: Bearer kanso_…`, created in Settings → API & MCP).
   Both act as the user, capped by the credential. See
   [`docs/features/10-mcp-server.md`](docs/features/10-mcp-server.md).
+- **GitHub App** (optional): install from Settings → Integrations to import
+  assigned issues, sync status both ways, and link PRs with checks. Setup:
+  [`docs/github-app.md`](docs/github-app.md); spec:
+  [`docs/features/11-github-app.md`](docs/features/11-github-app.md).
 - **Out of scope** (future work): password reset, email verification, profile
   editing.

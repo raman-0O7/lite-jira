@@ -1,7 +1,8 @@
-import type { IssueType, Prisma } from "@prisma/client";
+import { type IssueType, Prisma } from "@prisma/client";
 
 import { planMove } from "@/lib/board-dnd";
 import { db } from "@/lib/db";
+import { onCategoryChange } from "@/lib/github/sync";
 import { authorize } from "@/lib/permissions";
 import { recordActivity } from "@/lib/services/activity";
 import { findColumnInWorkspace } from "@/lib/services/columns";
@@ -48,6 +49,7 @@ async function findIssueInWorkspace(
       assigneeUserId: true,
       labels: { select: { id: true } },
       project: { select: { key: true } },
+      column: { select: { category: true } },
       _count: { select: { epicIssues: true } },
     },
   });
@@ -349,7 +351,7 @@ export async function moveIssue(ctx: Ctx, input: unknown) {
   authorize(ctx, "issue.write");
   const { issueId, toColumnId, toPosition } = moveIssueSchema.parse(input);
 
-  await db.$transaction(async (tx) => {
+  const moved = await db.$transaction(async (tx) => {
     const issue = await findIssueInWorkspace(tx, ctx, issueId);
     const target = await findColumnInWorkspace(tx, ctx, toColumnId);
     // Labels and keys are project-scoped, so an issue never leaves its project.
@@ -403,5 +405,74 @@ export async function moveIssue(ctx: Ctx, input: unknown) {
         toCategory: target.category,
       },
     });
+    return { fromCategory: issue.column.category, toCategory: target.category };
   });
+
+  if (moved.fromCategory !== moved.toCategory) {
+    onCategoryChange(ctx, issueId, moved.fromCategory, moved.toCategory);
+  }
+  return moved;
+}
+
+/**
+ * Create an issue from a GitHub issue (docs/features/11-github-app.md "Import").
+ * The link is created in the same transaction; a repeat import is a no-op
+ * (returns null).
+ */
+export async function createImportedIssue(
+  ctx: Ctx,
+  input: {
+    projectId: string;
+    columnId: string;
+    title: string;
+    description: string | null;
+    assigneeUserId: string | null;
+    labelIds: string[];
+    link: { projectRepoId: string; repoFullName: string; number: number; url: string };
+  },
+) {
+  authorize(ctx, "issue.write");
+  try {
+    return await db.$transaction(async (tx) => {
+      const project = await tx.project.findFirst({
+        where: { id: input.projectId, ...projectScope(ctx) },
+        select: { key: true },
+      });
+      if (!project) throw notFound("Project not found");
+      const issue = await tx.issue.create({
+        data: {
+          title: input.title.trim().slice(0, 200) || `${input.link.repoFullName}#${input.link.number}`,
+          description: input.description?.slice(0, 10_000) || null,
+          assigneeUserId: input.assigneeUserId,
+          columnId: input.columnId,
+          projectId: input.projectId,
+          number: await nextNumber(tx, input.projectId),
+          position: await nextPosition(tx, input.columnId),
+          source: "GITHUB",
+          labels: { connect: input.labelIds.map((id) => ({ id })) },
+          githubLink: { create: input.link },
+        },
+        select: { id: true, number: true },
+      });
+      const key = `${project.key}-${issue.number}`;
+      await recordActivity(tx, ctx, {
+        action: "issue.created",
+        projectId: input.projectId,
+        issueId: issue.id,
+        data: {
+          key,
+          title: input.title,
+          type: "TASK",
+          columnId: input.columnId,
+          source: `${input.link.repoFullName}#${input.link.number}`,
+          ...(input.assigneeUserId ? { assigneeUserId: input.assigneeUserId } : {}),
+        },
+      });
+      return { id: issue.id, key };
+    });
+  } catch (error) {
+    // Lost a race with another import of the same GitHub issue.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return null;
+    throw error;
+  }
 }

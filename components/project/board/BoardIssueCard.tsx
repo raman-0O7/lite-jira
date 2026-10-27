@@ -6,9 +6,11 @@ import { ListTree, MoreHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Avatar } from "@/components/icons/Avatar";
+import { GitHubMark } from "@/components/icons/GitHubMark";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { PriorityIcon } from "@/components/icons/PriorityIcon";
 import { DueDate } from "@/components/issue/DueDate";
+import { PullRequestBadge } from "@/components/issue/GitHubBadges";
 import { LabelChip } from "@/components/issue/LabelChip";
 import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
@@ -36,7 +38,9 @@ export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.
     issue.subIssueCount > 0 ||
     issue.estimate !== null ||
     issue.dueDate !== null ||
-    issue.assignee !== null;
+    issue.assignee !== null ||
+    Boolean(issue.pullRequests?.length) ||
+    issue.source === "GITHUB";
   return (
     <>
       <div className="flex h-4 items-center gap-1.5">
@@ -71,6 +75,15 @@ export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.
             </span>
           ) : null}
           {issue.dueDate ? <DueDate value={issue.dueDate} /> : null}
+          {issue.githubLink ? (
+            <span
+              className="inline-flex items-center text-muted-foreground"
+              title={`Imported from ${issue.githubLink.repoFullName}#${issue.githubLink.number}`}
+            >
+              <GitHubMark className="size-3" />
+            </span>
+          ) : null}
+          {issue.pullRequests?.length ? <PullRequestBadge pullRequests={issue.pullRequests} /> : null}
           {issue.assignee ? <Avatar person={issue.assignee} className="ml-auto" /> : null}
         </div>
       ) : null}

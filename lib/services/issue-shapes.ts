@@ -35,6 +35,12 @@ export const cardSelect = {
   labels: labelSelect,
   assignee: personSelect,
   subIssues: { select: { column: { select: { category: true } } } },
+  source: true,
+  githubLink: { select: { repoFullName: true, number: true, url: true, state: true } },
+  pullRequests: {
+    orderBy: { createdAt: "asc" },
+    select: { id: true, repoFullName: true, number: true, url: true, title: true, state: true, checks: true },
+  },
 } satisfies Prisma.IssueSelect;
 
 type CardRow = Prisma.IssueGetPayload<{ select: typeof cardSelect }>;
