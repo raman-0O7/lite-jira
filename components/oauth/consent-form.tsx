@@ -45,7 +45,7 @@ export function ConsentForm({ app, account, scopes, redirectHost }: Props) {
             {app.name.charAt(0).toUpperCase()}
           </div>
         )}
-        <CardTitle className="text-[19px] font-semibold tracking-[-0.02em]">
+        <CardTitle as="h1" className="text-[19px] font-semibold tracking-[-0.02em]">
           {app.name} wants to access Kanso
         </CardTitle>
         <CardDescription>

@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
 import { MCP_RESOURCE, MCP_SCOPES, OAUTH_SCOPES } from "@/lib/mcp/config";
+import { safeNext, withNext } from "@/lib/safe-next";
 import { ensurePersonalWorkspace } from "@/lib/services/workspaces";
 
 const githubClientId = process.env.GITHUB_CLIENT_ID;
@@ -93,7 +94,8 @@ export async function requireUser() {
   const session = await getSession();
 
   if (!session) {
-    redirect("/login");
+    // Come back to the requested page after signing in (path from proxy.ts).
+    redirect(withNext("/login", safeNext((await headers()).get("x-kanso-path"))));
   }
 
   return session.user;

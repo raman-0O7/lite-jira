@@ -43,7 +43,7 @@ export default async function InvitePage({ params }: PageProps<"/invite/[token]"
     return (
       <Card className="w-full max-w-sm bg-background shadow-panel [--card-spacing:--spacing(6)]">
         <CardHeader>
-          <CardTitle className="text-[19px] font-semibold tracking-[-0.02em]">Invite can’t be used</CardTitle>
+          <CardTitle as="h1" className="text-[19px] font-semibold tracking-[-0.02em]">Invite can’t be used</CardTitle>
           <CardDescription>{unusable}</CardDescription>
         </CardHeader>
         <CardFooter>
@@ -65,7 +65,7 @@ export default async function InvitePage({ params }: PageProps<"/invite/[token]"
   return (
     <Card className="w-full max-w-sm bg-background shadow-panel [--card-spacing:--spacing(6)]">
       <CardHeader>
-        <CardTitle className="text-[19px] font-semibold tracking-[-0.02em]">Join {preview.workspace.name}</CardTitle>
+        <CardTitle as="h1" className="text-[19px] font-semibold tracking-[-0.02em]">Join {preview.workspace.name}</CardTitle>
         <CardDescription>
           {preview.invitedBy ? `${preview.invitedBy} invited you` : "You’re invited"} to join as{" "}
           {ROLE_NOUN[preview.role]}.

@@ -92,7 +92,7 @@ app/
   (auth)/invite/[token]             # accept a workspace invite
   (app)/[workspace]/projects        # projects list (workspace-scoped)
   (app)/[workspace]/projects/[key]  # project board (Kanban), ?issue=KEY opens an issue
-  (app)/[workspace]/issues/[key]    # issue link (WEB-42) → its board
+  (app)/[workspace]/issues/[key]    # issue as a full page (WEB-42)
   (app)/[workspace]/settings        # members, invites, guest access; rename/leave/delete; integrations; agents; API & MCP
   (auth)/oauth/consent              # OAuth consent for MCP clients
   (app)/projects, boards            # post-login landing + legacy redirects

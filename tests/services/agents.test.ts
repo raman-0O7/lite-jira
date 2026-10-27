@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { GET as watchdogGET } from "@/app/api/cron/agent-watchdog/route";
 import { ROUTINE_BETA } from "@/lib/agents/claude-code";
@@ -63,9 +63,6 @@ afterAll(() => setAgentFetch(null));
 beforeEach(() => {
   calls = [];
   respond = () => fired();
-});
-afterEach(async () => {
-  await flushDeferred();
 });
 
 /** A team with a Web project and a Claude Code agent owned by the owner. */

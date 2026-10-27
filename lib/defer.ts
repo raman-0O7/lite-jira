@@ -3,11 +3,11 @@ import { after } from "next/server";
 /**
  * Run side effects (calls to GitHub, agent dispatch) after the response is
  * sent, so a slow or failing third party never blocks or fails the write that
- * triggered it. Outside a request (tests, scripts) the task starts right away
- * and `flushDeferred()` waits for it.
+ * triggered it. Outside a request (tests, scripts) the task is queued, like
+ * `after()` would, and runs when `flushDeferred()` is called.
  */
 
-const pending = new Set<Promise<void>>();
+const queued: (() => Promise<void>)[] = [];
 
 export function defer(label: string, task: () => Promise<unknown>) {
   const run = async () => {
@@ -20,13 +20,11 @@ export function defer(label: string, task: () => Promise<unknown>) {
   try {
     after(run);
   } catch {
-    const promise = run();
-    pending.add(promise);
-    void promise.finally(() => pending.delete(promise));
+    queued.push(run);
   }
 }
 
-/** Wait for deferred tasks started outside a request. */
+/** Run deferred tasks queued outside a request, including any they queue. */
 export async function flushDeferred() {
-  while (pending.size) await Promise.all([...pending]);
+  while (queued.length) await Promise.all(queued.splice(0).map((run) => run()));
 }

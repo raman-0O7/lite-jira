@@ -33,7 +33,7 @@ function Problem({ message }: { message: string }) {
   return (
     <Card className="w-full max-w-sm bg-background shadow-panel [--card-spacing:--spacing(6)]">
       <CardHeader>
-        <CardTitle className="text-[19px] font-semibold tracking-[-0.02em]">Can&apos;t authorize this app</CardTitle>
+        <CardTitle as="h1" className="text-[19px] font-semibold tracking-[-0.02em]">Can&apos;t authorize this app</CardTitle>
         <CardDescription>{message}</CardDescription>
       </CardHeader>
     </Card>

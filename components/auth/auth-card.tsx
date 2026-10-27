@@ -29,7 +29,7 @@ export function AuthCard({
   return (
     <Card className="w-full max-w-sm bg-background shadow-panel [--card-spacing:--spacing(6)]">
       <CardHeader>
-        <CardTitle className="text-[19px] font-semibold tracking-[-0.02em]">{title}</CardTitle>
+        <CardTitle as="h1" className="text-[19px] font-semibold tracking-[-0.02em]">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>{children}</CardContent>
