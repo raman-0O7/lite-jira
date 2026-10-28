@@ -85,11 +85,13 @@ started. It is for admins only (`agent.manage`).
    manually**. The steps follow the form from top to bottom, and each one is
    ticked:
    - name it (the first step's note covers opening the form);
-   - paste the prompt (copy button), leaving **Auto** and **Default model** as
-     they are so Claude works without stopping to ask;
+   - paste the prompt (copy button), leaving the bar under it as it is (**Auto**,
+     or "Permissions set by environment", and the default model) so Claude works
+     without stopping to ask;
    - in the Trigger row, switch **Schedule** to **API**;
-   - choose the repository;
-   - Save, then copy the API token Claude shows.
+   - Advanced settings → Repository (General tab, starts at None; the Connectors
+     tab next to it should list Kanso);
+   - Create, then copy the API token Claude shows.
 
    Kanso doesn't need its own step here: Claude includes connected connectors
    by default. Ticking the last step moves straight on to Link it, while the
@@ -97,9 +99,9 @@ started. It is for admins only (`agent.manage`).
 4. **Link it.**
    - Fields: token, fire URL, and name (default "Claude"), in the order
      they appear in Claude.
-   - Token: the one shown after Save. If that dialog was closed, Regenerate
+   - Token: the one shown after Create. If that dialog was closed, Regenerate
      gives a new one.
-   - Fire URL: after Save, Claude opens the task's page. The copy button next
+   - Fire URL: after Create, Claude opens the task's page. The copy button next
      to **Trigger · API** copies the URL.
    - Both values are checked as you type: the URL against the fire URL
      pattern, and the token's length.

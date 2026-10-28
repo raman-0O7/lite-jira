@@ -6,6 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { LabelChip } from "@/components/issue/LabelChip";
+import { InlineLoading } from "@/components/loading/skeletons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -115,7 +116,7 @@ export function LabelPicker({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-60 gap-1 p-1.5">
         {labelsQuery.isPending ? (
-          <p className="px-1 py-2 text-xs text-muted-foreground">Loading…</p>
+          <InlineLoading label="Loading labels…" className="px-1 py-2" />
         ) : labels.length === 0 ? (
           <p className="px-1 py-2 text-xs text-muted-foreground">
             No labels yet. Create one below.

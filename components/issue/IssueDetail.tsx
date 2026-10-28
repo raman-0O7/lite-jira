@@ -24,6 +24,7 @@ import { LabelChip } from "@/components/issue/LabelChip";
 import { LabelPicker } from "@/components/issue/LabelPicker";
 import { IssueGitHub } from "@/components/issue/IssueGitHub";
 import { SubIssues } from "@/components/issue/SubIssues";
+import { IssueDetailSkeleton } from "@/components/loading/skeletons";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -414,7 +415,7 @@ export function IssueDetail({
   // ---- render --------------------------------------------------------------
 
   if (issueQuery.isPending) {
-    return <p className="flex-1 p-8 text-center text-sm text-muted-foreground">Loading issue…</p>;
+    return <IssueDetailSkeleton />;
   }
   if (issueQuery.isError || !issue) {
     return (

@@ -149,5 +149,8 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   "Invite people…" / "Add an AI agent…" rows, and a step-by-step agent setup
   dialog that detects when Kanso is connected to Claude. Spec:
   [`docs/features/13-guided-setup.md`](docs/features/13-guided-setup.md).
+- **Loading states**: skeletons shaped like each screen (routes and queries),
+  and spinners in buttons, menus and pickers. Spec:
+  [`docs/features/14-loading-states.md`](docs/features/14-loading-states.md).
 - **Out of scope** (future work): password reset, email verification, profile
   editing.

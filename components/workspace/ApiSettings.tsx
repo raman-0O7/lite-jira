@@ -6,6 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { ago } from "@/components/issue/IssueActivity";
+import { RowListSkeleton } from "@/components/loading/skeletons";
 import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -150,7 +151,7 @@ function ApiTokens({ mcpUrl }: { mcpUrl: string }) {
       {created ? <NewSecret secret={created.secret} mcpUrl={mcpUrl} onDismiss={() => setCreated(null)} /> : null}
 
       {tokens.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <RowListSkeleton label="Loading tokens" rows={2} />
       ) : tokens.isError ? (
         <p className="text-sm text-muted-foreground">{tokens.error.message}</p>
       ) : tokens.data.length === 0 ? (
@@ -356,7 +357,7 @@ function ConnectedApps() {
         </p>
       </div>
       {apps.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <RowListSkeleton label="Loading connected apps" rows={2} />
       ) : apps.isError ? (
         <p className="text-sm text-muted-foreground">{apps.error.message}</p>
       ) : apps.data.length === 0 ? (

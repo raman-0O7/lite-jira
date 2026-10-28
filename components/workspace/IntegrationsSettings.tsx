@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { GitHubMark } from "@/components/icons/GitHubMark";
+import { CardSkeleton, InlineLoading } from "@/components/loading/skeletons";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -63,7 +64,7 @@ export function IntegrationsSettings() {
       </div>
 
       {settings.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <CardSkeleton label="Loading GitHub settings" />
       ) : settings.isError ? (
         <p className="text-sm text-muted-foreground">{settings.error.message}</p>
       ) : !settings.data.configured ? (
@@ -352,7 +353,17 @@ function ConnectRepoForm({ installation }: { installation: GitHubInstallation })
         <Label className="text-xs">Repository</Label>
         <Select value={repoName} onValueChange={setRepoName} disabled={repos.isPending}>
           <SelectTrigger size="sm" className="w-full">
-            <SelectValue placeholder={repos.isPending ? "Loading…" : available.length ? "Choose…" : "No repositories left"} />
+            <SelectValue
+              placeholder={
+                repos.isPending ? (
+                  <InlineLoading label="Loading repositories…" />
+                ) : available.length ? (
+                  "Choose…"
+                ) : (
+                  "No repositories left"
+                )
+              }
+            />
           </SelectTrigger>
           <SelectContent>
             {available.map((repo) => (

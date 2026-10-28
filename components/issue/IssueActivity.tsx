@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { AgentIcon } from "@/components/icons/AgentIcon";
 import { Avatar } from "@/components/icons/Avatar";
 import { StatusIcon } from "@/components/icons/StatusIcon";
+import { ActivitySkeleton } from "@/components/loading/skeletons";
 import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { addComment, deleteComment, fetchComments, type IssueComment } from "@/lib/api/comments";
@@ -331,7 +332,7 @@ export function IssueActivity({
     <section aria-label="Activity" className="flex flex-col gap-2">
       <h2 className="font-heading text-sm font-semibold text-foreground">Activity</h2>
       {loading ? (
-        <p className="py-2 text-xs text-muted-foreground">Loading…</p>
+        <ActivitySkeleton />
       ) : error ? (
         <p className="py-2 text-xs text-muted-foreground">{(error as Error).message}</p>
       ) : (

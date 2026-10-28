@@ -9,6 +9,7 @@ import { useAppUI } from "@/components/app-shell/app-ui";
 import { UserMenu } from "@/components/app-shell/user-menu";
 import { Kbd } from "@/components/icons/Kbd";
 import { ProjectTile } from "@/components/icons/ProjectTile";
+import { SidebarProjectsSkeleton } from "@/components/loading/skeletons";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { WorkspaceSwitcher } from "@/components/workspace/WorkspaceSwitcher";
 import { fetchProjects, projectKeys } from "@/lib/api/projects";
@@ -152,6 +153,7 @@ export function Sidebar({
               </li>
             );
           })}
+          {projectsQuery.isPending ? <SidebarProjectsSkeleton /> : null}
           {projectsQuery.data?.length === 0 ? (
             <li className="px-2 py-1 text-xs text-muted-foreground">No projects yet</li>
           ) : null}
