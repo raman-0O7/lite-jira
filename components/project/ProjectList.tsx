@@ -5,6 +5,7 @@ import { FolderKanban, Plus } from "lucide-react";
 
 import { PageHeader, PageTitle } from "@/components/app-shell/PageHeader";
 import { useAppUI } from "@/components/app-shell/app-ui";
+import { GetStarted } from "@/components/project/GetStarted";
 import { ProjectCard } from "@/components/project/ProjectCard";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ export function ProjectList() {
       </PageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {projectsQuery.data ? <GetStarted projectCount={projectsQuery.data.length} /> : null}
         {projectsQuery.isPending ? (
           <p className="px-5 py-6 text-sm text-muted-foreground">Loading projects…</p>
         ) : projectsQuery.isError ? (

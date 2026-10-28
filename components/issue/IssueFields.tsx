@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Check, ChevronDown, Circle, Layers, UserRound } from "lucide-react";
+import { Bot, Check, ChevronDown, Circle, Layers, Sparkles, UserPlus, UserRound } from "lucide-react";
 import { useState } from "react";
 
 import { Avatar } from "@/components/icons/Avatar";
@@ -11,6 +11,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Member } from "@/lib/api/members";
@@ -201,6 +202,13 @@ export function TypePicker({
 }
 
 /**
+ * Ways to grow the assignee list from inside the menu
+ * (docs/features/13-guided-setup.md "Assignee menu"): actions for admins, a
+ * hint for everyone else.
+ */
+export type AssigneeShortcuts = { onInvite?: () => void; onAddAgent?: () => void; hint?: string };
+
+/**
  * Workspace members who can be assigned (everyone but guests), and, when
  * `agents` is given, the workspace's enabled agents below them.
  */
@@ -211,6 +219,7 @@ export function AssigneePicker({
   agents,
   agentValue = null,
   onAgentChange,
+  shortcuts,
   look = "row",
   disabled,
 }: {
@@ -221,6 +230,7 @@ export function AssigneePicker({
   /** The assigned agent, if any; it takes the place of a person. */
   agentValue?: AgentStub | null;
   onAgentChange?: (agentId: string) => void;
+  shortcuts?: AssigneeShortcuts;
   look?: PickerLook;
   disabled?: boolean;
 }) {
@@ -273,6 +283,20 @@ export function AssigneePicker({
           ))}
         </>
       ) : null}
+      {shortcuts?.onInvite || shortcuts?.onAddAgent || shortcuts?.hint ? <DropdownMenuSeparator /> : null}
+      {shortcuts?.onInvite ? (
+        <DropdownMenuItem onSelect={shortcuts.onInvite}>
+          <UserPlus className="text-muted-foreground" />
+          Invite people…
+        </DropdownMenuItem>
+      ) : null}
+      {shortcuts?.onAddAgent ? (
+        <DropdownMenuItem onSelect={shortcuts.onAddAgent}>
+          <Sparkles className="text-primary-text" />
+          Add an AI agent…
+        </DropdownMenuItem>
+      ) : null}
+      {shortcuts?.hint ? <p className="px-2 py-1.5 text-2xs text-muted-foreground">{shortcuts.hint}</p> : null}
     </Picker>
   );
 }
