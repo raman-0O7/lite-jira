@@ -8,7 +8,8 @@
  * Kanso design tokens (docs/features/09-redesign.md). Dark is the default
  * theme; the root layout puts `.dark` on <html> unless the viewer chose light.
  * shadcn's variables map onto the palette so the ui/ primitives follow it:
- * `primary` is the indigo accent, `accent` is shadcn's hover surface.
+ * `primary` is the orange accent (the logo colour, #d13f00; white text on it
+ * is 4.75:1), `accent` is shadcn's hover surface.
  */
 
 @theme {
@@ -117,10 +118,10 @@
   --card-foreground: #15161a;
   --popover: #ffffff;
   --popover-foreground: #15161a;
-  --primary: #5357dd;
+  --primary: #d13f00;
   --primary-foreground: #ffffff;
-  --primary-text: #4045c2;
-  --primary-soft: rgb(83 87 221 / 0.08);
+  --primary-text: #d13f00;
+  --primary-soft: rgb(209 63 0 / 0.08);
   --secondary: #f0f0f3;
   --secondary-foreground: #15161a;
   --muted: #f0f0f3;
@@ -130,7 +131,7 @@
   --destructive: #d23f3f;
   --border: #e4e5e9;
   --input: #e1e2e6;
-  --ring: #5357dd;
+  --ring: #d13f00;
 
   --success: #1e8a5a;
   --success-soft: rgb(30 138 90 / 0.14);
@@ -143,14 +144,14 @@
 
   --sidebar: #f1f1f3;
   --sidebar-foreground: #3b3d44;
-  --sidebar-primary: #5357dd;
+  --sidebar-primary: #d13f00;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #ffffff;
   --sidebar-accent-foreground: #15161a;
   --sidebar-border: #e1e2e6;
-  --sidebar-ring: #5357dd;
+  --sidebar-ring: #d13f00;
 
-  --chart-1: #5357dd;
+  --chart-1: #d13f00;
   --chart-2: #1e8a5a;
   --chart-3: #b97509;
   --chart-4: #7a55d9;
@@ -182,10 +183,10 @@
   --card-foreground: #eeeff1;
   --popover: #18191d;
   --popover-foreground: #eeeff1;
-  --primary: #5e62e8;
+  --primary: #d13f00;
   --primary-foreground: #ffffff;
-  --primary-text: #a9acff;
-  --primary-soft: rgb(110 114 240 / 0.13);
+  --primary-text: #ff8a57;
+  --primary-soft: rgb(209 63 0 / 0.14);
   --secondary: #202227;
   --secondary-foreground: #eeeff1;
   --muted: #1b1c20;
@@ -195,7 +196,7 @@
   --destructive: #f07070;
   --border: #222429;
   --input: #2a2c32;
-  --ring: #5e62e8;
+  --ring: #d13f00;
 
   --success: #4cc38a;
   --success-soft: rgb(76 195 138 / 0.18);
@@ -208,14 +209,14 @@
 
   --sidebar: #08090a;
   --sidebar-foreground: #c6c8ce;
-  --sidebar-primary: #5e62e8;
+  --sidebar-primary: #d13f00;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #1b1c20;
   --sidebar-accent-foreground: #eeeff1;
   --sidebar-border: #222429;
-  --sidebar-ring: #5e62e8;
+  --sidebar-ring: #d13f00;
 
-  --chart-1: #5e62e8;
+  --chart-1: #d13f00;
   --chart-2: #4cc38a;
   --chart-3: #f0b03f;
   --chart-4: #a78bfa;

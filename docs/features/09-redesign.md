@@ -18,11 +18,11 @@ shortcuts. Every phase 1 screen is reworked onto the new tokens.
   sidebar), panel `#0F1012` / `#FFFFFF`, surface `#17181C` / `#FFFFFF`, field
   `#141518` / `#F6F6F8`, chip `#202227` / `#F0F0F3`, border `#222429` / `#E4E5E9`,
   text `#EEEFF1` / `#15161A`, soft text `#C6C8CE` / `#3B3D44`, muted
-  `#8B8E96` / `#61646C`, accent `#5E62E8` / `#5357DD`, accent text
-  `#A9ACFF` / `#4045C2`, and status colors green, amber, violet, blue, red,
-  orange. shadcn variables map onto these, so existing primitives restyle
-  themselves: `primary` is the indigo accent; `accent` stays shadcn's hover
-  surface.
+  `#8B8E96` / `#61646C`, accent `#D13F00` (both themes, the logo colour;
+  white text on it is 4.75:1), accent text `#FF8A57` / `#D13F00`, and status
+  colors green, amber, violet, blue, red, orange. shadcn variables map onto
+  these, so existing primitives restyle themselves: `primary` is the orange
+  accent; `accent` stays shadcn's hover surface.
 - **Shape:** radius 5 controls · 8 cards · 10 panels; 4px spacing grid; panel
   and card shadows per theme.
 - **Theme:** dark by default. The user menu offers Dark / Light / System and the
@@ -41,7 +41,7 @@ Lucide at 13–15px, stroke 2, plus custom icons in `components/icons/`:
 
 ## App shell
 - Page background is the chrome color. A 240px **sidebar** on the left:
-  workspace switcher (ensō mark), "Search or jump to… ⌘K", nav (Projects,
+  workspace switcher (Kanso mark), "Search or jump to… ⌘K", nav (Projects,
   Settings), the workspace's projects (colored tiles, active state, "+" for
   those who can create), and the user row (theme, log out) at the bottom.
 - The page content sits in an **inset panel** (1px border, radius 10, panel
@@ -93,8 +93,9 @@ Lucide at 13–15px, stroke 2, plus custom icons in `components/icons/`:
 
 ## Other screens
 Projects page (project rows with tiles and counts), settings (members, general),
-auth pages (login, signup, invite), and the landing page move onto the new
-tokens and shell.
+and auth pages (login, signup, invite) move onto the new tokens and shell.
+`/` has no landing page: it redirects to the projects when signed in, else to
+sign-in.
 
 ## Code layout
 Phase 1 names go: `components/board/*` splits into `components/project/`
