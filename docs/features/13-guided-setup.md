@@ -79,31 +79,35 @@ started. It is for admins only (`agent.manage`).
    - The step polls the setup status every 3s and ticks itself on
      `claudeConnected`.
    - "I've connected it" skips ahead, for cases detection can't see.
-3. **Create the task.** Open `https://claude.ai/code/routines` and tick each
-   item:
-   - New task (or New routine), Set up manually;
-   - name it and paste the prompt (copy button);
-   - Trigger → API;
-   - Advanced settings → Repository;
-   - Connectors tab: keep Kanso on;
-   - Create, keeping the API token dialog open.
+3. **Create the task.** **Open scheduled tasks** opens Claude's new-task form
+   (`https://claude.ai/code/routines`). The steps follow that form from top to
+   bottom, and each one is ticked:
+   - name it;
+   - paste the prompt (copy button), leaving Manual and the model as they are;
+   - Triggers → API;
+   - choose the repository;
+   - Save, then copy the API token Claude shows.
 
-   Continue unlocks only when all six are ticked. The steps follow Claude's
-   "Create from the web" docs.
+   Kanso doesn't need its own step here: Claude includes connected connectors
+   by default. Ticking the last step moves straight on to Link it, while the
+   token is still on screen.
 4. **Link it.**
-   - Fields: token, fire URL, and name (default "Claude").
-   - Both secrets are checked as you type: the URL against the fire URL
+   - Fields: token, fire URL, and name (default "Claude"), in the order
+     they appear in Claude.
+   - Token: the one shown after Save. If that dialog was closed, Regenerate
+     gives a new one.
+   - Fire URL: after Save, Claude opens the task's page. The copy button next
+     to **Trigger · API** copies the URL.
+   - Both values are checked as you type: the URL against the fire URL
      pattern, and the token's length.
-   - It says where each value is, and how to get a new token if the dialog was
-     closed (Regenerate).
 5. **Done.** From an issue's menu it offers **Assign this issue to Claude**,
    which assigns at once.
 
 How the Claude steps are drawn:
 - An "In Claude" header names the job and has a button that opens the right
   Claude page.
-- Steps sit on a numbered rail. Claude's buttons, tabs and switches appear as
-  chips in click order (`New task › Set up manually`). Values to type or pick
+- Steps sit on a numbered rail. Claude's buttons and tabs appear as chips in
+  click order (`Triggers › API`). Values to type or pick
   have dashed borders.
 - In Create task, only the current step is open. Each step closes when you
   click **Done**, and any title reopens its step. The prompt is a **Copy
@@ -115,6 +119,17 @@ How the Claude steps are drawn:
 - the `claude mcp add` command.
 
 Closing the dialog resets it, so secrets don't stay in memory.
+
+## Errors
+- Failures caused by the request say what to fix (validation, permissions,
+  name clashes).
+- Our own faults never send server details:
+  - A missing or short `ENCRYPTION_KEY` (needed to store agent tokens) answers
+    503: "Kanso couldn't do this because of a problem on our side. Nothing you
+    entered was wrong."
+  - Anything unexpected answers 500: "Something went wrong on our side. Please
+    try again."
+- In both cases the cause goes to the server log.
 
 Settings → Agents is now the list plus one **Add an agent** button. With no
 agents, an empty state opens the dialog.
@@ -160,5 +175,6 @@ The invite form moved to `components/workspace/InvitePeople.tsx`, so Settings
 - [x] Agent created from an issue's menu can be assigned to that issue in one click.
 - [x] Assignee menu shows invite and add-agent rows to admins, a hint to members, and nothing to guests.
 - [x] Get started lists only permitted items, ticks itself, and stays dismissed after a reload.
+- [x] A missing or short `ENCRYPTION_KEY` answers 503 "a problem on our side"; the cause is logged, never sent.
 - [x] Vitest covers setup status; browser walkthrough covers every path.
 - [x] `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` clean.

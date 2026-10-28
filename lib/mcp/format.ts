@@ -27,7 +27,7 @@ export function toolError(error: unknown): CallToolResult {
       .join("; ");
   } else {
     console.error(error);
-    message = "Something went wrong";
+    message = "Something went wrong on our side. Please try again.";
   }
   return { isError: true, content: [{ type: "text", text: message }] };
 }
