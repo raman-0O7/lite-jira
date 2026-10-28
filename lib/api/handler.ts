@@ -13,6 +13,8 @@ import { badRequest, ServiceError } from "@/lib/services/errors";
 
 export function errorResponse(error: unknown) {
   if (error instanceof ServiceError) {
+    // Our faults (5xx) are logged with their cause; the response keeps only the message.
+    if (error.status >= 500) console.error(error);
     return NextResponse.json({ error: error.message }, { status: error.status });
   }
   if (error instanceof ZodError) {
@@ -22,7 +24,7 @@ export function errorResponse(error: unknown) {
     );
   }
   console.error(error);
-  return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+  return NextResponse.json({ error: "Something went wrong on our side. Please try again." }, { status: 500 });
 }
 
 /** Wrap a route handler so thrown service/validation errors become JSON responses. */

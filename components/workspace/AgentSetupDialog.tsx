@@ -52,27 +52,41 @@ const CLAUDE_STEPS: { step: Step; label: string }[] = [
   { step: "done", label: "Done" },
 ];
 
-/** Claude's "Create from the web" form, one step at a time. */
-const TASK_STEPS: { id: string; title: string; how: React.ReactNode; note?: string }[] = [
+/** Claude's "New scheduled task" form, top to bottom, then Save. */
+const TASK_STEPS: { id: string; title: string; how: React.ReactNode; note?: React.ReactNode }[] = [
   {
-    id: "new",
-    title: "Start a new task",
-    how: <Path items={["New task", "Set up manually"]} />,
-    note: "Some accounts show New routine instead.",
+    id: "name",
+    title: "Name it",
+    how: <Value>Kanso agent</Value>,
+    note: (
+      <>
+        The form opens by itself if you have no tasks yet. Otherwise click <Ui>New task</Ui> ›{" "}
+        <Ui>Set up manually</Ui> first.
+      </>
+    ),
   },
-  { id: "prompt", title: "Name it and paste the prompt", how: <PromptBox />, note: "Any name works, e.g. Kanso agent." },
-  { id: "trigger", title: "Let Kanso start it", how: <Path items={["Trigger", "API"]} /> },
   {
-    id: "repo",
-    title: "Choose your repository",
-    how: <Path items={["Advanced settings", "Repository", <Value key="repo">your repo</Value>]} />,
+    id: "prompt",
+    title: "Paste the prompt",
+    how: <PromptBox />,
+    note: (
+      <>
+        Leave <Ui>Auto</Ui> and <Ui>Default model</Ui> as they are, so Claude works without stopping to ask you.
+      </>
+    ),
   },
-  { id: "connector", title: "Keep Kanso switched on", how: <Path items={["Connectors", <Toggle key="kanso" label="Kanso" />]} /> },
   {
-    id: "create",
-    title: "Create it",
-    how: <Path items={["Create"]} />,
-    note: "Keep the API token dialog open: the token is shown only once, and you paste it next.",
+    id: "trigger",
+    title: "Let Kanso start it",
+    how: <Path items={["Schedule", "API"]} />,
+    note: "In the Trigger row, switch Schedule to API.",
+  },
+  { id: "repo", title: "Choose your repository", how: <Value>your repo</Value> },
+  {
+    id: "save",
+    title: "Save, then copy the token",
+    how: <Path items={["Save", "API token", "Copy"]} />,
+    note: "Claude shows the token only once. You paste it in the next step.",
   },
 ];
 
@@ -237,7 +251,7 @@ export function AgentSetupDialog({
           <div className="flex flex-col gap-4">
             <InClaude
               title="Create the task Kanso will start"
-              subtitle="Tick each step as you do it in Claude."
+              subtitle="Fill in Claude’s form top to bottom, ticking each step."
               href={CLAUDE_TASKS_URL}
               action="Open scheduled tasks"
             />
@@ -248,6 +262,8 @@ export function AgentSetupDialog({
                 if (value) next.add(id);
                 else next.delete(id);
                 setChecked(next);
+                // The token is on screen once the last step is done: go paste it.
+                if (value && next.size === TASK_STEPS.length) setStep("trigger");
               }}
             />
           </div>
@@ -279,7 +295,7 @@ export function AgentSetupDialog({
               <p className={cn("text-xs", tokenError ? "text-danger" : "text-muted-foreground")}>
                 {tokenError ?? (
                   <>
-                    From Claude’s <Ui>API token</Ui> dialog. Closed it? Open the API trigger and click{" "}
+                    The token Claude showed after <Ui>Save</Ui>. Closed it? Open the API trigger and click{" "}
                     <Ui>Regenerate</Ui>. Stored encrypted.
                   </>
                 )}
@@ -298,7 +314,8 @@ export function AgentSetupDialog({
               <p className={cn("text-xs", fireUrlError ? "text-danger" : "text-muted-foreground")}>
                 {fireUrlError ?? (
                   <>
-                    On the task’s page, open the <Ui>API</Ui> trigger and copy its URL.
+                    After saving, Claude opens the task’s page. Next to <Ui>Trigger · API</Ui>, click the copy
+                    button.
                   </>
                 )}
               </p>
@@ -585,19 +602,6 @@ function Value({ children }: { children: React.ReactNode }) {
     <span className="inline-flex items-center rounded-md border border-dashed px-1.5 py-px text-xs whitespace-nowrap text-muted-foreground">
       {children}
     </span>
-  );
-}
-
-/** A switch shown on. */
-function Toggle({ label }: { label: string }) {
-  return (
-    <Ui>
-      {label}
-      <span className="flex h-3 w-5 items-center justify-end rounded-full bg-primary p-px" aria-hidden>
-        <span className="size-2.5 rounded-full bg-white" />
-      </span>
-      <span className="sr-only">on</span>
-    </Ui>
   );
 }
 

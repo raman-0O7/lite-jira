@@ -7,10 +7,11 @@
  */
 export class ServiceError extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 503,
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "ServiceError";
   }
 }
@@ -21,3 +22,11 @@ export const unauthorized = (message = "Unauthorized") =>
 export const forbidden = (message = "You don't have permission to do that") =>
   new ServiceError(403, message);
 export const notFound = (message = "Not found") => new ServiceError(404, message);
+/**
+ * The server is missing configuration the request needs. People see that the
+ * fault is ours, not their input; `detail` (what to fix) goes to the server log only.
+ */
+export const misconfigured = (detail: string) =>
+  new ServiceError(503, "Kanso couldn't do this because of a problem on our side. Nothing you entered was wrong.", {
+    cause: new Error(detail),
+  });

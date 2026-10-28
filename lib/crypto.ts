@@ -1,5 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
+import { misconfigured } from "@/lib/services/errors";
+
 /**
  * Secrets Kanso must be able to read back (agent fire tokens, outbound webhook
  * secrets) are stored encrypted with AES-256-GCM under ENCRYPTION_KEY.
@@ -10,10 +12,10 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 function keyMaterial(): string {
   const key = process.env.ENCRYPTION_KEY;
   if (key) {
-    if (key.length < 32) throw new Error("ENCRYPTION_KEY must be at least 32 characters");
+    if (key.length < 32) throw misconfigured("ENCRYPTION_KEY must be at least 32 characters");
     return key;
   }
-  if (process.env.NODE_ENV === "production") throw new Error("ENCRYPTION_KEY is not set");
+  if (process.env.NODE_ENV === "production") throw misconfigured("ENCRYPTION_KEY is not set");
   // Development and tests: derive from the auth secret so setup stays small.
   return `dev:${process.env.BETTER_AUTH_SECRET ?? "kanso-development-only"}`;
 }
