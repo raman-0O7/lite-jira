@@ -1,6 +1,5 @@
-import { Bot } from "lucide-react";
-
-import { RUN_STATUS_LABEL, type AgentRunStatus } from "@/lib/api/agents";
+import { AgentIcon } from "@/components/icons/AgentIcon";
+import { RUN_STATUS_LABEL, type AgentKind, type AgentRunStatus } from "@/lib/api/agents";
 import { cn } from "@/lib/utils";
 
 const TONE: Record<AgentRunStatus, string> = {
@@ -14,15 +13,17 @@ const TONE: Record<AgentRunStatus, string> = {
   CANCELLED: "text-muted-foreground",
 };
 
-/** A run's status as a compact pill: bot icon plus "Working", "Failed", …. */
+/** A run's status as a compact pill: the agent's icon plus "Working", "Failed", …. */
 export function RunStatusBadge({
   status,
   name,
+  kind,
   className,
 }: {
   status: AgentRunStatus;
   /** The agent's name, for the tooltip. */
   name?: string;
+  kind?: AgentKind;
   className?: string;
 }) {
   return (
@@ -34,21 +35,25 @@ export function RunStatusBadge({
         className,
       )}
     >
-      <Bot className={cn("size-3", status === "RUNNING" && "animate-pulse")} aria-hidden />
+      {/* The Claude mark keeps its colour; a bot takes the status colour. */}
+      <AgentIcon
+        kind={kind}
+        className={cn("size-3", kind !== "CLAUDE_CODE" && "text-current", status === "RUNNING" && "animate-pulse")}
+      />
       {RUN_STATUS_LABEL[status]}
     </span>
   );
 }
 
 /** An agent in place of a person's avatar. */
-export function AgentAvatar({ name, className }: { name: string; className?: string }) {
+export function AgentAvatar({ name, kind, className }: { name: string; kind?: AgentKind; className?: string }) {
   return (
     <span
       title={name}
       aria-label={name}
       className={cn("flex size-5 shrink-0 items-center justify-center rounded-full bg-chip", className)}
     >
-      <Bot className="size-3 text-review" aria-hidden />
+      <AgentIcon kind={kind} className="size-3" />
     </span>
   );
 }

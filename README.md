@@ -145,5 +145,9 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   a scheduler at `GET /api/cron/agent-watchdog` with `CRON_SECRET` to fail runs
   nobody claimed within `AGENT_CLAIM_TIMEOUT_MINUTES` (it also runs whenever
   runs are read). Spec: [`docs/features/12-agents.md`](docs/features/12-agents.md).
+- **Guided setup**: the Projects page's Get started card, the assignee menu's
+  "Invite people…" / "Add an AI agent…" rows, and a step-by-step agent setup
+  dialog that detects when Kanso is connected to Claude. Spec:
+  [`docs/features/13-guided-setup.md`](docs/features/13-guided-setup.md).
 - **Out of scope** (future work): password reset, email verification, profile
   editing.

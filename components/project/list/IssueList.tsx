@@ -139,12 +139,13 @@ export function IssueList({
                         <RunStatusBadge
                           status={runStatus}
                           name={issue.assigneeAgent?.name}
+                          kind={issue.assigneeAgent?.kind}
                           className="hidden sm:inline-flex"
                         />
                       ) : null}
                       <span className="flex w-5 shrink-0 justify-end">
                         {issue.assigneeAgent ? (
-                          <AgentAvatar name={issue.assigneeAgent.name} />
+                          <AgentAvatar name={issue.assigneeAgent.name} kind={issue.assigneeAgent.kind} />
                         ) : issue.assignee ? (
                           <Avatar person={issue.assignee} />
                         ) : null}

@@ -115,11 +115,12 @@ Run changes are recorded as issue activity (`agent.assigned`,
 
 ## UI
 - **Settings → Agents** (admins manage; others can view):
-  - create a Claude Code or MCP agent;
-  - routine setup steps with the prompt to copy;
+  - add a Claude Code or MCP agent through the guided setup dialog
+    ([13-guided-setup.md](13-guided-setup.md) "Agent setup");
   - enable / disable, delete;
   - mint agent tokens, with webhook secret and token shown once.
-- **Assignee picker**: lists agents under members.
+- **Assignee picker**: lists agents under members, with an "Add an AI
+  agent…" shortcut for admins (feature 13).
 - **Cards**: bot avatar and a run badge (Queued, Dispatched, Working, Needs
   input, PR open, Failed).
 - **Issue sidebar, Agent block**: status, ▶ Watch session (Claude Code

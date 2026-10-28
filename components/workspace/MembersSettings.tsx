@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Link2, Mail, RefreshCw, Trash2, UserPlus, X } from "lucide-react";
+import { Link2, Mail, RefreshCw, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -16,8 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -26,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CreateWorkspaceDialog } from "@/components/workspace/CreateWorkspaceDialog";
+import { InviteForm, InviteLink, ROLE_LABEL } from "@/components/workspace/InvitePeople";
 import { ProjectPicker } from "@/components/workspace/ProjectPicker";
 import { type Member, fetchMembers, memberKeys } from "@/lib/api/members";
 import { fetchProjects, projectKeys } from "@/lib/api/projects";
@@ -33,7 +32,6 @@ import {
   type Invite,
   type InviteResult,
   type Role,
-  createInvite,
   fetchInvites,
   removeMember,
   renewInvite,
@@ -43,20 +41,6 @@ import {
   workspaceKeys,
 } from "@/lib/api/workspaces";
 import { useSession } from "@/lib/auth-client";
-
-const ROLE_LABEL: Record<Role, string> = {
-  OWNER: "Owner",
-  ADMIN: "Admin",
-  MEMBER: "Member",
-  GUEST: "Guest",
-};
-
-const ROLE_HINT: Record<Role, string> = {
-  OWNER: "Everything, including deleting the workspace",
-  ADMIN: "Manages members, invites, and integrations",
-  MEMBER: "Creates and edits projects and issues",
-  GUEST: "Sees only shared projects; can comment",
-};
 
 const PRIVILEGED = new Set<Role>(["OWNER", "ADMIN"]);
 
@@ -163,13 +147,21 @@ function TeamMembers() {
   return (
     <div className="flex flex-col gap-8">
       {canManage ? (
-        <InviteForm
-          projects={projects.data ?? []}
-          onCreated={(data) => {
-            setResult(data);
-            refreshInvites();
-          }}
-        />
+        <section className="flex flex-col gap-3">
+          <div>
+            <h2 className="font-heading text-sm font-semibold text-foreground">Invite people</h2>
+            <p className="text-sm text-muted-foreground">
+              Invite by email, or leave the email empty to get a link anyone can use once.
+            </p>
+          </div>
+          <InviteForm
+            projects={projects.data ?? []}
+            onCreated={(data) => {
+              setResult(data);
+              refreshInvites();
+            }}
+          />
+        </section>
       ) : null}
 
       {result ? <InviteLink result={result} onDismiss={() => setResult(null)} /> : null}
@@ -317,128 +309,5 @@ function TeamMembers() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function InviteForm({
-  projects,
-  onCreated,
-}: {
-  projects: { id: string; name: string; key: string }[];
-  onCreated: (result: InviteResult) => void;
-}) {
-  const { slug, role: myRole } = useWorkspace();
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<Role>("MEMBER");
-  const [projectIds, setProjectIds] = useState<string[]>([]);
-  const choices: Role[] = myRole === "OWNER" ? ["ADMIN", "MEMBER", "GUEST"] : ["MEMBER", "GUEST"];
-
-  const create = useMutation({
-    mutationFn: () =>
-      createInvite(slug, {
-        email: email.trim() || undefined,
-        role,
-        projectIds: role === "GUEST" ? projectIds : [],
-      }),
-    onSuccess: (data) => {
-      setEmail("");
-      setProjectIds([]);
-      onCreated(data);
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  return (
-    <section className="flex flex-col gap-3">
-      <div>
-        <h2 className="font-heading text-sm font-semibold text-foreground">Invite people</h2>
-        <p className="text-sm text-muted-foreground">
-          Invite by email, or leave the email empty to get a link anyone can use once.
-        </p>
-      </div>
-      <form
-        className="flex flex-wrap items-end gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          create.mutate();
-        }}
-      >
-        <div className="flex min-w-56 flex-1 flex-col gap-2">
-          <Label htmlFor="invite-email">Email</Label>
-          <Input
-            id="invite-email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="name@example.com (optional)"
-            disabled={create.isPending}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="invite-role">Role</Label>
-          <Select value={role} onValueChange={(value) => setRole(value as Role)}>
-            <SelectTrigger id="invite-role" className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {choices.map((choice) => (
-                <SelectItem key={choice} value={choice}>
-                  {ROLE_LABEL[choice]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {role === "GUEST" ? (
-          <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium">Projects</span>
-            <ProjectPicker projects={projects} value={projectIds} onChange={setProjectIds} />
-          </div>
-        ) : null}
-        <Button type="submit" loading={create.isPending} loadingText="Inviting…">
-          <UserPlus />
-          {email.trim() ? "Send invite" : "Create link"}
-        </Button>
-      </form>
-      <p className="text-xs text-muted-foreground">{ROLE_HINT[role]}.</p>
-    </section>
-  );
-}
-
-function InviteLink({ result, onDismiss }: { result: InviteResult; onDismiss: () => void }) {
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(result.url);
-      toast.success("Link copied.");
-    } catch {
-      toast.error("Couldn’t copy. Select the link and copy it yourself.");
-    }
-  }
-
-  return (
-    <section className="flex flex-col gap-2 rounded-xl border bg-muted/40 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm">
-          {result.invite.email
-            ? result.emailSent
-              ? `Invite emailed to ${result.invite.email}. You can also share this link:`
-              : `Email isn’t set up yet, so send ${result.invite.email} this link yourself:`
-            : "Share this link. It works once and expires in 7 days:"}
-        </p>
-        <Button variant="ghost" size="icon-sm" aria-label="Dismiss" onClick={onDismiss}>
-          <X />
-        </Button>
-      </div>
-      <div className="flex gap-2">
-        <Input readOnly value={result.url} onFocus={(event) => event.target.select()} className="font-mono text-xs" />
-        <Button variant="outline" onClick={copy}>
-          <Copy />
-          Copy
-        </Button>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        This link is shown only now. Use “New link” on the invite to get another.
-      </p>
-    </section>
   );
 }

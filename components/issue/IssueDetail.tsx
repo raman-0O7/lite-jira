@@ -34,6 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useAssigneeShortcuts } from "@/components/workspace/AssigneeShortcuts";
 import { agentKeys, fetchAgents } from "@/lib/api/agents";
 import {
   assignAgent,
@@ -49,6 +50,7 @@ import { fetchMembers, memberKeys } from "@/lib/api/members";
 import {
   fetchProject,
   projectKeys,
+  type AgentStub,
   type IssueCard,
   type LabelStub,
   type PersonStub,
@@ -256,6 +258,10 @@ export function IssueDetail({
     queryFn: () => fetchAgents(slug),
     enabled: canDispatch,
   });
+  const assigneeShortcuts = useAssigneeShortcuts({
+    onAssignAgent:
+      canEdit && canDispatch ? (agent) => changeAgent(agent.id, { id: agent.id, name: agent.name, kind: agent.kind }) : undefined,
+  });
 
   const issue = issueQuery.data;
   const columns = projectQuery.data?.columns ?? [];
@@ -381,9 +387,10 @@ export function IssueDetail({
     },
   });
 
-  function changeAgent(agentId: string) {
+  /** `known` is for an agent made a moment ago that the list query hasn't refetched yet. */
+  function changeAgent(agentId: string, known?: AgentStub) {
     if (!issue || agentId === issue.assigneeAgent?.id) return;
-    const agent = agentsQuery.data?.find((a) => a.id === agentId);
+    const agent = known ?? agentsQuery.data?.find((a) => a.id === agentId);
     if (!agent) return;
     const previous = snapshot();
     const stub = { id: agent.id, name: agent.name, kind: agent.kind };
@@ -531,6 +538,7 @@ export function IssueDetail({
               agents={agentsQuery.data}
               agentValue={issue.assigneeAgent ?? null}
               onAgentChange={canDispatch ? changeAgent : undefined}
+              shortcuts={canEdit ? assigneeShortcuts.shortcuts : undefined}
               disabled={!canEdit || !membersQuery.data}
             />
           </PropertyRow>
@@ -678,6 +686,7 @@ export function IssueDetail({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {assigneeShortcuts.dialogs}
     </div>
   );
 }

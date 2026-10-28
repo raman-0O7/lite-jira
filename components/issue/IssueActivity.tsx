@@ -2,11 +2,12 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNowStrict } from "date-fns";
-import { Bot, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 
+import { AgentIcon } from "@/components/icons/AgentIcon";
 import { Avatar } from "@/components/icons/Avatar";
 import { StatusIcon } from "@/components/icons/StatusIcon";
 import { useCan } from "@/components/providers/workspace-provider";
@@ -177,7 +178,7 @@ function EventRow({ entry, part }: { entry: IssueActivityEntry; part: React.Reac
     <li className="relative flex items-start gap-3 py-1.5 text-xs text-muted-foreground">
       <span className="relative z-10 flex size-5 shrink-0 items-center justify-center rounded-full bg-background">
         {entry.actorType === "AGENT" || entry.agent ? (
-          <Bot className="size-3.5 text-review" />
+          <AgentIcon kind={entry.agent?.kind} className="size-3.5" />
         ) : entry.actor ? (
           <Avatar person={entry.actor} size="xs" />
         ) : (
@@ -209,7 +210,7 @@ function CommentRow({
       <span className="relative z-10 shrink-0 rounded-full bg-background">
         {comment.authorAgent ? (
           <span className="flex size-5 items-center justify-center rounded-full bg-chip">
-            <Bot className="size-3.5 text-review" />
+            <AgentIcon kind={comment.authorAgent.kind} className="size-3.5" />
           </span>
         ) : comment.author ? (
           <Avatar person={comment.author} size="sm" />

@@ -64,6 +64,7 @@
   --color-on-success: var(--on-success);
   --color-warning: var(--warning);
   --color-review: var(--review);
+  --color-claude: var(--claude);
   --color-info: var(--info);
   --color-danger: var(--danger);
   --color-urgent: var(--urgent);
@@ -138,6 +139,8 @@
   --on-success: #ffffff;
   --warning: #b97509;
   --review: #7a55d9;
+  /* Claude's brand colour, for the Claude mark only. */
+  --claude: #d97757;
   --info: #2f6fd0;
   --danger: #d23f3f;
   --urgent: #e2731a;
@@ -203,6 +206,7 @@
   --on-success: #062414;
   --warning: #f0b03f;
   --review: #a78bfa;
+  --claude: #d97757;
   --info: #6ca6f5;
   --danger: #f07070;
   --urgent: #f5933d;
