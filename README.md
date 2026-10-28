@@ -88,6 +88,7 @@ sub-issues, epics, comments, and a Kanban board. Phase 1 is described in
 
 ```
 app/
+  page.tsx                          # / → projects when signed in, else /login
   (auth)/login, signup              # public auth pages (?next= returns after sign-in)
   (auth)/invite/[token]             # accept a workspace invite
   (app)/[workspace]/projects        # projects list (workspace-scoped)

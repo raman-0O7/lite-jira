@@ -1,20 +1,26 @@
 import { cn } from "@/lib/utils";
 
-/** The Kanso mark: an open ensō circle on an accent tile. */
+/** The Kanso mark: a rounded tile with a circle cut into it, in the accent colour. */
 export function KansoMark({ className, title }: { className?: string; title?: string }) {
   return (
-    <span
+    <svg
+      viewBox="0 0 40 40"
+      fill="none"
       role={title ? "img" : undefined}
       aria-label={title}
       aria-hidden={title ? undefined : true}
-      className={cn(
-        "inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-primary text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.2)]",
-        className,
-      )}
+      className={cn("size-6 shrink-0 text-primary", className)}
     >
-      <svg viewBox="0 0 24 24" fill="none" className="size-[62%]" aria-hidden="true">
-        <path d="M19 7.5A8 8 0 1 0 20 13" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
-      </svg>
-    </span>
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        fill="currentColor"
+        d="M20 0C27.4768 0 31.2154 -0.000204921 34 1.60742C35.8242 2.66064 37.3394 4.17577 38.3926 6C40.0002 8.7846 40 12.5232 40 20C40 27.4768 40.0002 31.2154 38.3926 34C37.3394 35.8242 35.8242 37.3394 34 38.3926C31.2154 40.0002 27.4768 40 20 40C12.5232 40 8.7846 40.0002 6 38.3926C4.17577 37.3394 2.66064 35.8242 1.60742 34C-0.000204921 31.2154 0 27.4768 0 20C0 12.5232 -0.000204921 8.7846 1.60742 6C2.66064 4.17577 4.17577 2.66064 6 1.60742C8.7846 -0.000204921 12.5232 0 20 0ZM22 4C13.1634 4 6 11.1634 6 20C6 28.8366 13.1634 36 22 36C30.8366 36 38 28.8366 38 20C38 11.1634 30.8366 4 22 4Z"
+      />
+      <path
+        fill="currentColor"
+        d="M36 20C36 25.5228 31.5228 30 26 30C20.4772 30 16 25.5228 16 20C16 14.4772 20.4772 10 26 10C31.5228 10 36 14.4772 36 20Z"
+      />
+    </svg>
   );
 }
