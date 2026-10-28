@@ -52,7 +52,7 @@ const CLAUDE_STEPS: { step: Step; label: string }[] = [
   { step: "done", label: "Done" },
 ];
 
-/** Claude's "New scheduled task" form, top to bottom, then Save. */
+/** Claude's "New scheduled task" form, top to bottom, then Create. */
 const TASK_STEPS: { id: string; title: string; how: React.ReactNode; note?: React.ReactNode }[] = [
   {
     id: "name",
@@ -71,7 +71,8 @@ const TASK_STEPS: { id: string; title: string; how: React.ReactNode; note?: Reac
     how: <PromptBox />,
     note: (
       <>
-        Leave <Ui>Auto</Ui> and <Ui>Default model</Ui> as they are, so Claude works without stopping to ask you.
+        Leave the bar under the prompt as it is (<Ui>Auto</Ui> or “Permissions set by environment”, and{" "}
+        <Ui>Default</Ui> model), so Claude works without stopping to ask you.
       </>
     ),
   },
@@ -81,11 +82,20 @@ const TASK_STEPS: { id: string; title: string; how: React.ReactNode; note?: Reac
     how: <Path items={["Schedule", "API"]} />,
     note: "In the Trigger row, switch Schedule to API.",
   },
-  { id: "repo", title: "Choose your repository", how: <Value>your repo</Value> },
+  {
+    id: "repo",
+    title: "Choose your repository",
+    how: <Path items={["Advanced settings", "Repository", <Value key="repo">your repo</Value>]} />,
+    note: (
+      <>
+        It’s on the <Ui>General</Ui> tab and starts at None. The <Ui>Connectors</Ui> tab next to it should list Kanso.
+      </>
+    ),
+  },
   {
     id: "save",
-    title: "Save, then copy the token",
-    how: <Path items={["Save", "API token", "Copy"]} />,
+    title: "Create it, then copy the token",
+    how: <Path items={["Create", "API token", "Copy"]} />,
     note: "Claude shows the token only once. You paste it in the next step.",
   },
 ];
@@ -295,7 +305,7 @@ export function AgentSetupDialog({
               <p className={cn("text-xs", tokenError ? "text-danger" : "text-muted-foreground")}>
                 {tokenError ?? (
                   <>
-                    The token Claude showed after <Ui>Save</Ui>. Closed it? Open the API trigger and click{" "}
+                    The token Claude showed after <Ui>Create</Ui>. Closed it? Open the API trigger and click{" "}
                     <Ui>Regenerate</Ui>. Stored encrypted.
                   </>
                 )}
@@ -314,7 +324,7 @@ export function AgentSetupDialog({
               <p className={cn("text-xs", fireUrlError ? "text-danger" : "text-muted-foreground")}>
                 {fireUrlError ?? (
                   <>
-                    After saving, Claude opens the task’s page. Next to <Ui>Trigger · API</Ui>, click the copy
+                    After you create it, Claude opens the task’s page. Next to <Ui>Trigger · API</Ui>, click the copy
                     button.
                   </>
                 )}
