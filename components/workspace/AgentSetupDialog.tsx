@@ -52,16 +52,35 @@ const CLAUDE_STEPS: { step: Step; label: string }[] = [
   { step: "done", label: "Done" },
 ];
 
-/** Claude's new-task form, top to bottom, then Save. */
-const TASK_STEPS: { id: string; title: string; how: React.ReactNode; note?: string }[] = [
-  { id: "name", title: "Name it", how: <Value>Kanso agent</Value>, note: "Any name works." },
+/** Claude's "New scheduled task" form, top to bottom, then Save. */
+const TASK_STEPS: { id: string; title: string; how: React.ReactNode; note?: React.ReactNode }[] = [
+  {
+    id: "name",
+    title: "Name it",
+    how: <Value>Kanso agent</Value>,
+    note: (
+      <>
+        The form opens by itself if you have no tasks yet. Otherwise click <Ui>New task</Ui> ›{" "}
+        <Ui>Set up manually</Ui> first.
+      </>
+    ),
+  },
   {
     id: "prompt",
     title: "Paste the prompt",
     how: <PromptBox />,
-    note: "Leave Manual and the model as they are.",
+    note: (
+      <>
+        Leave <Ui>Auto</Ui> and <Ui>Default model</Ui> as they are, so Claude works without stopping to ask you.
+      </>
+    ),
   },
-  { id: "trigger", title: "Let Kanso start it", how: <Path items={["Triggers", "API"]} /> },
+  {
+    id: "trigger",
+    title: "Let Kanso start it",
+    how: <Path items={["Schedule", "API"]} />,
+    note: "In the Trigger row, switch Schedule to API.",
+  },
   { id: "repo", title: "Choose your repository", how: <Value>your repo</Value> },
   {
     id: "save",

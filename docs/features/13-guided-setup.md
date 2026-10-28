@@ -79,12 +79,15 @@ started. It is for admins only (`agent.manage`).
    - The step polls the setup status every 3s and ticks itself on
      `claudeConnected`.
    - "I've connected it" skips ahead, for cases detection can't see.
-3. **Create the task.** **Open scheduled tasks** opens Claude's new-task form
-   (`https://claude.ai/code/routines`). The steps follow that form from top to
-   bottom, and each one is ticked:
-   - name it;
-   - paste the prompt (copy button), leaving Manual and the model as they are;
-   - Triggers → API;
+3. **Create the task.** **Open scheduled tasks** opens
+   `https://claude.ai/code/routines`. With no tasks yet, Claude opens the "New
+   scheduled task" form by itself; otherwise it's **New task › Set up
+   manually**. The steps follow the form from top to bottom, and each one is
+   ticked:
+   - name it (the first step's note covers opening the form);
+   - paste the prompt (copy button), leaving **Auto** and **Default model** as
+     they are so Claude works without stopping to ask;
+   - in the Trigger row, switch **Schedule** to **API**;
    - choose the repository;
    - Save, then copy the API token Claude shows.
 
@@ -107,7 +110,7 @@ How the Claude steps are drawn:
 - An "In Claude" header names the job and has a button that opens the right
   Claude page.
 - Steps sit on a numbered rail. Claude's buttons and tabs appear as chips in
-  click order (`Triggers › API`). Values to type or pick
+  click order (`Schedule › API`). Values to type or pick
   have dashed borders.
 - In Create task, only the current step is open. Each step closes when you
   click **Done**, and any title reopens its step. The prompt is a **Copy
