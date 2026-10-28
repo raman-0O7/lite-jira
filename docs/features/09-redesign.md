@@ -18,11 +18,11 @@ shortcuts. Every phase 1 screen is reworked onto the new tokens.
   sidebar), panel `#0F1012` / `#FFFFFF`, surface `#17181C` / `#FFFFFF`, field
   `#141518` / `#F6F6F8`, chip `#202227` / `#F0F0F3`, border `#222429` / `#E4E5E9`,
   text `#EEEFF1` / `#15161A`, soft text `#C6C8CE` / `#3B3D44`, muted
-  `#8B8E96` / `#61646C`, accent `#FF4D00` (both themes, the logo colour), accent
-  text `#FF8A57` / `#C93C00`, and status colors green, amber, violet, blue, red,
-  orange. shadcn variables map onto these, so existing primitives restyle
-  themselves: `primary` is the orange accent; `accent` stays shadcn's hover
-  surface.
+  `#8B8E96` / `#61646C`, accent `#D13F00` (both themes, the logo colour;
+  white text on it is 4.75:1), accent text `#FF8A57` / `#D13F00`, and status
+  colors green, amber, violet, blue, red, orange. shadcn variables map onto
+  these, so existing primitives restyle themselves: `primary` is the orange
+  accent; `accent` stays shadcn's hover surface.
 - **Shape:** radius 5 controls · 8 cards · 10 panels; 4px spacing grid; panel
   and card shadows per theme.
 - **Theme:** dark by default. The user menu offers Dark / Light / System and the
