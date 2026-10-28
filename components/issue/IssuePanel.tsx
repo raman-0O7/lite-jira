@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { IssueDetail } from "@/components/issue/IssueDetail";
 import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { isTypingTarget } from "@/hooks/use-hotkeys";
 import { fetchIssue, issueKeys } from "@/lib/api/issues";
 
@@ -79,7 +80,10 @@ export function IssuePanel({
                   <span className="sr-only">: {issue.title}</span>
                 </>
               ) : (
-                "Issue"
+                <>
+                  <span className="sr-only">Issue</span>
+                  <Skeleton className="h-3 w-32" />
+                </>
               )}
             </DialogPrimitive.Title>
             <div className="ml-auto flex items-center gap-0.5">

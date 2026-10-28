@@ -34,10 +34,11 @@ export function GitHubButton({ callbackURL = "/projects" }: { callbackURL?: stri
       variant="outline"
       className="w-full"
       onClick={handleClick}
-      disabled={isLoading}
+      loading={isLoading}
+      loadingText="Redirecting…"
     >
       <GitHubIcon className="size-4" />
-      {isLoading ? "Redirecting…" : "Continue with GitHub"}
+      Continue with GitHub
     </Button>
   );
 }

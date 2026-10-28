@@ -18,6 +18,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
 import { signOut } from "@/lib/auth-client";
 import { isThemePreference } from "@/lib/theme";
 
@@ -95,7 +96,7 @@ export function UserMenu({ user }: UserMenuProps) {
             void handleLogout();
           }}
         >
-          <LogOut />
+          {isLoading ? <Spinner /> : <LogOut />}
           {isLoading ? "Signing out…" : "Log out"}
         </DropdownMenuItem>
       </DropdownMenuContent>

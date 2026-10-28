@@ -6,6 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Avatar } from "@/components/icons/Avatar";
+import { RowListSkeleton } from "@/components/loading/skeletons";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -171,7 +172,7 @@ function TeamMembers() {
           Members{members.data ? ` · ${members.data.length}` : ""}
         </h2>
         {members.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <RowListSkeleton label="Loading members" />
         ) : members.isError ? (
           <p className="text-sm text-muted-foreground">{members.error.message}</p>
         ) : (

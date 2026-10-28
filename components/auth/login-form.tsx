@@ -95,8 +95,8 @@ export function LoginForm({ next }: { next: string }) {
           ) : null}
         </div>
 
-        <Button type="submit" className="w-full" disabled={isLoading}>
-          {isLoading ? "Signing in…" : "Sign in"}
+        <Button type="submit" className="w-full" loading={isLoading} loadingText="Signing in…">
+          Sign in
         </Button>
       </form>
 

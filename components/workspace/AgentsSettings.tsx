@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { AgentIcon } from "@/components/icons/AgentIcon";
 import { ago } from "@/components/issue/IssueActivity";
+import { InlineLoading, RowListSkeleton } from "@/components/loading/skeletons";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,7 +61,7 @@ export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
         </div>
 
         {agents.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <RowListSkeleton label="Loading agents" rows={2} />
         ) : agents.isError ? (
           <p className="text-sm text-muted-foreground">{agents.error.message}</p>
         ) : agents.data.length === 0 ? (
@@ -255,7 +256,9 @@ function AgentTokens({ agent, mcpUrl }: { agent: Agent; mcpUrl: string }) {
             </li>
           ))}
         </ul>
-      ) : tokens.isPending ? null : (
+      ) : tokens.isPending ? (
+        <InlineLoading label="Loading tokens…" />
+      ) : (
         <p className="text-xs text-muted-foreground">No active tokens.</p>
       )}
     </div>

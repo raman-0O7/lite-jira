@@ -14,6 +14,7 @@ import { Kbd } from "@/components/icons/Kbd";
 import { ProjectTile } from "@/components/icons/ProjectTile";
 import { IssuePanel } from "@/components/issue/IssuePanel";
 import { NewIssueDialog } from "@/components/issue/NewIssueDialog";
+import { ProjectSkeleton } from "@/components/loading/skeletons";
 import { KanbanBoard } from "@/components/project/board/KanbanBoard";
 import { FilterBar } from "@/components/project/filters/FilterBar";
 import { IssueList } from "@/components/project/list/IssueList";
@@ -240,11 +241,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
   );
 
   if (projectQuery.isPending) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
-        Loading project…
-      </div>
-    );
+    return <ProjectSkeleton view={view} />;
   }
 
   if (projectQuery.isError || !project) {
