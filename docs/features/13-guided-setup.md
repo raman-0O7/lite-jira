@@ -99,6 +99,16 @@ started. It is for admins only (`agent.manage`).
 5. **Done.** From an issue's menu it offers **Assign this issue to Claude**,
    which assigns at once.
 
+How the Claude steps are drawn:
+- An "In Claude" header names the job and has a button that opens the right
+  Claude page.
+- Steps sit on a numbered rail. Claude's buttons, tabs and switches appear as
+  chips in click order (`New task › Set up manually`). Values to type or pick
+  have dashed borders.
+- In Create task, only the current step is open. Each step closes when you
+  click **Done**, and any title reopens its step. The prompt is a **Copy
+  prompt** button; the full text is one click away.
+
 **MCP**: name and an optional webhook URL → Done, which shows these once:
 - the agent token;
 - the webhook signing secret;
@@ -108,6 +118,14 @@ Closing the dialog resets it, so secrets don't stay in memory.
 
 Settings → Agents is now the list plus one **Add an agent** button. With no
 agents, an empty state opens the dialog.
+
+## Agent icons
+Claude Code agents show the Claude mark (in Claude's colour, `--claude`) and
+MCP agents show a bot (`components/icons/AgentIcon.tsx`). This applies to:
+- the assignee menu and its trigger;
+- board and list cards, and run badges;
+- the issue's Agent block, activity and comments;
+- Settings → Agents and the setup dialog.
 
 ## Get started
 A card at the top of the Projects page. It lists only what the viewer may do:

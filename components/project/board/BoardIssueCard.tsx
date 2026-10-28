@@ -87,9 +87,9 @@ export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.
             </span>
           ) : null}
           {issue.pullRequests?.length ? <PullRequestBadge pullRequests={issue.pullRequests} /> : null}
-          {runStatus ? <RunStatusBadge status={runStatus} name={issue.assigneeAgent?.name} /> : null}
+          {runStatus ? <RunStatusBadge status={runStatus} name={issue.assigneeAgent?.name} kind={issue.assigneeAgent?.kind} /> : null}
           {issue.assigneeAgent ? (
-            <AgentAvatar name={issue.assigneeAgent.name} className="ml-auto" />
+            <AgentAvatar name={issue.assigneeAgent.name} kind={issue.assigneeAgent.kind} className="ml-auto" />
           ) : issue.assignee ? (
             <Avatar person={issue.assignee} className="ml-auto" />
           ) : null}

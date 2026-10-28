@@ -1,9 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, ExternalLink, GitPullRequest, Play, RotateCcw } from "lucide-react";
+import { ExternalLink, GitPullRequest, Play, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
+import { AgentIcon } from "@/components/icons/AgentIcon";
 import { RunStatusBadge } from "@/components/issue/AgentBadges";
 import { ago } from "@/components/issue/IssueActivity";
 import { useCan } from "@/components/providers/workspace-provider";
@@ -54,9 +55,9 @@ export function IssueAgent({ issue, projectId }: { issue: IssueFull; projectId: 
       <span className="px-1 text-xs text-muted-foreground">Agent</span>
       {issue.assigneeAgent ? (
         <div className="flex items-center gap-2 px-1 py-1">
-          <Bot className="size-3.5 shrink-0 text-review" />
+          <AgentIcon kind={issue.assigneeAgent.kind} className="size-3.5 shrink-0" />
           <span className="min-w-0 flex-1 truncate text-sm">{issue.assigneeAgent.name}</span>
-          {latest ? <RunStatusBadge status={latest.status} /> : null}
+          {latest ? <RunStatusBadge status={latest.status} kind={issue.assigneeAgent.kind} /> : null}
         </div>
       ) : null}
       {latest?.sessionUrl ? (

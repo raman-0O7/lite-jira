@@ -1,10 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bot, Check, Copy, ExternalLink, Sparkles, X } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, Bot, Check, ChevronRight, Copy, ExternalLink, X } from "lucide-react";
+import { Fragment, useState } from "react";
 import { toast } from "sonner";
 
+import { ClaudeMark } from "@/components/icons/AgentIcon";
 import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,14 +52,29 @@ const CLAUDE_STEPS: { step: Step; label: string }[] = [
   { step: "done", label: "Done" },
 ];
 
-const TASK_CHECKLIST = [
-  { id: "new", text: <>Click <b>New task</b> (or <b>New routine</b>). If asked, choose <b>Set up manually</b>.</> },
-  { id: "prompt", text: <>Name it, e.g. “Kanso agent”, and paste this prompt:</>, prompt: true },
-  { id: "trigger", text: <>In the <b>Trigger</b> row, choose <b>API</b>.</> },
-  { id: "repo", text: <>Open <b>Advanced settings</b> and, under <b>Repository</b>, pick the repo the agent should work in.</> },
-  { id: "connector", text: <>On the <b>Connectors</b> tab, keep <b>Kanso</b> switched on.</> },
-  { id: "create", text: <>Click <b>Create</b> and keep the <b>API token</b> dialog open; it shows the token once.</> },
-] as const;
+/** Claude's "Create from the web" form, one step at a time. */
+const TASK_STEPS: { id: string; title: string; how: React.ReactNode; note?: string }[] = [
+  {
+    id: "new",
+    title: "Start a new task",
+    how: <Path items={["New task", "Set up manually"]} />,
+    note: "Some accounts show New routine instead.",
+  },
+  { id: "prompt", title: "Name it and paste the prompt", how: <PromptBox />, note: "Any name works, e.g. Kanso agent." },
+  { id: "trigger", title: "Let Kanso start it", how: <Path items={["Trigger", "API"]} /> },
+  {
+    id: "repo",
+    title: "Choose your repository",
+    how: <Path items={["Advanced settings", "Repository", <Value key="repo">your repo</Value>]} />,
+  },
+  { id: "connector", title: "Keep Kanso switched on", how: <Path items={["Connectors", <Toggle key="kanso" label="Kanso" />]} /> },
+  {
+    id: "create",
+    title: "Create it",
+    how: <Path items={["Create"]} />,
+    note: "Keep the API token dialog open: the token is shown only once, and you paste it next.",
+  },
+];
 
 /**
  * Add an AI agent, one step at a time (docs/features/13-guided-setup.md
@@ -149,7 +165,7 @@ export function AgentSetupDialog({
         {step === "choose" ? (
           <div className="flex flex-col gap-2">
             <KindOption
-              icon={<Sparkles className="size-4 text-primary-text" />}
+              icon={<ClaudeMark className="size-4" />}
               title="Claude Code"
               badge="Recommended"
               description="Claude works in your GitHub repo in Anthropic’s cloud, on your own Claude account. Kanso starts a run each time you assign it an issue."
@@ -175,67 +191,65 @@ export function AgentSetupDialog({
 
         {step === "connect" ? (
           <div className="flex flex-col gap-4">
-            <p>
-              Claude reaches Kanso through a connector on your Claude account. You only do this once.
-            </p>
-            <Snippet label="Kanso server URL" text={mcpUrl || "Loading…"} />
-            <ol className="flex list-decimal flex-col gap-2 pl-5">
-              <li>
-                <Button asChild variant="outline" size="sm" className="align-middle">
-                  <a href={CLAUDE_CONNECTORS_URL} target="_blank" rel="noreferrer">
-                    Open Claude connectors
-                    <ExternalLink />
-                  </a>
-                </Button>
-              </li>
-              <li>
-                Click <b>Add custom connector</b>, name it <b>Kanso</b>, paste the server URL, and
-                click <b>Add</b>.
-              </li>
-              <li>
-                Click <b>Connect</b>, sign in to Kanso if asked, and click <b>Allow</b>.
-              </li>
+            <InClaude
+              title="Connect Kanso to Claude"
+              subtitle="Once per Claude account, so Claude can read and update issues."
+              href={CLAUDE_CONNECTORS_URL}
+              action="Open connectors"
+            />
+            <ol className="flex flex-col">
+              <StepRow number={1} title="Add a custom connector">
+                <Path items={["Add custom connector"]} />
+                <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
+                  <dt className="text-muted-foreground">Name</dt>
+                  <dd>
+                    <Value>Kanso</Value>
+                  </dd>
+                  <dt className="text-muted-foreground">URL</dt>
+                  <dd className="flex min-w-0 items-center gap-1.5">
+                    <code className="truncate rounded-md border bg-muted/40 px-1.5 py-0.5 font-mono">{mcpUrl || "…"}</code>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Copy Kanso server URL"
+                      disabled={!mcpUrl}
+                      onClick={() => copy(mcpUrl, "Server URL")}
+                    >
+                      <Copy />
+                    </Button>
+                  </dd>
+                </dl>
+              </StepRow>
+              <StepRow number={2} title="Connect and allow" last>
+                <Path items={["Add", "Connect", "Allow"]} />
+                <p className="text-xs text-muted-foreground">Sign in to Kanso if it asks.</p>
+              </StepRow>
             </ol>
-            <Status done={connected} doneText="Kanso is connected to your Claude account." waitingText="Waiting for Claude to connect. This ticks by itself." />
+            <Status
+              done={connected}
+              doneText="Kanso is connected to your Claude account."
+              waitingText="Waiting for Claude to connect. This ticks by itself."
+            />
           </div>
         ) : null}
 
         {step === "task" ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p>Now create the scheduled task Kanso will start. Tick each step as you go.</p>
-              <Button asChild variant="outline" size="sm">
-                <a href={CLAUDE_TASKS_URL} target="_blank" rel="noreferrer">
-                  Open Claude scheduled tasks
-                  <ExternalLink />
-                </a>
-              </Button>
-            </div>
-            <ul className="flex flex-col gap-1">
-              {TASK_CHECKLIST.map((item) => (
-                <li key={item.id} className="flex flex-col gap-2 rounded-md px-2 py-1.5 hover:bg-accent/50">
-                  <label className="flex cursor-pointer items-start gap-2.5">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 size-4 shrink-0 accent-primary"
-                      checked={checked.has(item.id)}
-                      onChange={(event) => {
-                        const next = new Set(checked);
-                        if (event.target.checked) next.add(item.id);
-                        else next.delete(item.id);
-                        setChecked(next);
-                      }}
-                    />
-                    <span className={cn(checked.has(item.id) && "text-muted-foreground")}>{item.text}</span>
-                  </label>
-                  {"prompt" in item ? (
-                    <div className="ml-6.5">
-                      <PromptBox />
-                    </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+          <div className="flex flex-col gap-4">
+            <InClaude
+              title="Create the task Kanso will start"
+              subtitle="Tick each step as you do it in Claude."
+              href={CLAUDE_TASKS_URL}
+              action="Open scheduled tasks"
+            />
+            <TaskSteps
+              done={checked}
+              onToggle={(id, value) => {
+                const next = new Set(checked);
+                if (value) next.add(id);
+                else next.delete(id);
+                setChecked(next);
+              }}
+            />
           </div>
         ) : null}
 
@@ -248,7 +262,7 @@ export function AgentSetupDialog({
               if (name.trim() && fireUrl.trim() && token.trim() && !fireUrlError && !tokenError) create.mutate();
             }}
           >
-            <p>Paste the task’s API trigger here so Kanso can start it.</p>
+            <p className="text-muted-foreground">Paste the task’s API trigger so Kanso can start it.</p>
             <div className="flex flex-col gap-2">
               <Label htmlFor="setup-token">Token</Label>
               <Input
@@ -265,8 +279,8 @@ export function AgentSetupDialog({
               <p className={cn("text-xs", tokenError ? "text-danger" : "text-muted-foreground")}>
                 {tokenError ?? (
                   <>
-                    From the <b>API token</b> dialog. Closed it already? Open the task’s API trigger and
-                    click <b>Regenerate</b>. Kanso stores it encrypted; it isn’t your Claude password.
+                    From Claude’s <Ui>API token</Ui> dialog. Closed it? Open the API trigger and click{" "}
+                    <Ui>Regenerate</Ui>. Stored encrypted.
                   </>
                 )}
               </p>
@@ -282,7 +296,11 @@ export function AgentSetupDialog({
                 className="font-mono text-xs"
               />
               <p className={cn("text-xs", fireUrlError ? "text-danger" : "text-muted-foreground")}>
-                {fireUrlError ?? "On the task’s page, open the API trigger and copy its URL."}
+                {fireUrlError ?? (
+                  <>
+                    On the task’s page, open the <Ui>API</Ui> trigger and copy its URL.
+                  </>
+                )}
               </p>
             </div>
             <div className="flex flex-col gap-2">
@@ -388,9 +406,9 @@ export function AgentSetupDialog({
             )
           ) : null}
           {step === "task" ? (
-            <Button disabled={checked.size < TASK_CHECKLIST.length} onClick={() => setStep("trigger")}>
-              {checked.size < TASK_CHECKLIST.length
-                ? `${checked.size} of ${TASK_CHECKLIST.length} done`
+            <Button disabled={checked.size < TASK_STEPS.length} onClick={() => setStep("trigger")}>
+              {checked.size < TASK_STEPS.length
+                ? `${checked.size} of ${TASK_STEPS.length} done`
                 : "Continue"}
             </Button>
           ) : null}
@@ -525,17 +543,194 @@ function Status({ done, doneText, waitingText }: { done: boolean; doneText: stri
   );
 }
 
+/** The prompt, ready to copy; the full text is a click away. */
 function PromptBox() {
   return (
-    <div className="flex flex-col gap-1.5">
-      <pre className="max-h-28 overflow-y-auto rounded-md border bg-muted/40 px-3 py-2 font-mono text-2xs whitespace-pre-wrap">
+    <details className="group rounded-md border bg-muted/30">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-2 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+          Kanso prompt · <span className="group-open:hidden">show</span>
+          <span className="hidden group-open:inline">hide</span>
+        </span>
+        <Button
+          size="xs"
+          onClick={(event) => {
+            event.preventDefault();
+            copy(ROUTINE_PROMPT, "Prompt");
+          }}
+        >
+          <Copy />
+          Copy prompt
+        </Button>
+      </summary>
+      <pre className="max-h-40 overflow-y-auto border-t px-2.5 py-2 font-mono text-2xs whitespace-pre-wrap">
         {ROUTINE_PROMPT}
       </pre>
-      <Button variant="outline" size="sm" className="self-start" onClick={() => copy(ROUTINE_PROMPT, "Prompt")}>
-        <Copy />
-        Copy prompt
+    </details>
+  );
+}
+
+/** A button, tab or field in Claude, drawn the way it looks there. */
+function Ui({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-px text-xs font-medium whitespace-nowrap text-foreground shadow-xs">
+      {children}
+    </span>
+  );
+}
+
+/** Something the person types or picks, rather than clicks. */
+function Value({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-md border border-dashed px-1.5 py-px text-xs whitespace-nowrap text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+/** A switch shown on. */
+function Toggle({ label }: { label: string }) {
+  return (
+    <Ui>
+      {label}
+      <span className="flex h-3 w-5 items-center justify-end rounded-full bg-primary p-px" aria-hidden>
+        <span className="size-2.5 rounded-full bg-white" />
+      </span>
+      <span className="sr-only">on</span>
+    </Ui>
+  );
+}
+
+/** Clicks in order: strings are buttons or tabs, nodes are drawn as given. */
+function Path({ items }: { items: React.ReactNode[] }) {
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {items.map((item, i) => (
+        <Fragment key={i}>
+          {i > 0 ? <ChevronRight className="size-3 text-muted-foreground" aria-hidden /> : null}
+          {typeof item === "string" ? <Ui>{item}</Ui> : item}
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+/** "Do this in Claude" header: what, why, and the button that opens the right page. */
+function InClaude({ title, subtitle, href, action }: { title: string; subtitle: string; href: string; action: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background">
+        <ClaudeMark className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">{title}</p>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
+      </div>
+      <Button asChild size="sm">
+        <a href={href} target="_blank" rel="noreferrer">
+          {action}
+          <ExternalLink />
+        </a>
       </Button>
     </div>
+  );
+}
+
+/** A numbered step on a vertical rail. */
+function StepRow({
+  number,
+  title,
+  last,
+  children,
+}: {
+  number: number;
+  title: string;
+  last?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <li className="relative flex gap-3 pb-4 last:pb-0">
+      {last ? null : <span className="absolute top-7 bottom-1 left-3 w-px bg-border" aria-hidden />}
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-chip text-xs font-medium text-muted-foreground">
+        {number}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-2 pt-0.5">
+        <p className="font-medium">{title}</p>
+        {children}
+      </div>
+    </li>
+  );
+}
+
+/**
+ * The task steps as a checklist on a rail. The first step not done is open;
+ * the others show only their titles, and any can be opened to look again.
+ */
+function TaskSteps({ done, onToggle }: { done: Set<string>; onToggle: (id: string, value: boolean) => void }) {
+  // null: follow progress; "": everything closed; an id: that step.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = openId ?? TASK_STEPS.find((item) => !done.has(item.id))?.id;
+  const finish = (id: string, value: boolean) => {
+    onToggle(id, value);
+    setOpenId(null);
+  };
+
+  return (
+    <ol className="flex flex-col">
+      {TASK_STEPS.map((item, i) => {
+        const isDone = done.has(item.id);
+        const isOpen = item.id === open;
+        return (
+          <li key={item.id} className="relative flex gap-3 pb-3 last:pb-0">
+            {i < TASK_STEPS.length - 1 ? (
+              <span className="absolute top-7 bottom-1 left-3 w-px bg-border" aria-hidden />
+            ) : null}
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={isDone}
+              aria-label={item.title}
+              onClick={() => finish(item.id, !isDone)}
+              className={cn(
+                "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                isDone
+                  ? "bg-primary text-primary-foreground"
+                  : isOpen
+                    ? "bg-primary-soft text-primary-text ring-1 ring-primary"
+                    : "bg-chip text-muted-foreground hover:bg-accent",
+              )}
+            >
+              {isDone ? <Check className="size-3.5" /> : i + 1}
+            </button>
+            <div className="flex min-w-0 flex-1 flex-col gap-2 pt-0.5">
+              <button
+                type="button"
+                aria-expanded={isOpen}
+                onClick={() => setOpenId(isOpen ? "" : item.id)}
+                className={cn(
+                  "self-start text-left font-medium outline-none hover:underline focus-visible:underline",
+                  isDone && !isOpen && "text-muted-foreground",
+                )}
+              >
+                {item.title}
+              </button>
+              {isOpen ? (
+                <>
+                  {item.how}
+                  {item.note ? <p className="text-xs text-muted-foreground">{item.note}</p> : null}
+                  {isDone ? null : (
+                    <Button variant="outline" size="sm" className="self-start" onClick={() => finish(item.id, true)}>
+                      <Check />
+                      Done
+                    </Button>
+                  )}
+                </>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

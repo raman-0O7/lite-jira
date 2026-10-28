@@ -1,8 +1,9 @@
 "use client";
 
-import { Bot, Check, ChevronDown, Circle, Layers, Sparkles, UserPlus, UserRound } from "lucide-react";
+import { Check, ChevronDown, Circle, Layers, Sparkles, UserPlus, UserRound } from "lucide-react";
 import { useState } from "react";
 
+import { AgentIcon } from "@/components/icons/AgentIcon";
 import { Avatar } from "@/components/icons/Avatar";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { PriorityIcon } from "@/components/icons/PriorityIcon";
@@ -246,7 +247,7 @@ export function AssigneePicker({
       trigger={
         agentValue ? (
           <>
-            <Bot className="size-3.5 text-review" />
+            <AgentIcon kind={agentValue.kind} className="size-3.5" />
             <span className="truncate">{agentValue.name}</span>
           </>
         ) : current ? (
@@ -277,7 +278,7 @@ export function AssigneePicker({
           <div className="px-2 pt-2 pb-1 text-2xs font-medium text-muted-foreground">Agents</div>
           {pickable.map((agent) => (
             <Option key={agent.id} selected={agent.id === agentValue?.id} onSelect={() => onAgentChange(agent.id)}>
-              <Bot className="text-review" />
+              <AgentIcon kind={agent.kind} />
               <span className="truncate">{agent.name}</span>
             </Option>
           ))}

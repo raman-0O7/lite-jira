@@ -5,6 +5,7 @@ import { Bot, KeyRound, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { AgentIcon } from "@/components/icons/AgentIcon";
 import { ago } from "@/components/issue/IssueActivity";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
@@ -125,7 +126,7 @@ function AgentRow({ agent, canManage, mcpUrl }: { agent: Agent; canManage: boole
     <li className="flex flex-col gap-3 px-4 py-3">
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex size-8 items-center justify-center rounded-full bg-chip">
-          <Bot className="size-4 text-review" />
+          <AgentIcon kind={agent.kind} className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">
