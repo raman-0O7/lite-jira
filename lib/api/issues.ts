@@ -137,7 +137,8 @@ export type IssueActivityEntry = {
     | "agent.pr_opened"
     | "agent.done"
     | "agent.failed"
-    | "agent.released";
+    | "agent.released"
+    | "agent.resumed";
   createdAt: string;
   actorType: "USER" | "AGENT" | "GITHUB" | "SYSTEM";
   actorAgentId: string | null;

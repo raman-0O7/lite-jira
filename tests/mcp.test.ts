@@ -9,7 +9,8 @@ import { createKansoMcpServer } from "@/lib/mcp/server";
 import { listIssueActivity } from "@/lib/services/activity";
 import { assignAgent, createAgent } from "@/lib/services/agents";
 import { createApiToken, ctxForApiToken } from "@/lib/services/api-tokens";
-import { listComments } from "@/lib/services/comments";
+import { readImages } from "@/lib/attachments";
+import { addComment, listComments } from "@/lib/services/comments";
 import { getIssueByKey } from "@/lib/services/issues";
 import { createLabel } from "@/lib/services/labels";
 import { createWorkspace } from "@/lib/services/workspaces";
@@ -112,6 +113,7 @@ describe("MCP server", () => {
       "get_project",
       "search_issues",
       "get_issue",
+      "get_attachment",
       "get_my_work",
       "create_issue",
       "update_issue",
@@ -137,6 +139,27 @@ describe("MCP server", () => {
     ]);
     const prompts = (await rpc(principal, "prompts/list")).result!.prompts as { name: string }[];
     expect(prompts.map((p) => p.name)).toEqual(["break_down_epic", "plan_sprint", "write_standup"]);
+  });
+
+  it("lists comment images in get_issue and returns them with get_attachment", async () => {
+    const { owner, web } = await setup();
+    const issue = await makeIssue(owner.ctx, web.todo.id, "Screenshot bug");
+    const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+    const images = await readImages([new File([png], "shot.png", { type: "image/png" })]);
+    const comment = await addComment(owner.ctx, issue.id, { body: "See this" }, images);
+    const principal = await tokenPrincipal(owner.ctx, { name: "r", access: "READ" });
+
+    const got = await tool(principal, "get_issue", { key: "WEB-1" });
+    expect(got.data!.comments).toEqual([
+      expect.objectContaining({ body: "See this", images: [{ id: comment.attachments[0]!.id, name: "shot.png", type: "image/png", bytes: png.length }] }),
+    ]);
+    const res = await rpc(principal, "tools/call", { name: "get_attachment", arguments: { id: comment.attachments[0]!.id } });
+    expect(res.result!.content).toEqual([
+      { type: "text", text: `shot.png (image/png, ${png.length} bytes)` },
+      { type: "image", data: png.toString("base64"), mimeType: "image/png" },
+    ]);
+    const missing = await tool(principal, "get_attachment", { id: "nope" });
+    expect(missing.isError).toBe(true);
   });
 
   it("creates and moves issues by name, recorded as API-token activity", async () => {

@@ -37,7 +37,7 @@ GitHubInstallation  workspaceId, installationId (unique), accountLogin, accountT
                     createdById, suspendedAt?
 GitHubUserLink      userId (unique), githubUserId (unique), login
 ProjectRepo         projectId, installationId → GitHubInstallation, repoFullName,
-                    importAssigned, statusSync, moveOnMerge; unique(installation, repo)
+                    importIssues, statusSync, moveOnMerge; unique(installation, repo)
 GitHubIssueLink     issueId (unique), projectRepoId, repoFullName, number, url,
                     state OPEN|CLOSED, lastSyncedAt; unique(repoFullName, number)
 PullRequestLink     issueId, repoFullName, number, url, title, branch, headSha,
@@ -71,7 +71,9 @@ app's user OAuth flow back to the same callback. It records `githubUserId` and
 
 **Connect a repository (admins).** Pick an installation repository and a
 project. There are three toggles: import assigned issues, status sync, and
-move on merge, all on by default. Admins can change the toggles, disconnect a
+move on merge, all on by default. (Feature 16 replaced the import toggle with
+a mode: all open issues, assigned to linked members, or none; see
+docs/features/16-github-sync-and-replies.md.) Admins can change the toggles, disconnect a
 repository, or remove an installation from Kanso.
 
 **Import.** These issues come in:

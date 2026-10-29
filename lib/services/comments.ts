@@ -1,10 +1,13 @@
+import type { UploadedImage } from "@/lib/attachments";
+import { resumeRun } from "@/lib/agents/resume";
 import { db } from "@/lib/db";
+import { defer } from "@/lib/defer";
 import { authorize, can } from "@/lib/permissions";
 import { recordActivity } from "@/lib/services/activity";
 import { actingUserId, type Ctx } from "@/lib/services/context";
 import { forbidden, notFound } from "@/lib/services/errors";
 import { projectScope } from "@/lib/services/scope";
-import { commentSchema } from "@/lib/validations/comment";
+import { commentSchema, commentWithImagesSchema } from "@/lib/validations/comment";
 
 const commentSelect = {
   id: true,
@@ -14,6 +17,10 @@ const commentSelect = {
   authorAgentId: true,
   author: { select: { id: true, name: true, image: true } },
   authorAgent: { select: { id: true, name: true, kind: true } },
+  attachments: {
+    orderBy: { createdAt: "asc" },
+    select: { id: true, name: true, contentType: true, size: true },
+  },
 } as const;
 
 async function findIssue(ctx: Ctx, issueId: string) {
@@ -62,18 +69,30 @@ export async function listComments(ctx: Ctx, issueId: string) {
   });
 }
 
-export async function addComment(ctx: Ctx, issueId: string, input: unknown) {
+/**
+ * Add a comment, optionally with images (already validated by readImages). A
+ * teammate's comment while the issue's agent waits for input resumes it.
+ */
+export async function addComment(ctx: Ctx, issueId: string, input: unknown, images: UploadedImage[] = []) {
   authorize(ctx, "comment.write");
-  const { body } = commentSchema.parse(input);
+  const { body } = images.length ? commentWithImagesSchema.parse(input) : commentSchema.parse(input);
   const issue = await findIssue(ctx, issueId);
 
-  return db.$transaction(async (tx) => {
-    const comment = await tx.comment.create({
+  const comment = await db.$transaction(async (tx) => {
+    const created = await tx.comment.create({
       data: {
         issueId,
         body,
         authorUserId: actingUserId(ctx),
         authorAgentId: ctx.actor.type === "agent" ? ctx.actor.agentId : null,
+        attachments: {
+          create: images.map((image) => ({
+            name: image.name,
+            contentType: image.contentType,
+            size: image.data.length,
+            data: new Uint8Array(image.data),
+          })),
+        },
       },
       select: commentSelect,
     });
@@ -81,10 +100,31 @@ export async function addComment(ctx: Ctx, issueId: string, input: unknown) {
       action: "comment.added",
       projectId: issue.projectId,
       issueId,
-      data: { commentId: comment.id },
+      data: { commentId: created.id },
     });
-    return comment;
+    return created;
   });
+
+  if (ctx.actor.type === "user" && can(ctx, "agent.dispatch")) {
+    const waiting = await db.agentRun.findFirst({
+      where: { issueId, status: "NEEDS_INPUT" },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (waiting) defer("agents.resume", () => resumeRun(ctx, waiting.id, comment.id));
+  }
+  return comment;
+}
+
+/** An image attached to a comment the caller can see. */
+export async function getAttachment(ctx: Ctx, attachmentId: string) {
+  authorize(ctx, "project.read");
+  const attachment = await db.attachment.findFirst({
+    where: { id: attachmentId, comment: { issue: { project: projectScope(ctx) } } },
+    select: { id: true, name: true, contentType: true, size: true, data: true },
+  });
+  if (!attachment) throw notFound("Attachment not found");
+  return attachment;
 }
 
 /** Only the author can edit their comment. */

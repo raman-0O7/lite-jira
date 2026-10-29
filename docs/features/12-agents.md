@@ -88,7 +88,8 @@ routines run on the owner's claude.ai account.
   It returns the issue, a branch name, and the rules. A claim by another
   agent is a 409.
 - `report_progress {key, message, status?: "working"|"needs_input"}` adds a
-  comment authored by the agent and updates the run.
+  comment authored by the agent and updates the run. A teammate's reply to a
+  `needs_input` run resumes it (Feature 16).
 - `release_issue {key, reason?}` clears the claim, marks the run FAILED with
   the reason, and posts an optional comment.
 

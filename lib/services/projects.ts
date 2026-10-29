@@ -130,6 +130,11 @@ export async function getProjectDetail(ctx: Ctx, projectId: string) {
       mode: true,
       createdAt: true,
       updatedAt: true,
+      repos: {
+        where: { installation: { suspendedAt: null } },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, repoFullName: true },
+      },
       columns: {
         orderBy: { position: "asc" },
         select: {

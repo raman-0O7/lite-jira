@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { useWorkspace } from "@/components/providers/workspace-provider";
+import { type RepoChoice, RepoSelect, useConnectableRepos, useConnectRepo } from "@/components/project/ProjectRepos";
+import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,20 +36,37 @@ export function CreateProjectDialog({
   const [key, setKey] = useState("");
   const [keyEdited, setKeyEdited] = useState(false);
   const effectiveKey = keyEdited ? key : name.trim() ? suggestProjectKey(name) : "";
+  // Admins can connect a GitHub repository right away (docs/features/16-github-sync-and-replies.md).
+  const canConnect = useCan("integrations.manage");
+  const github = useConnectableRepos(open && canConnect);
+  const showRepo = canConnect && github.installed && (github.loading || github.repos.length > 0);
+  const [repo, setRepo] = useState<RepoChoice | null>(null);
+  const connect = useConnectRepo();
 
   function reset() {
     setName("");
     setKey("");
     setKeyEdited(false);
+    setRepo(null);
   }
 
   const create = useMutation({
-    mutationFn: (input: { name: string; key: string }) => createProject(slug, input),
-    onSuccess: (project) => {
+    mutationFn: async (input: { name: string; key: string }) => {
+      const project = await createProject(slug, input);
+      if (!repo) return { project, repoError: null };
+      // The project exists either way; a failed connect is reported, not fatal.
+      const repoError = await connect
+        .mutateAsync({ repo, projectId: project.id })
+        .then(() => null, (error: Error) => error.message);
+      return { project, repoError };
+    },
+    onSuccess: ({ project, repoError }) => {
       queryClient.invalidateQueries({ queryKey: projectKeys.lists(slug) });
       onOpenChange(false);
+      const connected = repo?.fullName;
       reset();
-      toast.success("Project created.");
+      if (repoError) toast.error(`Project created, but connecting the repository failed: ${repoError}`);
+      else toast.success(connected ? `Project created. Importing ${connected}’s open issues…` : "Project created.");
       router.push(`/${slug}/projects/${project.key}`);
     },
     onError: (error: Error) => toast.error(error.message),
@@ -106,6 +124,22 @@ export function CreateProjectDialog({
               className="font-mono uppercase"
             />
           </div>
+          {showRepo ? (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="new-project-repo">GitHub repository (optional)</Label>
+              <RepoSelect
+                id="new-project-repo"
+                repos={github.repos}
+                loading={github.loading}
+                value={repo}
+                onChange={setRepo}
+                disabled={create.isPending}
+              />
+              <p className="text-xs text-muted-foreground">
+                Its open issues come in, and agents work on its code.
+              </p>
+            </div>
+          ) : null}
           <DialogFooter>
             <Button
               type="button"

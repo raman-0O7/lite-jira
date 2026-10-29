@@ -41,6 +41,8 @@ export type UseBoardFilters = {
   toggleLabel: (labelId: string) => void;
   /** Toggle one due quick-filter in/out of the selection. */
   toggleDue: (due: DueFilter) => void;
+  /** Toggle one assignee token in/out of the selection. */
+  toggleAssignee: (token: string) => void;
   /** Replace whole filter types at once (e.g. clear just the priorities). */
   update: (patch: Partial<Omit<FilterState, "text">>) => void;
   /** Reset every filter to empty. */
@@ -157,6 +159,17 @@ export function useBoardFilters(): UseBoardFilters {
     [pushFilters, urlFilters, textDraft],
   );
 
+  const toggleAssignee = useCallback(
+    (token: string) => {
+      pushFilters({
+        ...urlFilters,
+        text: textDraft,
+        assignees: toggle(urlFilters.assignees, token),
+      });
+    },
+    [pushFilters, urlFilters, textDraft],
+  );
+
   const update = useCallback(
     (patch: Partial<Omit<FilterState, "text">>) => {
       pushFilters({ ...urlFilters, text: textDraft, ...patch });
@@ -167,7 +180,7 @@ export function useBoardFilters(): UseBoardFilters {
   const clear = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setTextDraft("");
-    pushFilters({ text: "", priorities: [], labelIds: [], due: [] });
+    pushFilters({ text: "", priorities: [], labelIds: [], due: [], assignees: [] });
   }, [pushFilters]);
 
   // The effective filters used for matching: URL state, but with the live text
@@ -184,6 +197,7 @@ export function useBoardFilters(): UseBoardFilters {
     togglePriority,
     toggleLabel,
     toggleDue,
+    toggleAssignee,
     update,
     clear,
     count: activeFilterCount(filters),

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatDistanceToNowStrict } from "date-fns";
 import { ArrowRight, RefreshCw, Trash2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -16,6 +17,7 @@ import { GitHubAppSetup } from "@/components/workspace/GitHubAppSetup";
 import {
   type ConnectedRepo,
   type GitHubInstallation,
+  type ImportMode,
   type RepoToggles,
   connectRepo,
   disconnectRepo,
@@ -38,11 +40,26 @@ const RESULT_MESSAGES: Record<string, string> = {
   requested: "Install requested. An owner of the GitHub organization needs to approve it.",
 };
 
-const TOGGLES: { key: keyof RepoToggles; label: string; hint: string }[] = [
-  { key: "importAssigned", label: "Import assigned issues", hint: "Open issues assigned to linked members" },
+const IMPORT_MODES: { value: ImportMode; label: string }[] = [
+  { value: "ALL", label: "All open issues" },
+  { value: "ASSIGNED", label: "Issues assigned to linked members" },
+  { value: "OFF", label: "Don’t import issues" },
+];
+
+const TOGGLES: { key: "statusSync" | "moveOnMerge"; label: string; hint: string }[] = [
   { key: "statusSync", label: "Status sync", hint: "Done ⇄ closed, both ways" },
   { key: "moveOnMerge", label: "Move on merge", hint: "Merged PR moves the issue to Done" },
 ];
+
+function syncSummary(imported: number, updated: number) {
+  const parts = [
+    imported ? `imported ${imported} issue${imported === 1 ? "" : "s"}` : "",
+    updated ? `updated ${updated}` : "",
+  ].filter(Boolean);
+  if (!parts.length) return "Up to date.";
+  const text = parts.join(", ");
+  return `${text[0]!.toUpperCase()}${text.slice(1)}.`;
+}
 
 /** Settings → Integrations (docs/features/11-github-app.md "UI"). */
 export function IntegrationsSettings() {
@@ -253,8 +270,10 @@ function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean 
   });
   const sync = useMutation({
     mutationFn: () => syncRepo(slug, repo.id),
-    onSuccess: ({ imported }) =>
-      toast.success(imported ? `Imported ${imported} issue${imported === 1 ? "" : "s"}.` : "Up to date."),
+    onSuccess: ({ imported, updated }) => {
+      refresh();
+      toast.success(syncSummary(imported, updated));
+    },
     onError: (error: Error) => toast.error(error.message),
   });
   const remove = useMutation({
@@ -295,7 +314,23 @@ function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean 
           ) : null}
         </div>
       </div>
-      <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+        <Select
+          value={repo.importIssues}
+          disabled={!canManage || update.isPending}
+          onValueChange={(value) => update.mutate({ importIssues: value as ImportMode })}
+        >
+          <SelectTrigger size="sm" className="text-xs" aria-label={`Which ${repo.repoFullName} issues to import`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {IMPORT_MODES.map((mode) => (
+              <SelectItem key={mode.value} value={mode.value}>
+                {mode.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {TOGGLES.map((toggle) => (
           <label key={toggle.key} className="flex items-center gap-2 text-xs text-muted-foreground" title={toggle.hint}>
             <input
@@ -308,6 +343,11 @@ function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean 
             <span className="text-foreground">{toggle.label}</span>
           </label>
         ))}
+        <span className="ml-auto text-xs text-muted-foreground">
+          {repo.lastSyncedAt
+            ? `Synced ${formatDistanceToNowStrict(new Date(repo.lastSyncedAt), { addSuffix: true })}`
+            : "Not synced yet"}
+        </span>
       </div>
     </li>
   );
@@ -335,7 +375,7 @@ function ConnectRepoForm({ installation }: { installation: GitHubInstallation })
       setProjectId("");
       setOpen(false);
       refresh();
-      toast.success(`Connected ${repo.repoFullName} to ${repo.project.key}. Importing assigned issues…`);
+      toast.success(`Connected ${repo.repoFullName} to ${repo.project.key}. Importing its issues…`);
     },
     onError: (error: Error) => toast.error(error.message),
   });

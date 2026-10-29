@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { GET as cronGET } from "@/app/api/cron/github-sync/route";
 import { POST as webhookPOST } from "@/app/api/github/webhooks/route";
 import { hmacHex, signState } from "@/lib/crypto";
 import { db } from "@/lib/db";
@@ -147,8 +148,8 @@ describe("repositories & import", () => {
     const input = { installationId: installation.id, repoFullName: "acme/web", projectId: project.id };
     await expectStatus(connectRepo(member, input), 403);
     await expectStatus(connectRepo(ctx, { ...input, repoFullName: "acme/other" }), 400);
-    const repo = await connectRepo(ctx, { ...input, importAssigned: false });
-    expect(repo).toMatchObject({ repoFullName: "acme/web", importAssigned: false, statusSync: true });
+    const repo = await connectRepo(ctx, { ...input, importIssues: "OFF" });
+    expect(repo).toMatchObject({ repoFullName: "acme/web", importIssues: "OFF", statusSync: true });
     await expectStatus(connectRepo(ctx, input), 409);
 
     const repos = await listInstallationRepos(ctx, installation.id);
@@ -161,7 +162,7 @@ describe("repositories & import", () => {
     expect(await db.projectRepo.count()).toBe(0);
   });
 
-  it("imports open issues assigned to linked members once, into TODO, with labels", async () => {
+  it("ASSIGNED mode imports open issues assigned to linked members once, into TODO, with labels", async () => {
     const { ctx, user, installation } = await installedTeam();
     const { project, todo } = await makeProject(ctx, "Web", "WEB");
     gh.state.issues["acme/web"] = [
@@ -169,7 +170,12 @@ describe("repositories & import", () => {
       { number: 2, title: "Not mine", body: null, state: "open", assignees: ["someone"] },
       { number: 3, title: "Done already", body: null, state: "closed", assignees: ["ana-gh"] },
     ];
-    const repo = await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id });
+    const repo = await connectRepo(ctx, {
+      installationId: installation.id,
+      repoFullName: "acme/web",
+      projectId: project.id,
+      importIssues: "ASSIGNED",
+    });
     await flushDeferred(); // connect kicks off an import
 
     const imported = await db.issue.findMany({ where: { projectId: project.id }, include: { labels: true, githubLink: true } });
@@ -184,9 +190,67 @@ describe("repositories & import", () => {
     });
     expect(imported[0]!.labels.map((l) => [l.name, l.color])).toEqual([["bug", "#d73a4a"]]);
 
-    expect(await syncProjectRepo(ctx, repo.id)).toEqual({ imported: 0 });
+    expect(await syncProjectRepo(ctx, repo.id)).toEqual({ imported: 0, updated: 0 });
     const activity = await db.activity.findFirstOrThrow({ where: { action: "issue.created" } });
     expect(activity).toMatchObject({ actorType: "GITHUB", data: expect.objectContaining({ via: "github" }) });
+  });
+
+  it("ALL mode imports every open issue; unassigned unless a linked member has it", async () => {
+    const { ctx, user, installation } = await installedTeam();
+    const { project } = await makeProject(ctx, "Web", "WEB");
+    gh.state.issues["acme/web"] = [
+      { number: 1, title: "Mine", body: null, state: "open", assignees: ["ana-gh"] },
+      { number: 2, title: "Nobody's", body: null, state: "open", assignees: [] },
+      { number: 3, title: "Outsider's", body: null, state: "open", assignees: ["someone"] },
+      { number: 4, title: "Closed", body: null, state: "closed", assignees: [] },
+    ];
+    const repo = await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id });
+    expect(repo.importIssues).toBe("ALL");
+    await flushDeferred();
+    const issues = await db.issue.findMany({ where: { projectId: project.id }, orderBy: { title: "asc" } });
+    expect(issues.map((i) => [i.title, i.assigneeUserId])).toEqual([
+      ["Mine", user.id],
+      ["Nobody's", null],
+      ["Outsider's", null],
+    ]);
+    expect((await db.projectRepo.findUniqueOrThrow({ where: { id: repo.id } })).lastSyncedAt).not.toBeNull();
+  });
+
+  it("later syncs import new issues and apply closes webhooks missed", async () => {
+    const { ctx, installation } = await installedTeam();
+    const { project, done } = await makeProject(ctx, "Web", "WEB");
+    gh.state.issues["acme/web"] = [{ number: 1, title: "First", body: null, state: "open", assignees: [] }];
+    const repo = await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id });
+    await flushDeferred();
+    const first = await db.issue.findFirstOrThrow({ where: { title: "First" } });
+
+    // While Kanso was offline: #1 closed, #2 opened, and an old untouched issue wasn't returned.
+    gh.state.issues["acme/web"] = [
+      { number: 1, title: "First", body: null, state: "closed", assignees: [] },
+      { number: 2, title: "Second", body: null, state: "open", assignees: [] },
+      { number: 3, title: "Stale", body: null, state: "open", assignees: [], updatedAt: "2020-01-01T00:00:00Z" },
+    ];
+    expect(await syncProjectRepo(ctx, repo.id)).toEqual({ imported: 1, updated: 1 });
+    expect((await getIssue(ctx, first.id)).column.id).toBe(done.id);
+    expect(await db.issue.count({ where: { title: "Second" } })).toBe(1);
+    expect(await db.issue.count({ where: { title: "Stale" } })).toBe(0);
+  });
+
+  it("switching a repo to OFF stops imports; back to ALL re-imports open issues", async () => {
+    const { ctx, installation } = await installedTeam();
+    const { project } = await makeProject(ctx, "Web", "WEB");
+    const repo = await connectRepo(ctx, {
+      installationId: installation.id,
+      repoFullName: "acme/web",
+      projectId: project.id,
+      importIssues: "OFF",
+    });
+    gh.state.issues["acme/web"] = [{ number: 1, title: "Old", body: null, state: "open", assignees: [], updatedAt: "2020-01-01T00:00:00Z" }];
+    await flushDeferred();
+    expect(await db.issue.count()).toBe(0);
+    await updateProjectRepo(ctx, repo.id, { importIssues: "ALL" });
+    await flushDeferred();
+    expect(await db.issue.count()).toBe(1);
   });
 
   it("guests are never import targets and can't sync", async () => {
@@ -197,7 +261,12 @@ describe("repositories & import", () => {
     });
     const { project } = await makeProject(ctx, "Web", "WEB");
     gh.state.issues["acme/web"] = [{ number: 1, title: "A", body: null, state: "open", assignees: ["ana-gh"] }];
-    const repo = await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id });
+    const repo = await connectRepo(ctx, {
+      installationId: installation.id,
+      repoFullName: "acme/web",
+      projectId: project.id,
+      importIssues: "ASSIGNED",
+    });
     await flushDeferred();
     expect(await db.issue.count()).toBe(0);
     const guest = await addMember(workspace.id, await makeUser("Gil"), "GUEST");
@@ -207,7 +276,7 @@ describe("repositories & import", () => {
   it("removing an installation needs admin and drops its repo connections", async () => {
     const { ctx, workspace, installation } = await installedTeam();
     const { project } = await makeProject(ctx, "Web", "WEB");
-    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id, importAssigned: false });
+    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id, importIssues: "OFF" });
     const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
     await expectStatus(removeInstallation(member, installation.id), 403);
     await removeInstallation(ctx, installation.id);
@@ -292,6 +361,23 @@ describe("status sync", () => {
     expect((await getIssue(ctx, issue.id)).title).toBe("Fix it properly");
   });
 
+  it("issues.opened imports unassigned issues in ALL mode, not in ASSIGNED", async () => {
+    const { ctx } = await syncedIssue();
+    const opened = (number: number) =>
+      deliver("issues", {
+        action: "opened",
+        installation: { id: 77 },
+        repository: { full_name: "acme/web" },
+        issue: { number, title: `Issue ${number}`, body: null, html_url: "x", state: "open", assignees: [], labels: [] },
+      });
+    await opened(20);
+    expect(await db.issue.findFirstOrThrow({ where: { title: "Issue 20" } })).toMatchObject({ assigneeUserId: null });
+    const repo = await db.projectRepo.findFirstOrThrow();
+    await updateProjectRepo(ctx, repo.id, { importIssues: "ASSIGNED" });
+    await opened(21);
+    expect(await db.issue.count({ where: { title: "Issue 21" } })).toBe(0);
+  });
+
   it("issues.opened imports when assigned to a linked member", async () => {
     const { ctx, project } = await syncedIssue();
     await deliver("issues", {
@@ -337,7 +423,7 @@ describe("pull requests & checks", () => {
     const { ctx } = await installedTeam();
     const { project, todo, done } = await makeProject(ctx, "Web", "WEB");
     const installation = await db.gitHubInstallation.findFirstOrThrow();
-    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id, importAssigned: false });
+    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id, importIssues: "OFF" });
     const issue = await makeIssue(ctx, todo.id, "Login");
 
     await deliver("pull_request", pr());
@@ -376,7 +462,7 @@ describe("pull requests & checks", () => {
     const { ctx } = await installedTeam();
     const { project, todo } = await makeProject(ctx, "Web", "WEB");
     const installation = await db.gitHubInstallation.findFirstOrThrow();
-    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id, importAssigned: false, moveOnMerge: false });
+    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id, importIssues: "OFF", moveOnMerge: false });
     const issue = await makeIssue(ctx, todo.id, "Login");
     await deliver("pull_request", pr({ state: "closed", merged: true, merged_at: new Date().toISOString() }));
     expect((await getIssue(ctx, issue.id)).column.id).toBe(todo.id);
@@ -389,6 +475,28 @@ describe("pull requests & checks", () => {
     expect(combineChecks([{ status: "completed", conclusion: "success" }, { status: "completed", conclusion: "failure" }])).toBe("FAIL");
     expect(combineChecks([{ status: "completed", conclusion: "neutral" }])).toBe("PASS");
     expect(branchName("WEB-42", "Fix the login redirect!")).toBe("web-42-fix-the-login-redirect");
+  });
+});
+
+describe("sync cron", () => {
+  it("needs the cron secret, then syncs every repo", async () => {
+    const call = (auth?: string) =>
+      cronGET(new Request("http://localhost/api/cron/github-sync", { headers: auth ? { authorization: auth } : {} }));
+    process.env.CRON_SECRET = "cron-secret";
+    try {
+      expect((await call()).status).toBe(401);
+      expect((await call("Bearer wrong")).status).toBe(401);
+      const { ctx, installation } = await installedTeam();
+      const { project } = await makeProject(ctx, "Web", "WEB");
+      await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id, importIssues: "OFF" });
+      await flushDeferred();
+      await db.projectRepo.updateMany({ data: { importIssues: "ALL" } });
+      gh.state.issues["acme/web"] = [{ number: 1, title: "A", body: null, state: "open", assignees: [] }];
+      const response = await call("Bearer cron-secret");
+      expect(await response.json()).toEqual({ repos: 1, imported: 1, updated: 0, failed: 0 });
+    } finally {
+      delete process.env.CRON_SECRET;
+    }
   });
 });
 

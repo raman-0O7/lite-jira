@@ -132,6 +132,29 @@ export async function listAssignedIssues(installationId: number, repo: string, l
   return data.filter((issue) => !issue.pull_request);
 }
 
+/**
+ * Issues (not PRs) in a repo, most recently updated first, up to `limit`:
+ * open ones, or with `since` every issue updated since then (open or closed).
+ */
+export async function listRepoIssues(
+  installationId: number,
+  repo: string,
+  options: { since?: Date; limit?: number } = {},
+): Promise<GhIssue[]> {
+  const limit = options.limit ?? 300;
+  const issues: GhIssue[] = [];
+  const query = options.since ? `state=all&since=${encodeURIComponent(options.since.toISOString())}` : "state=open";
+  for (let page = 1; issues.length < limit && page <= 10; page++) {
+    const data = await asInstallation<GhIssue[]>(
+      installationId,
+      `/repos/${repo}/issues?${query}&sort=updated&direction=desc&per_page=100&page=${page}`,
+    );
+    issues.push(...data.filter((issue) => !issue.pull_request));
+    if (data.length < 100) break;
+  }
+  return issues.slice(0, limit);
+}
+
 export const setIssueState = (installationId: number, repo: string, number: number, state: "open" | "closed") =>
   asInstallation(installationId, `/repos/${repo}/issues/${number}`, "PATCH", {
     state,

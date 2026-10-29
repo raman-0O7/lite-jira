@@ -27,13 +27,13 @@ import {
   updateAgent,
 } from "@/lib/services/agents";
 import { ctxForApiToken, listApiTokens } from "@/lib/services/api-tokens";
-import { listComments } from "@/lib/services/comments";
+import { addComment, listComments } from "@/lib/services/comments";
 import type { Ctx } from "@/lib/services/context";
 import { githubCtx } from "@/lib/services/github";
 import { createImportedIssue, getIssue, updateIssue } from "@/lib/services/issues";
 import { createColumn } from "@/lib/services/columns";
 
-import { addMember, makeTeam, makeUser } from "../factories";
+import { addMember, makeTeam, makeUser, shareProject } from "../factories";
 import { expectStatus, makeIssue, makeProject } from "../helpers";
 
 const FIRE_URL = "https://api.anthropic.com/v1/claude_code/routines/trig_01abcDEF/fire";
@@ -402,7 +402,10 @@ describe("lifecycle", () => {
   it("the watchdog fails runs nobody claimed in time", async () => {
     const { ctx, issue, runId } = await assigned();
     expect(await failStaleRuns()).toBe(0);
-    await db.agentRun.update({ where: { id: runId }, data: { createdAt: new Date(Date.now() - 16 * 60_000) } });
+    const old = new Date(Date.now() - 16 * 60_000);
+    await db.agentRun.update({ where: { id: runId }, data: { createdAt: old } });
+    expect(await failStaleRuns()).toBe(0); // dispatched just now
+    await db.agentRun.update({ where: { id: runId }, data: { dispatchedAt: old } });
     expect(await failStaleRuns()).toBe(1);
     const run = await db.agentRun.findUniqueOrThrow({ where: { id: runId } });
     expect(run.status).toBe("FAILED");
@@ -423,6 +426,88 @@ describe("lifecycle", () => {
     } finally {
       process.env.CRON_SECRET = previous;
     }
+  });
+});
+
+describe("replies resume the agent", () => {
+  /** Claude asked for input on WEB-1 (acting through its owner's credentials). */
+  async function waiting() {
+    const s = await assigned();
+    await claimIssue(s.ctx, "WEB-1");
+    await reportProgress(s.ctx, "WEB-1", { message: "Which redirect URL?", status: "needs_input" });
+    const member = await addMember(s.workspace.id, await makeUser("Mo"), "MEMBER");
+    calls = [];
+    return { ...s, member };
+  }
+
+  it("a teammate's reply fires the routine again and the new session can claim", async () => {
+    const { ctx, member, issue, runId } = await waiting();
+    respond = () => fired(2);
+    const reply = await addComment(member, issue.id, { body: "Use /dashboard" });
+    await flushDeferred();
+
+    expect(calls).toHaveLength(1);
+    const text = JSON.parse(String(calls[0]!.init.body)).text as string;
+    expect(text).toContain('Kanso issue WEB-1 in workspace "');
+    expect(text).toContain("Repository: acme/web");
+    expect(text).toContain("Resuming");
+    expect(text).toContain("Branch: web-1-fix-login-redirect");
+    expect(text).not.toContain("Use /dashboard"); // the reply is read with get_issue, not passed along
+
+    const run = await db.agentRun.findUniqueOrThrow({ where: { id: runId } });
+    expect(run).toMatchObject({ status: "DISPATCHED", sessionUrl: "https://claude.ai/code/session_02", externalSessionId: "session_02" });
+    const resumed = (await listIssueActivity(ctx, issue.id)).entries.find((e) => e.action === "agent.resumed");
+    expect(resumed).toMatchObject({ actor: { name: "Mo" }, data: expect.objectContaining({ commentId: reply.id }) });
+
+    expect((await claimIssue(ctx, "WEB-1")).run).toEqual({ id: runId, status: "RUNNING" });
+  });
+
+  it("only a teammate who can dispatch resumes, and only while the agent waits", async () => {
+    const { ctx, workspace, web, issue, runId } = await waiting();
+    const guestUser = await makeUser("Gil");
+    const guest = await addMember(workspace.id, guestUser, "GUEST");
+    await shareProject(workspace.id, guestUser.id, web.project.id);
+    await addComment(guest, issue.id, { body: "guest says hi" });
+    await reportProgress(ctx, "WEB-1", { message: "Still waiting" }); // the agent itself
+    await flushDeferred();
+    expect(calls).toHaveLength(0);
+    expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("NEEDS_INPUT");
+
+    await reportProgress(ctx, "WEB-1", { message: "Back on it", status: "working" });
+    await addComment(ctx, issue.id, { body: "FYI" });
+    await flushDeferred();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("a failed fire ends the run so it can be retried", async () => {
+    const { member, issue, runId } = await waiting();
+    respond = () => json(429, { error: { message: "Rate limited" } });
+    await addComment(member, issue.id, { body: "Use /dashboard" });
+    await flushDeferred();
+    const run = await db.agentRun.findUniqueOrThrow({ where: { id: runId } });
+    expect(run.status).toBe("FAILED");
+    expect(await claimedBy(issue.id)).toBeNull();
+  });
+
+  it("MCP agents get a signed issue.comment webhook and keep running", async () => {
+    const { ctx, web, workspace } = await setup();
+    respond = () => new Response(null, { status: 204 });
+    const { agent, secrets } = await createAgent(ctx, { kind: "MCP", name: "Bot", webhookUrl: "https://agent.example.com/hook" });
+    const agentCtx = (await ctxForApiToken(secrets.token!))!;
+    const issue = await makeIssue(ctx, web.todo.id, "Webhook me");
+    const { runId } = await assignAgent(ctx, issue.id, { agentId: agent.id });
+    await flushDeferred();
+    await claimIssue(agentCtx, "WEB-1");
+    await reportProgress(agentCtx, "WEB-1", { message: "Which?", status: "needs_input" });
+    const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
+    calls = [];
+
+    const reply = await addComment(member, issue.id, { body: "This one" });
+    await flushDeferred();
+    const body = String(calls[0]!.init.body);
+    expect((calls[0]!.init.headers as Record<string, string>)["X-Kanso-Signature"]).toBe(`sha256=${hmacHex(secrets.webhookSecret!, body)}`);
+    expect(JSON.parse(body)).toMatchObject({ event: "issue.comment", issue: { key: "WEB-1" }, run: { id: runId }, comment: { id: reply.id } });
+    expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId! } })).status).toBe("RUNNING");
   });
 });
 

@@ -60,6 +60,16 @@ export const ctxForComment = (commentId: string) =>
     "Comment not found",
   );
 
+export const ctxForAttachment = (attachmentId: string) =>
+  ctxFor(
+    {
+      projects: {
+        some: { issues: { some: { comments: { some: { attachments: { some: { id: attachmentId } } } } } } },
+      },
+    },
+    "Attachment not found",
+  );
+
 export const ctxForInvite = (inviteId: string) =>
   ctxFor({ invites: { some: { id: inviteId } } }, "Invite not found");
 

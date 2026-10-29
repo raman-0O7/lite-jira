@@ -60,8 +60,16 @@ export async function failRun(
  */
 export async function failStaleRuns(now = new Date()) {
   const minutes = claimTimeoutMinutes();
+  const cutoff = new Date(now.getTime() - minutes * 60_000);
   const stale = await db.agentRun.findMany({
-    where: { status: { in: ["QUEUED", "DISPATCHED"] }, createdAt: { lt: new Date(now.getTime() - minutes * 60_000) } },
+    where: {
+      OR: [
+        { status: "QUEUED", createdAt: { lt: cutoff } },
+        // A resumed run is dispatched again long after it was created.
+        { status: "DISPATCHED", dispatchedAt: { lt: cutoff } },
+        { status: "DISPATCHED", dispatchedAt: null, createdAt: { lt: cutoff } },
+      ],
+    },
     select: { id: true },
     take: 100,
   });

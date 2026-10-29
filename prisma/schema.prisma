@@ -324,10 +324,26 @@ model Comment {
   authorAgentId String?
   authorAgent   Agent?    @relation(fields: [authorAgentId], references: [id], onDelete: SetNull)
   body          String
+  attachments   Attachment[]
   editedAt      DateTime?
   createdAt     DateTime  @default(now())
 
   @@index([issueId, createdAt])
+}
+
+// An image on a comment (docs/features/16-github-sync-and-replies.md). Kept in
+// Postgres: small (≤ 4 MB), and no extra storage service to run.
+model Attachment {
+  id          String   @id @default(cuid())
+  commentId   String
+  comment     Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  name        String
+  contentType String
+  size        Int
+  data        Bytes
+  createdAt   DateTime @default(now())
+
+  @@index([commentId])
 }
 
 // Scrum projects only. Schema lands in 07; UI in Feature 15.
@@ -620,10 +636,12 @@ model ProjectRepo {
   installation   GitHubInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
   // "owner/name", stored lowercase.
   repoFullName   String
-  importAssigned Boolean            @default(true)
+  importIssues   GitHubImport       @default(ALL)
   statusSync     Boolean            @default(true)
   moveOnMerge    Boolean            @default(true)
   issueLinks     GitHubIssueLink[]
+  // Last reconcile with GitHub (Sync, the cron); null until the first import.
+  lastSyncedAt   DateTime?
   createdAt      DateTime           @default(now())
 
   @@unique([installationId, repoFullName])
@@ -644,6 +662,13 @@ model GitHubIssueLink {
   lastSyncedAt  DateTime         @default(now())
 
   @@unique([repoFullName, number])
+}
+
+// Which open GitHub issues a connected repo brings into its project.
+enum GitHubImport {
+  ALL
+  ASSIGNED
+  OFF
 }
 
 enum GitHubIssueState {

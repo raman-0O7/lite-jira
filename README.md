@@ -134,12 +134,19 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   Both act as the user, capped by the credential. See
   [`docs/features/10-mcp-server.md`](docs/features/10-mcp-server.md).
 - **GitHub App** (optional): install from Settings → Integrations to import
-  assigned issues, sync status both ways, and link PRs with checks. Whoever
+  open issues (all, only those assigned to linked members, or none, per repo),
+  sync status both ways, and link PRs with checks. Point a scheduler at
+  `GET /api/cron/github-sync` with `CRON_SECRET` to catch up on missed webhooks
+  (`vercel.json` runs it daily). New project and the project header can
+  connect a repo directly. Whoever
   runs the server registers the app once from that page (the owner:
   `OWNER_EMAILS`, else the first account) and pastes the env values it shows
   into the host; after that every workspace just installs it on its own account. Setup: [`docs/github-app.md`](docs/github-app.md); specs:
   [`docs/features/11-github-app.md`](docs/features/11-github-app.md),
-  [`docs/features/15-github-setup.md`](docs/features/15-github-setup.md).
+  [`docs/features/15-github-setup.md`](docs/features/15-github-setup.md),
+  [`docs/features/16-github-sync-and-replies.md`](docs/features/16-github-sync-and-replies.md).
+- **Comments** take up to 3 images (pasted or attached, ≤ 4 MB in total). A
+  teammate's reply to an agent that asked for input resumes it.
 - **Agents**: Settings → Agents adds Claude Code routines (fired with the
   routine's own trigger token; Kanso never handles Claude.ai credentials) or
   self-hosted MCP agents (agent tokens, optional signed webhook). Assigning an

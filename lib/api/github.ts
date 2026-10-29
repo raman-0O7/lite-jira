@@ -1,10 +1,13 @@
 import { request } from "@/lib/api/http";
 
-export type RepoToggles = { importAssigned: boolean; statusSync: boolean; moveOnMerge: boolean };
+export type ImportMode = "ALL" | "ASSIGNED" | "OFF";
+
+export type RepoToggles = { importIssues: ImportMode; statusSync: boolean; moveOnMerge: boolean };
 
 export type ConnectedRepo = RepoToggles & {
   id: string;
   repoFullName: string;
+  lastSyncedAt: string | null;
   project: { id: string; name: string; key: string };
 };
 
@@ -77,7 +80,7 @@ export const disconnectRepo = (slug: string, id: string) =>
   request(`${base(slug)}/repos/${id}`, "Couldn’t disconnect the repository", { method: "DELETE" });
 
 export const syncRepo = (slug: string, id: string) =>
-  request<{ imported: number }>(`${base(slug)}/repos/${id}/sync`, "Sync failed", { method: "POST" });
+  request<{ imported: number; updated: number }>(`${base(slug)}/repos/${id}/sync`, "Sync failed", { method: "POST" });
 
 export type GitHubAppSetupInput = { name: string; org: string; public: boolean };
 

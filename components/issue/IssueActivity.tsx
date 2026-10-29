@@ -2,8 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNowStrict } from "date-fns";
-import { Trash2 } from "lucide-react";
-import { useState } from "react";
+import { ImagePlus, MessageCircleQuestion, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 
@@ -13,7 +13,18 @@ import { StatusIcon } from "@/components/icons/StatusIcon";
 import { ActivitySkeleton } from "@/components/loading/skeletons";
 import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
-import { addComment, deleteComment, fetchComments, type IssueComment } from "@/lib/api/comments";
+import { agentKeys, fetchAgentRuns } from "@/lib/api/agents";
+import {
+  addComment,
+  ATTACHMENT_TYPES,
+  attachmentUrl,
+  type CommentAttachment,
+  deleteComment,
+  fetchComments,
+  type IssueComment,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS,
+} from "@/lib/api/comments";
 import {
   fetchIssueActivity,
   issueKeys,
@@ -87,6 +98,8 @@ function describe(
       return [<>finished: the {link(data.prUrl, "pull request")} was merged</>];
     case "agent.failed":
       return [<>run failed{typeof data.error === "string" ? <>: <Strong>{data.error}</Strong></> : null}</>];
+    case "agent.resumed":
+      return [<>replied, so {agent(data.agentId)} picked the issue back up</>];
     case "agent.released":
       return [<>gave the issue back{typeof data.reason === "string" ? <>: <Strong>{data.reason}</Strong></> : null}</>];
   }
@@ -245,11 +258,64 @@ function CommentRow({
             </Button>
           ) : null}
         </div>
-        <div className={MARKDOWN_CLASS}>
-          <ReactMarkdown>{comment.body}</ReactMarkdown>
-        </div>
+        {comment.body ? (
+          <div className={MARKDOWN_CLASS}>
+            <ReactMarkdown>{comment.body}</ReactMarkdown>
+          </div>
+        ) : null}
+        {comment.attachments?.length ? <Attachments attachments={comment.attachments} /> : null}
       </div>
     </li>
+  );
+}
+
+function Attachments({ attachments }: { attachments: CommentAttachment[] }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {attachments.map((attachment) => (
+        <a
+          key={attachment.id}
+          href={attachmentUrl(attachment.id)}
+          target="_blank"
+          rel="noreferrer"
+          title={attachment.name}
+          className="block overflow-hidden rounded-md border bg-chip"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- private, auth-checked image */}
+          <img
+            src={attachmentUrl(attachment.id)}
+            alt={attachment.name}
+            loading="lazy"
+            className="max-h-40 max-w-60 object-contain"
+          />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+/** Images picked or pasted into the composer, previewed before sending. */
+function PendingImages({ files, onRemove }: { files: File[]; onRemove: (index: number) => void }) {
+  const urls = useMemo(() => files.map((file) => URL.createObjectURL(file)), [files]);
+  useEffect(() => () => urls.forEach((url) => URL.revokeObjectURL(url)), [urls]);
+  if (!files.length) return null;
+  return (
+    <div className="flex flex-wrap gap-2 px-3 pt-2">
+      {files.map((file, index) => (
+        <span key={urls[index]} className="relative block overflow-hidden rounded-md border bg-chip">
+          {/* eslint-disable-next-line @next/next/no-img-element -- local preview (blob: URL) */}
+          <img src={urls[index]} alt={file.name} className="size-16 object-cover" />
+          <button
+            type="button"
+            aria-label={`Remove ${file.name}`}
+            onClick={() => onRemove(index)}
+            className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-background/90 text-foreground shadow-card"
+          >
+            <X className="size-3" />
+          </button>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -271,6 +337,27 @@ export function IssueActivity({
   const canComment = useCan("comment.write");
   const canModerate = useCan("comment.moderate");
   const [body, setBody] = useState("");
+  const [images, setImages] = useState<File[]>([]);
+  const fileInput = useRef<HTMLInputElement>(null);
+  // Filled by the Agent block in the sidebar; read here only to prompt a reply.
+  const runsQuery = useQuery({ queryKey: agentKeys.runs(issueId), queryFn: () => fetchAgentRuns(issueId), enabled: false });
+  const canResume = useCan("agent.dispatch");
+  const waiting = canResume && runsQuery.data?.[0]?.status === "NEEDS_INPUT" ? runsQuery.data[0].agent : null;
+
+  function addImages(files: File[]) {
+    const accepted = files.filter((file) => ATTACHMENT_TYPES.includes(file.type));
+    if (accepted.length < files.length) toast.error("Only PNG, JPEG, GIF, and WebP images can be attached.");
+    const next = [...images, ...accepted];
+    if (next.length > MAX_ATTACHMENTS) {
+      toast.error(`Attach at most ${MAX_ATTACHMENTS} images.`);
+      return;
+    }
+    if (next.reduce((sum, file) => sum + file.size, 0) > MAX_ATTACHMENT_BYTES) {
+      toast.error("Images can be at most 4 MB in total.");
+      return;
+    }
+    setImages(next);
+  }
 
   const commentsQuery = useQuery({
     queryKey: issueKeys.comments(issueId),
@@ -282,10 +369,19 @@ export function IssueActivity({
   });
 
   const add = useMutation({
-    mutationFn: (value: string) => addComment(issueId, value),
+    mutationFn: ({ value, files }: { value: string; files: File[] }) => addComment(issueId, value, files),
     onSuccess: (comment) => {
       setBody("");
+      setImages([]);
       queryClient.setQueryData<IssueComment[]>(issueKeys.comments(issueId), (prev) => [...(prev ?? []), comment]);
+      if (waiting) {
+        toast.success(`Sent. ${waiting.name} will pick it up.`);
+        // The resume runs after the response; refresh once it has had a moment.
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: agentKeys.runs(issueId) });
+          queryClient.invalidateQueries({ queryKey: issueKeys.activity(issueId) });
+        }, 3_000);
+      }
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -303,7 +399,7 @@ export function IssueActivity({
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = body.trim();
-    if (trimmed) add.mutate(trimmed);
+    if (trimmed || images.length) add.mutate({ value: trimmed, files: images });
   }
 
   const variantFor = (columnId: string): StatusVariant => {
@@ -353,6 +449,12 @@ export function IssueActivity({
           )}
         </ol>
       )}
+      {canComment && waiting ? (
+        <p className="mt-1 flex items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-foreground">
+          <MessageCircleQuestion className="size-3.5 shrink-0 text-warning" />
+          {waiting.name} needs your input. Reply below (text or images) and it picks the work back up.
+        </p>
+      ) : null}
       {canComment ? (
         <form
           onSubmit={submit}
@@ -361,7 +463,7 @@ export function IssueActivity({
           <textarea
             value={body}
             onChange={(event) => setBody(event.target.value)}
-            placeholder="Leave a comment…"
+            placeholder={waiting ? `Answer ${waiting.name}…` : "Leave a comment…"}
             aria-label="New comment"
             rows={2}
             maxLength={10_000}
@@ -372,10 +474,41 @@ export function IssueActivity({
                 event.currentTarget.form?.requestSubmit();
               }
             }}
+            onPaste={(event) => {
+              const pasted = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+              if (!pasted.length) return;
+              event.preventDefault();
+              addImages(pasted);
+            }}
           />
+          <PendingImages files={images} onRemove={(index) => setImages(images.filter((_, i) => i !== index))} />
           <div className="flex items-center justify-between gap-2 px-2 pt-1 pb-2">
-            <span className="pl-1 text-2xs text-muted-foreground">Markdown supported · ⌘↵ to send</span>
-            <Button type="submit" size="sm" loading={add.isPending} disabled={!body.trim()}>
+            <div className="flex items-center gap-1">
+              <input
+                ref={fileInput}
+                type="file"
+                accept={ATTACHMENT_TYPES.join(",")}
+                multiple
+                hidden
+                onChange={(event) => {
+                  addImages(Array.from(event.target.files ?? []));
+                  event.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Attach images"
+                title="Attach images (or paste them)"
+                disabled={images.length >= MAX_ATTACHMENTS}
+                onClick={() => fileInput.current?.click()}
+              >
+                <ImagePlus />
+              </Button>
+              <span className="text-2xs text-muted-foreground">Markdown · paste images · ⌘↵ to send</span>
+            </div>
+            <Button type="submit" size="sm" loading={add.isPending} disabled={!body.trim() && !images.length}>
               Comment
             </Button>
           </div>

@@ -33,6 +33,8 @@ export type FakeIssue = {
   state: "open" | "closed";
   assignees: string[];
   labels?: { name: string; color: string }[];
+  /** For `since` queries; defaults to "just now". */
+  updatedAt?: string;
 };
 
 export function fakeGitHub() {
@@ -93,14 +95,19 @@ export function fakeGitHub() {
     m = /^\/repos\/([^/]+\/[^/]+)\/issues$/.exec(path);
     if (m) {
       const assignee = url.searchParams.get("assignee");
+      const since = url.searchParams.get("since");
+      const all = url.searchParams.get("state") === "all";
       const list = (state.issues[m[1]!] ?? []).filter(
-        (i) => i.state === "open" && (!assignee || i.assignees.includes(assignee)),
+        (i) =>
+          (all || i.state === "open") &&
+          (!assignee || i.assignees.includes(assignee)) &&
+          (!since || Date.parse(i.updatedAt ?? new Date().toISOString()) >= Date.parse(since)),
       );
       return json(
         list.map((i) => ({
           ...i,
           html_url: `https://github.com/${m![1]}/issues/${i.number}`,
-          assignees: i.assignees.map((login, n) => ({ id: n + 1, login })),
+          assignees: i.assignees.map((login, n) => ({ id: login === state.user.login ? state.user.id : 5000 + n, login })),
           labels: i.labels ?? [],
         })),
       );
