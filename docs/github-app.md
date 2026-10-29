@@ -5,6 +5,17 @@ Kanso talks to GitHub through a GitHub App (see
 production** and **a separate one for local development**: GitHub needs a
 public webhook URL, so the dev app points at a tunnel.
 
+## The quick way
+
+On your deployed Kanso, open **Settings → Integrations** as an admin and click
+**Create on GitHub**. GitHub fills in every setting below from a manifest; you
+confirm, come back, and Kanso shows the environment variables once. Add them to
+your host (on Vercel, paste the block into Project → Settings → Environment
+Variables), redeploy, then continue at [4. Use it](#4-use-it). Kanso doesn't
+keep the credentials. See [`features/15-github-setup.md`](features/15-github-setup.md).
+
+The rest of this page is the manual way.
+
 ## 1. Create the app
 
 Go to GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**,

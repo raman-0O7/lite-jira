@@ -134,13 +134,16 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   Both act as the user, capped by the credential. See
   [`docs/features/10-mcp-server.md`](docs/features/10-mcp-server.md).
 - **GitHub App** (optional): install from Settings → Integrations to import
-  assigned issues, sync status both ways, and link PRs with checks. Setup:
-  [`docs/github-app.md`](docs/github-app.md); spec:
-  [`docs/features/11-github-app.md`](docs/features/11-github-app.md).
+  assigned issues, sync status both ways, and link PRs with checks. With no app
+  yet, admins create one there in a few clicks and paste the env values it
+  shows into the host. Setup: [`docs/github-app.md`](docs/github-app.md); specs:
+  [`docs/features/11-github-app.md`](docs/features/11-github-app.md),
+  [`docs/features/15-github-setup.md`](docs/features/15-github-setup.md).
 - **Agents**: Settings → Agents adds Claude Code routines (fired with the
   routine's own trigger token; Kanso never handles Claude.ai credentials) or
   self-hosted MCP agents (agent tokens, optional signed webhook). Assigning an
-  issue to an agent dispatches a run; the agent claims it over MCP, opens a PR,
+  issue to an agent dispatches a run naming the issue's repository (Claude Code
+  needs the project to have one); the agent claims it over MCP, opens a PR,
   and a person merges. Agent secrets are encrypted with `ENCRYPTION_KEY`. Point
   a scheduler at `GET /api/cron/agent-watchdog` with `CRON_SECRET` to fail runs
   nobody claimed within `AGENT_CLAIM_TIMEOUT_MINUTES` (it also runs whenever

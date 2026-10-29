@@ -13,7 +13,11 @@ export function githubAppConfig(): GitHubAppConfig | null {
   const config = {
     appId: env.GITHUB_APP_ID ?? "",
     slug: env.GITHUB_APP_SLUG ?? "",
-    privateKey: (env.GITHUB_APP_PRIVATE_KEY ?? "").replace(/\\n/g, "\n"),
+    // One line with \n escapes, optionally wrapped in quotes by a pasted .env.
+    privateKey: (env.GITHUB_APP_PRIVATE_KEY ?? "")
+      .trim()
+      .replace(/^"([\s\S]*)"$/, "$1")
+      .replace(/\\n/g, "\n"),
     clientId: env.GITHUB_APP_CLIENT_ID ?? "",
     clientSecret: env.GITHUB_APP_CLIENT_SECRET ?? "",
     webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "",

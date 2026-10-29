@@ -14,6 +14,7 @@ import {
 } from "@/lib/agents/config";
 import { dispatchRun } from "@/lib/agents/dispatcher";
 import { ACTIVE_RUN, failStaleRuns, recordRunActivity } from "@/lib/agents/lifecycle";
+import { issueRepository } from "@/lib/agents/repo";
 import { db } from "@/lib/db";
 import { defer } from "@/lib/defer";
 import { branchName } from "@/lib/github/branch";
@@ -212,6 +213,17 @@ export async function revokeAgentToken(ctx: Ctx, id: string, tokenId: string) {
 // ---------- assignment & runs ----------
 
 /** Cancel an issue's active runs (reassignment). */
+/**
+ * Claude Code works in a cloud copy of a repository, so it needs one to be
+ * named: refuse the run up front rather than fire a routine that can't start.
+ */
+async function requireRepository(tx: Prisma.TransactionClient, issueId: string, kind: string, projectName: string) {
+  if (kind !== "CLAUDE_CODE" || (await issueRepository(issueId, tx))) return;
+  throw badRequest(
+    `Connect a GitHub repository to ${projectName} first (Settings → Integrations), so Claude knows which code to work on.`,
+  );
+}
+
 async function cancelActiveRuns(tx: Prisma.TransactionClient, issueId: string, reason: string) {
   await tx.agentRun.updateMany({
     where: { issueId, status: { in: ACTIVE_RUN } },
@@ -230,11 +242,14 @@ export async function assignAgent(ctx: Ctx, issueId: string, input: unknown) {
   const runId = await db.$transaction(async (tx) => {
     const issue = await tx.issue.findFirst({
       where: { id: issueId, project: projectScope(ctx) },
-      select: { id: true, projectId: true, assigneeAgentId: true, assigneeUserId: true },
+      select: { id: true, projectId: true, assigneeAgentId: true, assigneeUserId: true, project: { select: { name: true } } },
     });
     if (!issue) throw notFound("Issue not found");
     if (agentId) {
-      const agent = await tx.agent.findFirst({ where: { id: agentId, workspaceId: ctx.workspaceId }, select: { enabled: true } });
+      const agent = await tx.agent.findFirst({
+        where: { id: agentId, workspaceId: ctx.workspaceId },
+        select: { enabled: true, kind: true },
+      });
       if (!agent) throw notFound("Agent not found");
       if (!agent.enabled) throw badRequest("That agent is disabled");
       // Re-assigning the same agent while it's working is a no-op.
@@ -242,6 +257,7 @@ export async function assignAgent(ctx: Ctx, issueId: string, input: unknown) {
         const active = await tx.agentRun.count({ where: { issueId, agentId, status: { in: ACTIVE_RUN } } });
         if (active) return null;
       }
+      await requireRepository(tx, issueId, agent.kind, issue.project.name);
     } else if (!issue.assigneeAgentId) {
       return null;
     }
@@ -281,11 +297,17 @@ export async function retryAgentRun(ctx: Ctx, issueId: string) {
   const runId = await db.$transaction(async (tx) => {
     const issue = await tx.issue.findFirst({
       where: { id: issueId, project: projectScope(ctx) },
-      select: { id: true, assigneeAgentId: true, assigneeAgent: { select: { enabled: true } } },
+      select: {
+        id: true,
+        assigneeAgentId: true,
+        assigneeAgent: { select: { enabled: true, kind: true } },
+        project: { select: { name: true } },
+      },
     });
     if (!issue) throw notFound("Issue not found");
     if (!issue.assigneeAgentId || !issue.assigneeAgent) throw badRequest("This issue isn't assigned to an agent");
     if (!issue.assigneeAgent.enabled) throw badRequest("That agent is disabled");
+    await requireRepository(tx, issueId, issue.assigneeAgent.kind, issue.project.name);
     if (await tx.agentRun.count({ where: { issueId, status: { in: ACTIVE_RUN } } })) {
       throw new ServiceError(409, "The agent is already working on this issue");
     }
@@ -455,6 +477,7 @@ export async function claimIssue(ctx: Ctx, key: string) {
     issue: await getIssue(agentCtx, issue.id),
     run: { id: run.id, status: run.status },
     branch: branchName(key, issue.title),
+    repository: await issueRepository(issue.id),
   };
 }
 

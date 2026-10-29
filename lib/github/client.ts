@@ -146,6 +146,32 @@ export async function checkSuites(installationId: number, repo: string, sha: str
   return data.check_suites;
 }
 
+// ---------- app manifest (guided setup) ----------
+
+/** What GitHub returns once for an app created from a manifest. */
+export type GhManifestApp = {
+  id: number;
+  slug: string;
+  name: string;
+  html_url: string;
+  client_id: string;
+  client_secret: string;
+  webhook_secret: string | null;
+  pem: string;
+};
+
+/** Trade the manifest flow's one-time code for the new app's credentials (no auth needed). */
+export async function convertManifestCode(code: string): Promise<GhManifestApp> {
+  const response = await fetchImpl(`${GITHUB_API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
+    method: "POST",
+    headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Kanso" },
+  });
+  if (!response.ok) {
+    throw new GitHubError(response.status, response.status === 404 ? "GitHub: code not found" : `GitHub: ${response.statusText}`);
+  }
+  return (await response.json()) as GhManifestApp;
+}
+
 // ---------- user OAuth (link callback only) ----------
 
 export function userAuthorizeUrl(state: string, redirectUri: string) {

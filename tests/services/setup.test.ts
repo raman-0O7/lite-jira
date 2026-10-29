@@ -33,7 +33,29 @@ describe("setup status", () => {
       agents: false,
       assistant: false,
       claudeConnected: false,
+      repositories: [],
     });
+  });
+
+  it("lists the repos connected to projects the caller sees", async () => {
+    const { ctx, workspace } = await makeTeam();
+    const web = await makeProject(ctx, "Web", "WEB");
+    const api = await makeProject(ctx, "Api", "API");
+    const installation = await db.gitHubInstallation.create({
+      data: { workspaceId: workspace.id, installationId: 91, accountLogin: "acme", accountType: "Organization" },
+    });
+    for (const [projectId, repoFullName] of [
+      [web.project.id, "acme/web"],
+      [api.project.id, "acme/api"],
+    ]) {
+      await db.projectRepo.create({ data: { projectId: projectId!, installationId: installation.id, repoFullName: repoFullName! } });
+    }
+    expect((await getSetupStatus(ctx)).repositories).toEqual(["acme/api", "acme/web"]);
+
+    const guestUser = await makeUser("Guest");
+    const guest = await addMember(workspace.id, guestUser, "GUEST");
+    await shareProject(workspace.id, guestUser.id, web.project.id);
+    expect((await getSetupStatus(guest)).repositories).toEqual(["acme/web"]);
   });
 
   it("ticks projects, teammates and agents as they happen", async () => {

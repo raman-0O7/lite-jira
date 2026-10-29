@@ -11,7 +11,7 @@ step shows on the card and in the issue's history.
 
 ```
 Assign WEB-42 to "Claude" ─► AgentRun QUEUED ─► adapter.dispatch()   (after the response)
-  Claude Code: POST the routine's /fire URL, text "WEB-42" ─► session URL saved, DISPATCHED
+  Claude Code: POST the routine's /fire URL, text naming WEB-42 and its repo ─► session URL saved, DISPATCHED
   MCP agent:   signed webhook to the agent (optional); it can also poll list_agent_queue ─► DISPATCHED
   agent ─MCP─► claim_issue ─► RUNNING, card "Claude working", moved to In Progress
         ─MCP─► report_progress / add_comment (authored by the agent)
@@ -62,7 +62,8 @@ routines run on the owner's claude.ai account.
 - **Claude Code.** `POST {fireUrl}` sends:
   - headers `Authorization: Bearer <token>`, `anthropic-version: 2023-06-01`,
     `anthropic-beta: experimental-cc-routine-2026-04-01`;
-  - body `{text: "WEB-42"}`.
+  - body `{text: "Kanso issue WEB-42 in workspace \"acme\". Repository: acme/web"}`
+    (the repository: see [15-github-setup.md](15-github-setup.md)).
 
   The fire URL must be `https://api.anthropic.com/v1/claude_code/routines/trig_…/fire`.
   A 200 response saves `claude_code_session_id` and the session URL. **Fires

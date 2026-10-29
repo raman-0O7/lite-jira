@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { defer } from "@/lib/defer";
 import * as gh from "@/lib/github/client";
 import { githubConfigured } from "@/lib/github/config";
+import { APP_NAME_MAX, appManifest, defaultAppName, envLines, isLocalOrigin, manifestFormAction } from "@/lib/github/manifest";
 import { authorize, can } from "@/lib/permissions";
 import { recordActivity } from "@/lib/services/activity";
 import { actingUserId, type Ctx, userCtx } from "@/lib/services/context";
@@ -83,11 +84,78 @@ export async function getGitHubSettings(ctx: Ctx) {
             },
           },
         });
+  const configured = githubConfigured();
+  const canManage = can(ctx, "integrations.manage");
   return {
-    configured: githubConfigured(),
-    canManage: can(ctx, "integrations.manage"),
+    configured,
+    canManage,
+    // What the guided app setup needs (admins, before the app exists).
+    setup: !configured && canManage ? { defaultName: defaultAppName(appUrl()), local: isLocalOrigin(appUrl()) } : null,
     link,
     installations,
+  };
+}
+
+// ---------- guided app setup (docs/features/15-github-setup.md) ----------
+
+type ManifestState = { kind: "manifest"; workspaceId: string; userId: string };
+
+const appSetupSchema = z.object({
+  name: z.string().trim().min(1, "Name the app").max(APP_NAME_MAX, `App names are at most ${APP_NAME_MAX} characters`),
+  org: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/, "That isn't a GitHub organization name")
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  public: z.boolean().default(false),
+});
+
+/**
+ * The manifest form to post to GitHub, which creates a GitHub App with every
+ * setting filled in. Admins only, and only while the server has no app.
+ */
+export function startGitHubAppSetup(ctx: Ctx, slug: string, input: unknown) {
+  authorize(ctx, "integrations.manage");
+  if (githubConfigured()) throw new ServiceError(409, "This server already has a GitHub App");
+  const { name, org, public: isPublic } = appSetupSchema.parse(input);
+  const origin = appUrl();
+  const state = signState({ kind: "manifest", workspaceId: ctx.workspaceId, userId: actingUserId(ctx)! }, 3600);
+  const manifest = appManifest(origin, {
+    name,
+    public: isPublic,
+    redirectUrl: `${origin}/${slug}/settings/integrations/github-app`,
+  });
+  return { action: manifestFormAction(state, org), manifest: JSON.stringify(manifest) };
+}
+
+/**
+ * Trade GitHub's one-time code for the new app's credentials, as environment
+ * variables for the operator to add to the server. Shown once; never stored
+ * or logged: an app's credentials are instance-wide, so only whoever runs the
+ * server can put them to use.
+ */
+export async function completeGitHubAppSetup(ctx: Ctx, input: unknown) {
+  authorize(ctx, "integrations.manage");
+  const { code, state } = z.object({ code: z.string().min(1).max(200), state: z.string().min(1) }).parse(input);
+  const signed = verifyState<ManifestState>(state);
+  if (signed?.kind !== "manifest" || signed.workspaceId !== ctx.workspaceId || signed.userId !== actingUserId(ctx)) {
+    throw badRequest("This setup link has expired or wasn't started from your account. Start again from Integrations.");
+  }
+  let app: gh.GhManifestApp;
+  try {
+    app = await gh.convertManifestCode(code);
+  } catch (error) {
+    if (error instanceof gh.GitHubError && error.status === 404) {
+      throw badRequest("GitHub has already handed these credentials over, or the link expired. Credentials are shown only once.");
+    }
+    if (error instanceof gh.GitHubError) throw badRequest("GitHub didn't hand over the app's credentials. Please try again.");
+    throw error;
+  }
+  return {
+    app: { name: app.name, slug: app.slug, url: app.html_url },
+    env: envLines(app).join("\n"),
+    webhookSecretMissing: !app.webhook_secret,
   };
 }
 
@@ -131,7 +199,7 @@ export async function completeGitHubCallback(userId: string, input: unknown) {
   requireGitHub();
   const { code, state, installationId, setupAction } = callbackSchema.parse(input);
   const signed = state ? verifyState<CallbackState>(state) : null;
-  if (!signed || signed.userId !== userId) {
+  if (!signed || signed.userId !== userId || (signed.kind !== "install" && signed.kind !== "link")) {
     throw badRequest("This GitHub request has expired or wasn't started from your account. Please try again.");
   }
   const membership = await db.membership.findUnique({

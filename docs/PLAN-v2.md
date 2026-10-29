@@ -186,10 +186,13 @@ DONE, rest = IN_PROGRESS).
 | 8 | **10 — MCP server & API tokens**: `/api/mcp`, OAuth Provider plugin, discovery metadata, consent screen, personal API tokens UI, tool annotations, rate limits | 07 |
 | 8 | **11 — GitHub App**: install + repo selection per project, user link, import assigned issues, webhooks, two-way status sync, PR linking + checks, auto-move on merge, "copy branch name" | 07 |
 | 9 | **12 — Agents & dispatcher**: agent members, claim/lock, `AgentRun` lifecycle + watchdog, Claude Code adapter, generic MCP agent ("Ready for agent" column), agent UI (badges, watch-session link), outbound webhooks | 10, 11 |
-| 9 | **13 — Codex adapter (beta)**: dispatch via `@codex` mention posted as the user on the linked GitHub issue; status from GitHub events | 11, 12 |
-| 10 | **14 — In-app AI**: provider abstraction (platform key / BYOK / Sign in with ChatGPT), natural-language quick add, break-down-into-subtasks, GitHub import triage, summaries, "ask your board" | 07 |
-| 10 | **15 — Sprints UI**: backlog, sprint planning, start/complete, burndown, velocity (Scrum projects) | 09 |
-| 10 | **16 — My Work & saved filters**: cross-project home, saved filters, issue links UI (blocks/blocked by) | 09 |
+| 9 | **13 — Guided setup** (done): Get started checklist, assignee shortcuts, step-by-step agent setup | 12 |
+| 9 | **14 — Loading states** (done): skeletons and spinners | 09 |
+| 9 | **15 — GitHub setup & agent repositories** (done): create the GitHub App from Integrations (manifest flow), runs name the issue's repository, Claude Code needs one | 11, 12 |
+| 10 | **16 — Codex adapter (beta)**: dispatch via `@codex` mention posted as the user on the linked GitHub issue; status from GitHub events | 11, 12 |
+| 11 | **17 — In-app AI**: provider abstraction (platform key / BYOK / Sign in with ChatGPT), natural-language quick add, break-down-into-subtasks, GitHub import triage, summaries, "ask your board" | 07 |
+| 11 | **18 — Sprints UI**: backlog, sprint planning, start/complete, burndown, velocity (Scrum projects) | 09 |
+| 11 | **19 — My Work & saved filters**: cross-project home, saved filters, issue links UI (blocks/blocked by) | 09 |
 | later | Automation rules, WebMCP adapter, notifications, attachments, recurring issues, templates, calendar view, billing | — |
 
 ```
@@ -201,9 +204,11 @@ Wave 7:  [09 Design system & redesign]
               │
 Wave 8:  [10 MCP + tokens] ‖ [11 GitHub App]
               │                 │
-Wave 9:  [12 Agents & dispatcher] → [13 Codex adapter]
+Wave 9:  [12 Agents & dispatcher] → [13 Guided setup] ‖ [14 Loading] ‖ [15 GitHub setup]
               │
-Wave 10: [14 In-app AI] ‖ [15 Sprints UI] ‖ [16 My Work]
+Wave 10: [16 Codex adapter]
+              │
+Wave 11: [17 In-app AI] ‖ [18 Sprints UI] ‖ [19 My Work]
 ```
 
 10 and 11 do not depend on 09 and may start once 07 lands if we want them
@@ -293,14 +298,14 @@ Assign WEB-42 to "Claude" ─► AgentRun QUEUED ─► adapter.dispatch()
   untrusted in what we hand to agents; agents push branches only; merge is
   always human.
 
-### 13 — Codex adapter (beta)
+### 16 — Codex adapter (beta)
 No public Codex cloud API exists. Dispatch by posting `@codex <instructions> (WEB-42)`
 on the linked GitHub issue **as the user** (GitHub App user-to-server token).
 Requires the issue to have a GitHub link and the user to have Codex cloud set up
 for the repo. Known reliability issues upstream (openai/codex#42098) — surface
 failures clearly; swap to an official API if OpenAI ships one.
 
-### 14 — In-app AI
+### 17 — In-app AI
 Provider interface with three implementations: platform Anthropic key,
 workspace BYOK Anthropic key (encrypted), Sign in with ChatGPT (pending OpenAI
 partner approval — apply early). Default model: latest Claude. Every AI write

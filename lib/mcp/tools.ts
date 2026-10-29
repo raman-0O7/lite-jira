@@ -548,7 +548,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
     {
       title: "Claim issue (agent)",
       description:
-        "Start work on an issue assigned to your agent: locks it to the agent, marks the run as working, and moves it to In Progress. Returns the issue, the branch to use, and the rules.",
+        "Start work on an issue assigned to your agent: locks it to the agent, marks the run as working, and moves it to In Progress. Returns the issue, the repository and branch to use, and the rules.",
       inputSchema: z.object({ workspace, key: issueKey }),
       annotations: SET,
       scopeChallenge: challenge,
@@ -561,7 +561,11 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
           issue: issueDetail(claimed.issue),
           run: claimed.run,
           branch: claimed.branch,
+          repository: claimed.repository,
           rules: [
+            claimed.repository
+              ? `Work only in ${claimed.repository.fullName}. If you don't have that repository, call release_issue saying so.`
+              : "The project has no connected repository: ask with report_progress (status needs_input) which code to change.",
             `Work on a new branch named ${claimed.branch}, push it, and open a pull request that mentions ${claimed.issue.key}.`,
             "Never merge the pull request: a person reviews and merges.",
             "Use report_progress for updates; status needs_input if you're blocked.",

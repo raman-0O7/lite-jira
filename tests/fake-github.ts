@@ -61,6 +61,21 @@ export function fakeGitHub() {
     if (url.hostname === "github.com" && path === "/login/oauth/access_token") {
       return body?.code === "good-code" ? json({ access_token: "user-token" }) : json({ error_description: "bad code" });
     }
+    if (path === "/app-manifests/manifest-code/conversions" && method === "POST") {
+      return json(
+        {
+          id: 4242,
+          slug: "kanso-acme",
+          name: "Kanso acme",
+          html_url: "https://github.com/apps/kanso-acme",
+          client_id: "Iv23.new",
+          client_secret: "new-client-secret",
+          webhook_secret: "new-webhook-secret",
+          pem: "-----BEGIN RSA PRIVATE KEY-----\nAAA\nBBB\n-----END RSA PRIVATE KEY-----\n",
+        },
+        201,
+      );
+    }
     if (path === "/user") return json(state.user);
     if (path === "/user/installations") return json({ installations: state.userInstallations.map((id) => ({ id })) });
 

@@ -90,7 +90,9 @@ started. It is for admins only (`agent.manage`).
      without stopping to ask;
    - in the Trigger row, switch **Schedule** to **API**;
    - Advanced settings → Repository (General tab, starts at None; the Connectors
-     tab next to it should list Kanso);
+     tab next to it should list Kanso). The step names the repo connected in
+     Kanso, or links to Integrations when there's none
+     ([15-github-setup.md](15-github-setup.md));
    - Create, then copy the API token Claude shows.
 
    Kanso doesn't need its own step here: Claude includes connected connectors

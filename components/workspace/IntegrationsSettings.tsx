@@ -12,6 +12,7 @@ import { useCan, useWorkspace } from "@/components/providers/workspace-provider"
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { GitHubAppSetup } from "@/components/workspace/GitHubAppSetup";
 import {
   type ConnectedRepo,
   type GitHubInstallation,
@@ -29,6 +30,7 @@ import {
   updateRepo,
 } from "@/lib/api/github";
 import { fetchProjects, projectKeys } from "@/lib/api/projects";
+import { setupKeys } from "@/lib/api/setup";
 
 const RESULT_MESSAGES: Record<string, string> = {
   installed: "GitHub App installed. Connect a repository to a project below.",
@@ -68,11 +70,14 @@ export function IntegrationsSettings() {
       ) : settings.isError ? (
         <p className="text-sm text-muted-foreground">{settings.error.message}</p>
       ) : !settings.data.configured ? (
-        <div className="rounded-lg border bg-surface p-4 text-sm text-muted-foreground shadow-card">
-          The GitHub App isn’t configured on this server. An operator sets it up with the{" "}
-          <code className="font-mono text-xs">GITHUB_APP_*</code> environment variables. See{" "}
-          <code className="font-mono text-xs">docs/github-app.md</code>.
-        </div>
+        settings.data.setup ? (
+          <GitHubAppSetup setup={settings.data.setup} />
+        ) : (
+          <div className="rounded-lg border bg-surface p-4 text-sm text-muted-foreground shadow-card">
+            GitHub isn’t set up on this server yet. A workspace admin can create the GitHub App from this
+            page.
+          </div>
+        )
       ) : (
         <>
           <AccountLink link={settings.data.link} />
@@ -103,7 +108,11 @@ function useCallbackToast() {
 function useRefresh() {
   const { slug } = useWorkspace();
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: ["github", slug] });
+  return () => {
+    queryClient.invalidateQueries({ queryKey: ["github", slug] });
+    // The Get started checklist and the agent setup dialog show GitHub state too.
+    queryClient.invalidateQueries({ queryKey: setupKeys.status(slug) });
+  };
 }
 
 function AccountLink({ link }: { link: { login: string } | null }) {

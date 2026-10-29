@@ -4,6 +4,7 @@ import { GET as watchdogGET } from "@/app/api/cron/agent-watchdog/route";
 import { ROUTINE_BETA } from "@/lib/agents/claude-code";
 import { setAgentFetch } from "@/lib/agents/http";
 import { failStaleRuns, onPullRequestLinked } from "@/lib/agents/lifecycle";
+import { issueRepository } from "@/lib/agents/repo";
 import { hmacHex } from "@/lib/crypto";
 import { db } from "@/lib/db";
 import { flushDeferred } from "@/lib/defer";
@@ -65,12 +66,13 @@ beforeEach(() => {
   respond = () => fired();
 });
 
-/** A team with a Web project and a Claude Code agent owned by the owner. */
+/** A team with a Web project (acme/web connected) and a Claude Code agent owned by the owner. */
 async function setup() {
   const team = await makeTeam();
   const web = await makeProject(team.ctx, "Web", "WEB");
+  const { gh, repo } = await connected(team.ctx, web.project.id);
   const { agent } = await createAgent(team.ctx, { kind: "CLAUDE_CODE", name: "Claude", fireUrl: FIRE_URL, token: ROUTINE_TOKEN });
-  return { ...team, web, agent };
+  return { ...team, web, agent, gh, repo };
 }
 
 /** An MCP agent and a Ctx for its token. */
@@ -199,7 +201,9 @@ describe("assigning & dispatch", () => {
     expect(headers.Authorization).toBe(`Bearer ${ROUTINE_TOKEN}`);
     expect(headers["anthropic-beta"]).toBe(ROUTINE_BETA);
     expect(headers["anthropic-version"]).toBe("2023-06-01");
-    expect(JSON.parse(String(call!.init.body))).toEqual({ text: `Kanso issue WEB-1 in workspace "${workspace.slug}"` });
+    expect(JSON.parse(String(call!.init.body))).toEqual({
+      text: `Kanso issue WEB-1 in workspace "${workspace.slug}". Repository: acme/web`,
+    });
 
     run = await db.agentRun.findUniqueOrThrow({ where: { id: runId! } });
     expect(run).toMatchObject({ status: "DISPATCHED", externalSessionId: "session_01", sessionUrl: "https://claude.ai/code/session_01" });
@@ -247,7 +251,12 @@ describe("assigning & dispatch", () => {
     expect(call!.url).toBe("https://agent.example.com/hook");
     const body = String(call!.init.body);
     expect((call!.init.headers as Record<string, string>)["X-Kanso-Signature"]).toBe(`sha256=${hmacHex(secrets.webhookSecret!, body)}`);
-    expect(JSON.parse(body)).toMatchObject({ event: "issue.assigned", issue: { key: "WEB-1", title: "Webhook me" }, run: { id: first.runId } });
+    expect(JSON.parse(body)).toMatchObject({
+      event: "issue.assigned",
+      issue: { key: "WEB-1", title: "Webhook me" },
+      repository: { fullName: "acme/web", url: "https://github.com/acme/web" },
+      run: { id: first.runId },
+    });
     expect((await db.agentRun.findUniqueOrThrow({ where: { id: first.runId! } })).status).toBe("DISPATCHED");
 
     respond = () => fired();
@@ -262,6 +271,53 @@ describe("assigning & dispatch", () => {
     expect(full.assigneeAgent).toBeNull();
     expect(full.assignee).not.toBeNull();
     expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("CANCELLED");
+  });
+
+  it("Claude Code needs a connected repository; MCP agents don't", async () => {
+    const { ctx, agent } = await setup();
+    const docs = await makeProject(ctx, "Docs", "DOC");
+    const issue = await makeIssue(ctx, docs.todo.id);
+    const error = await assignAgent(ctx, issue.id, { agentId: agent.id }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 400, message: expect.stringMatching(/Connect a GitHub repository to Docs/) });
+    expect(await db.agentRun.count({ where: { issueId: issue.id } })).toBe(0);
+    expect((await getIssue(ctx, issue.id)).assigneeAgent).toBeNull();
+
+    const { agent: bot } = await createAgent(ctx, { kind: "MCP", name: "Bot", webhookUrl: null });
+    await assignAgent(ctx, issue.id, { agentId: bot.id });
+    expect((await claimIssue(ctx, `DOC-${issue.number}`)).repository).toBeNull();
+  });
+
+  it("a repo disconnected after assigning blocks retry and fails a queued dispatch", async () => {
+    const { ctx, web, agent, repo } = await setup();
+    const issue = await makeIssue(ctx, web.todo.id);
+    const { runId } = await assignAgent(ctx, issue.id, { agentId: agent.id });
+    await db.projectRepo.delete({ where: { id: repo.id } });
+    await flushDeferred();
+    expect(calls).toHaveLength(0);
+    const run = await db.agentRun.findUniqueOrThrow({ where: { id: runId! } });
+    expect(run).toMatchObject({ status: "FAILED", error: "The project has no connected GitHub repository" });
+    await expectStatus(retryAgentRun(ctx, issue.id), 400);
+  });
+
+  it("an imported issue uses its own repo, else the project's first connected one", async () => {
+    const { ctx, web, gh } = await setup();
+    const installation = await db.gitHubInstallation.findFirstOrThrow({ where: { workspaceId: ctx.workspaceId } });
+    const api = await db.projectRepo.create({ data: { projectId: web.project.id, installationId: installation.id, repoFullName: "acme/api" } });
+    const plain = await makeIssue(ctx, web.todo.id);
+    const imported = (await createImportedIssue(gh, {
+      projectId: web.project.id,
+      columnId: web.todo.id,
+      title: "From api",
+      description: null,
+      assigneeUserId: null,
+      labelIds: [],
+      link: { projectRepoId: api.id, repoFullName: "acme/api", number: 9, url: "https://github.com/acme/api/issues/9" },
+    }))!;
+    expect(await issueRepository(plain.id)).toEqual({ fullName: "acme/web", url: "https://github.com/acme/web" });
+    expect((await issueRepository(imported.id))?.fullName).toBe("acme/api");
+
+    await db.gitHubInstallation.update({ where: { id: installation.id }, data: { suspendedAt: new Date() } });
+    expect(await issueRepository(plain.id)).toBeNull();
   });
 
   it("disabled agents can't be assigned", async () => {
@@ -287,6 +343,7 @@ describe("claim, progress, release", () => {
 
     const claimed = await claimIssue(agentCtx, "WEB-1");
     expect(claimed.branch).toBe("web-1-fix-login-redirect");
+    expect(claimed.repository).toEqual({ fullName: "acme/web", url: "https://github.com/acme/web" });
     expect(claimed.run.status).toBe("RUNNING");
     expect(claimed.issue.column.category).toBe("IN_PROGRESS");
     expect(await claimedBy(issue.id)).toBe(agent.id);
@@ -326,10 +383,9 @@ describe("claim, progress, release", () => {
 
 describe("lifecycle", () => {
   it("a linked PR moves the run to PR_OPEN and the card to Review; merge finishes it", async () => {
-    const { ctx, web, issue, agent } = await assigned();
+    const { ctx, web, issue, agent, gh } = await assigned();
     const review = await createColumn(ctx, web.project.id, { name: "In Review", category: "IN_PROGRESS" });
     await claimIssue(ctx, "WEB-1");
-    const { gh } = await connected(ctx, web.project.id);
 
     await onPullRequestLinked(gh, issue.id, { url: "https://github.com/acme/web/pull/7", state: "OPEN" });
     let full = await getIssue(ctx, issue.id);
@@ -372,8 +428,7 @@ describe("lifecycle", () => {
 
 describe("untrusted content", () => {
   it("labels GitHub-imported issues as untrusted in agent payloads", async () => {
-    const { ctx, web, agent } = await setup();
-    const { gh, repo } = await connected(ctx, web.project.id);
+    const { ctx, web, agent, gh, repo } = await setup();
     const issue = (await createImportedIssue(gh, {
       projectId: web.project.id,
       columnId: web.todo.id,
