@@ -62,7 +62,7 @@ How `claudeConnected` is decided:
 
 ## Agent setup
 `AgentSetupDialog` is used by Settings → Agents, the assignee menu, and Get
-started. It is for admins only (`agent.manage`).
+started. Any member can use it to add their own agent (`agent.create`, feature 17).
 
 1. **Choose a kind.** Each option says what it needs:
    - **Claude Code** (recommended): a paid Claude plan with Claude Code on the
@@ -156,7 +156,7 @@ A card at the top of the Projects page. It lists only what the viewer may do:
 |-|-|-|-|
 | Create a project | `project.create` | the project list isn't empty | New project dialog |
 | Invite your team | `members.manage`, team workspace | `teammates` | Invite dialog |
-| Add an AI agent | `agent.manage` | `agents` | Agent setup dialog |
+| Connect your Claude | `agent.create` | `agents` (yours) | Agent setup dialog |
 | Connect GitHub | `integrations.manage` | `github` | Settings → Integrations |
 | Use Kanso from your AI assistant | everyone | `assistant` | Settings → API & MCP |
 

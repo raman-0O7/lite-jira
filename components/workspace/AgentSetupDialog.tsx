@@ -21,7 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { copy, Snippet } from "@/components/workspace/ApiSettings";
-import { type Agent, type AgentSecrets, agentKeys, createAgent } from "@/lib/api/agents";
+import { useSession } from "@/lib/auth-client";
+import { type Agent, type AgentSecrets, agentKeys, createAgent, fetchAgents } from "@/lib/api/agents";
 import { fetchSetup, setupKeys } from "@/lib/api/setup";
 import { cn } from "@/lib/utils";
 
@@ -113,7 +114,8 @@ const TASK_STEPS: { id: string; title: string; how: React.ReactNode; note?: Reac
  * Add an AI agent, one step at a time (docs/features/13-guided-setup.md
  * "Agent setup"). Claude Code: connect Kanso to Claude (ticks itself once
  * Claude is allowed), create the scheduled task in Claude, paste its trigger
- * back. MCP: name it and copy its token. Admins only; callers gate it.
+ * back. MCP: name it and copy its token. The agent is the caller's own
+ * (members and up; callers gate it).
  */
 export function AgentSetupDialog({
   open,
@@ -142,6 +144,12 @@ export function AgentSetupDialog({
     // While we wait for the person to allow Kanso in Claude, look every few seconds.
     refetchInterval: (query) => (step === "connect" && !query.state.data?.status.claudeConnected ? 3000 : false),
   });
+  const agents = useQuery({ queryKey: agentKeys.list(slug), queryFn: () => fetchAgents(slug), enabled: open });
+  const myName = useSession().data?.user.name ?? "";
+  // Names are unique in a workspace: the second member's Claude is "Bob’s Claude".
+  const suggestedName = agents.data?.some((agent) => agent.name.toLowerCase() === "claude")
+    ? `${myName.split(" ")[0] || "My"}’s Claude`.slice(0, 40)
+    : "Claude";
   const connected = setup.data?.status.claudeConnected ?? false;
   const mcpUrl = setup.data?.mcpUrl ?? "";
 
@@ -203,7 +211,10 @@ export function AgentSetupDialog({
               badge="Recommended"
               description="Claude works in your GitHub repo in Anthropic’s cloud, on your own Claude account. Kanso starts a run each time you assign it an issue."
               needs={["A paid Claude plan with Claude Code on the web", "Your GitHub repo connected to Kanso and to Claude", "About 5 minutes"]}
-              onSelect={() => setStep("connect")}
+              onSelect={() => {
+                setName(suggestedName);
+                setStep("connect");
+              }}
             />
             <KindOption
               icon={<Bot className="size-4 text-review" />}

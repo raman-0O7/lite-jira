@@ -1,5 +1,7 @@
 import { AgentIcon } from "@/components/icons/AgentIcon";
+import { Avatar } from "@/components/icons/Avatar";
 import { RUN_STATUS_LABEL, type AgentKind, type AgentRunStatus } from "@/lib/api/agents";
+import type { PersonStub } from "@/lib/api/projects";
 import { cn } from "@/lib/utils";
 
 const TONE: Record<AgentRunStatus, string> = {
@@ -54,6 +56,34 @@ export function AgentAvatar({ name, kind, className }: { name: string; kind?: Ag
       className={cn("flex size-5 shrink-0 items-center justify-center rounded-full bg-chip", className)}
     >
       <AgentIcon kind={kind} className="size-3" />
+    </span>
+  );
+}
+
+/**
+ * The assignee on a card or row: the person, with their agent's badge tucked
+ * against it while the agent works the issue.
+ */
+export function AssigneeAvatars({
+  person,
+  agent,
+  className,
+}: {
+  person: PersonStub | null;
+  agent: { name: string; kind: AgentKind } | null | undefined;
+  className?: string;
+}) {
+  if (!person && !agent) return null;
+  return (
+    <span className={cn("flex shrink-0 items-center", className)}>
+      {person ? <Avatar person={person} /> : null}
+      {agent ? (
+        <AgentAvatar
+          name={person ? `${agent.name}, working for ${person.name}` : agent.name}
+          kind={agent.kind}
+          className={person ? "-ml-1.5 ring-2 ring-surface" : undefined}
+        />
+      ) : null}
     </span>
   );
 }

@@ -268,8 +268,9 @@ export async function updateIssue(ctx: Ctx, issueId: string, input: unknown) {
       if (next) await assertAssignable(tx, ctx, next);
       data.assigneeUserId = next;
       change(changes, "assigneeUserId", before.assigneeUserId, next);
-      // One assignee: choosing a person (or nobody) takes the issue off its agent.
-      if (before.assigneeAgentId) {
+      // The agent works for the assignee (a Claude Code agent runs on its
+      // owner's account), so handing the issue to someone else stops it.
+      if (before.assigneeAgentId && next !== before.assigneeUserId) {
         data.assigneeAgentId = null;
         data.claimedByAgentId = null;
         data.claimedAt = null;

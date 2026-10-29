@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { IssueCard } from "@/lib/api/projects";
 import {
   activeFilterCount,
-  assigneeToken,
+  assigneeTokens,
   EMPTY_FILTERS,
   filtersFromSearchParams,
   filtersToSearchParams,
@@ -16,10 +16,17 @@ const card = (patch: Partial<IssueCard>) =>
 const ada = card({ assignee: { id: "u1", name: "Ada", image: null } });
 const claude = card({ assigneeAgent: { id: "a1", name: "Claude", kind: "CLAUDE_CODE" } });
 const nobody = card({});
+// Ada handed this one to her Claude: it matches either.
+const adaWithClaude = card({ assignee: { id: "u1", name: "Ada", image: null }, assigneeAgent: { id: "a1", name: "Claude", kind: "CLAUDE_CODE" } });
 
 describe("assignee filter", () => {
   it("tokens people, agents and nobody", () => {
-    expect([ada, claude, nobody].map(assigneeToken)).toEqual(["user:u1", "agent:a1", "none"]);
+    expect([ada, claude, nobody, adaWithClaude].map(assigneeTokens)).toEqual([
+      ["user:u1"],
+      ["agent:a1"],
+      ["none"],
+      ["user:u1", "agent:a1"],
+    ]);
   });
 
   it("matches any selected assignee; empty matches all", () => {
@@ -28,6 +35,8 @@ describe("assignee filter", () => {
     expect(pick([])).toHaveLength(3);
     expect(pick(["agent:a1", "none"])).toEqual([claude, nobody]);
     expect(pick(["user:u1"])).toEqual([ada]);
+    const both = (assignees: string[]) => matchesFilters(adaWithClaude, { ...EMPTY_FILTERS, assignees });
+    expect([both(["user:u1"]), both(["agent:a1"]), both(["none"])]).toEqual([true, true, false]);
     expect(activeFilterCount({ ...EMPTY_FILTERS, assignees: ["none"] })).toBe(1);
   });
 

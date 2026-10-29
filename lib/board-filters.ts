@@ -37,7 +37,7 @@ export type FilterState = {
   labelIds: string[];
   /** Selected due quick-filters (OR within). Empty = all pass. */
   due: DueFilter[];
-  /** Selected assignees as tokens (see assigneeToken), OR within. Empty = all pass. */
+  /** Selected assignees as tokens (see assigneeTokens), OR within. Empty = all pass. */
   assignees: string[];
 };
 
@@ -52,11 +52,16 @@ export const EMPTY_FILTERS: FilterState = {
 /** The "Unassigned" assignee token. */
 export const UNASSIGNED = "none";
 
-/** Who an issue is assigned to, as a filter token: "agent:<id>", "user:<id>" or "none". */
-export function assigneeToken(task: Pick<FilterableTask, "assignee" | "assigneeAgent">): string {
-  if (task.assigneeAgent) return `agent:${task.assigneeAgent.id}`;
-  if (task.assignee) return `user:${task.assignee.id}`;
-  return UNASSIGNED;
+/**
+ * Who an issue is assigned to, as filter tokens: "user:<id>" for the person,
+ * "agent:<id>" for the agent working it for them, or just "none".
+ */
+export function assigneeTokens(task: Pick<FilterableTask, "assignee" | "assigneeAgent">): string[] {
+  const tokens = [
+    ...(task.assignee ? [`user:${task.assignee.id}`] : []),
+    ...(task.assigneeAgent ? [`agent:${task.assigneeAgent.id}`] : []),
+  ];
+  return tokens.length ? tokens : [UNASSIGNED];
 }
 
 /**
@@ -149,7 +154,7 @@ export function matchesDue(
 /** Task is assigned to one of `assignees` (tokens; "none" = unassigned). Empty passes. */
 export function matchesAssignee(task: FilterableTask, assignees: string[]): boolean {
   if (assignees.length === 0) return true;
-  return assignees.includes(assigneeToken(task));
+  return assigneeTokens(task).some((token) => assignees.includes(token));
 }
 
 /** AND across types, OR within each (handled by the per-type predicates). */

@@ -102,21 +102,30 @@ async function assigned() {
 }
 
 describe("managing agents", () => {
-  it("only admins manage agents; members can view; guests can view only the list", async () => {
+  it("members add and manage their own agents; admins manage everyone's; guests only view", async () => {
     const { ctx, workspace, agent } = await setup();
     const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
     const guest = await addMember(workspace.id, await makeUser("Gil"), "GUEST");
 
-    await expectStatus(createAgent(member, { kind: "MCP", name: "Nope", webhookUrl: null }), 403);
+    await expectStatus(createAgent(guest, { kind: "MCP", name: "Nope", webhookUrl: null }), 403);
+    const { agent: mine } = await createAgent(member, { kind: "CLAUDE_CODE", name: "Mo’s Claude", fireUrl: FIRE_URL, token: ROUTINE_TOKEN });
+    expect(mine.owner.name).toBe("Mo");
+    await updateAgent(member, mine.id, { enabled: false });
+    await listAgentTokens(member, mine.id);
+
+    // Someone else's agent is theirs to change.
     await expectStatus(updateAgent(member, agent.id, { enabled: false }), 403);
     await expectStatus(deleteAgent(member, agent.id), 403);
     await expectStatus(createAgentToken(member, agent.id), 403);
-    expect((await listAgents(member)).map((a) => a.name)).toEqual(["Claude"]);
-    expect((await listAgents(guest)).length).toBe(1);
+    await expectStatus(listAgentTokens(member, agent.id), 403);
+    expect((await listAgents(member)).map((a) => a.name)).toEqual(["Claude", "Mo’s Claude"]);
+    expect((await listAgents(guest)).length).toBe(2);
 
     const admin = await addMember(workspace.id, await makeUser("Ann"), "ADMIN");
+    await updateAgent(admin, mine.id, { enabled: true });
     await createAgent(admin, { kind: "MCP", name: "Helper", webhookUrl: null });
     await expectStatus(createAgent(ctx, { kind: "MCP", name: "helper", webhookUrl: null }), 409);
+    await deleteAgent(admin, mine.id);
   });
 
   it("encrypts secrets and never returns them after creation", async () => {
@@ -180,15 +189,21 @@ describe("agent tokens", () => {
 });
 
 describe("assigning & dispatch", () => {
-  it("members assign; guests can't; assigning clears the person and fires the routine after the response", async () => {
-    const { ctx, workspace, web, agent } = await setup();
+  it("only its owner starts a Claude Code agent; they become the assignee; the routine fires after the response", async () => {
+    const { ctx, user, workspace, web, agent } = await setup();
     const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
     const guest = await addMember(workspace.id, await makeUser("Gil"), "GUEST");
     const issue = await makeIssue(ctx, web.todo.id, "Fix login");
     await updateIssue(ctx, issue.id, { assigneeUserId: (member.actor as { userId: string }).userId });
 
     await expectStatus(assignAgent(guest, issue.id, { agentId: agent.id }), 403);
-    const { runId } = await assignAgent(member, issue.id, { agentId: agent.id });
+    // Owner's Claude runs on the owner's Claude account: Mo can't start it.
+    await expect(assignAgent(member, issue.id, { agentId: agent.id })).rejects.toThrow(
+      "Only Owner can start Claude: it runs on their Claude account. Connect your own Claude in Settings → Agents.",
+    );
+    expect(await db.agentRun.count({ where: { issueId: issue.id } })).toBe(0);
+
+    const { runId } = await assignAgent(ctx, issue.id, { agentId: agent.id });
     expect(calls).toHaveLength(0);
     let run = await db.agentRun.findUniqueOrThrow({ where: { id: runId! } });
     expect(run.status).toBe("QUEUED");
@@ -208,14 +223,28 @@ describe("assigning & dispatch", () => {
     run = await db.agentRun.findUniqueOrThrow({ where: { id: runId! } });
     expect(run).toMatchObject({ status: "DISPATCHED", externalSessionId: "session_01", sessionUrl: "https://claude.ai/code/session_01" });
 
+    // The person stays: whoever's Claude it is, here the owner, taking it from Mo.
     const full = await getIssue(ctx, issue.id);
-    expect(full.assignee).toBeNull();
+    expect(full.assignee?.id).toBe(user.id);
     expect(full.assigneeAgent).toMatchObject({ id: agent.id, name: "Claude" });
     expect(full.agentRuns[0]).toMatchObject({ status: "DISPATCHED", sessionUrl: "https://claude.ai/code/session_01" });
 
     const activity = await listIssueActivity(ctx, issue.id);
     expect(activity.entries.map((e) => e.action)).toContain("agent.assigned");
     expect(activity.refs.agents[agent.id]?.name).toBe("Claude");
+    const handover = activity.entries.find((e) => e.action === "issue.updated" && JSON.stringify(e.data).includes(agent.id));
+    expect(handover?.data).toMatchObject({
+      changes: { assigneeAgentId: { from: null, to: agent.id }, assigneeUserId: { to: user.id } },
+    });
+
+    // Mo can't retry the owner's agent either; with his own Claude the issue is his again.
+    await db.agentRun.updateMany({ where: { issueId: issue.id }, data: { status: "FAILED" } });
+    await expectStatus(retryAgentRun(member, issue.id), 403);
+    const { agent: mos } = await createAgent(member, { kind: "CLAUDE_CODE", name: "Mo’s Claude", fireUrl: FIRE_URL, token: ROUTINE_TOKEN });
+    await assignAgent(member, issue.id, { agentId: mos.id });
+    const mine = await getIssue(member, issue.id);
+    expect(mine.assignee?.name).toBe("Mo");
+    expect(mine.assigneeAgent?.name).toBe("Mo’s Claude");
   });
 
   it("a failed fire marks the run FAILED with the API's message and is never retried", async () => {
@@ -264,13 +293,47 @@ describe("assigning & dispatch", () => {
     expect((await db.agentRun.findUniqueOrThrow({ where: { id: first.runId! } })).status).toBe("CANCELLED");
   });
 
-  it("assigning a person (or nobody) clears the agent and cancels its run", async () => {
-    const { ctx, issue, runId } = await assigned();
-    await updateIssue(ctx, issue.id, { assigneeUserId: (ctx.actor as { userId: string }).userId });
+  it("handing the issue to another person stops its agent; taking the agent off keeps the person", async () => {
+    const { ctx, user, workspace, issue, runId } = await assigned();
+    // Re-setting the same person changes nothing.
+    await updateIssue(ctx, issue.id, { assigneeUserId: user.id });
+    expect((await getIssue(ctx, issue.id)).assigneeAgent?.name).toBe("Claude");
+    expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("DISPATCHED");
+
+    const mo = await makeUser("Mo");
+    await addMember(workspace.id, mo, "MEMBER");
+    await updateIssue(ctx, issue.id, { assigneeUserId: mo.id });
     const full = await getIssue(ctx, issue.id);
     expect(full.assigneeAgent).toBeNull();
-    expect(full.assignee).not.toBeNull();
+    expect(full.assignee?.id).toBe(mo.id);
     expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("CANCELLED");
+
+    const other = await makeIssue(ctx, full.columnId, "Another");
+    await assignAgent(ctx, other.id, { agentId: (await listAgents(ctx))[0]!.id });
+    await assignAgent(ctx, other.id, { agentId: null });
+    const off = await getIssue(ctx, other.id);
+    expect(off.assigneeAgent).toBeNull();
+    expect(off.assignee?.id).toBe(user.id);
+    expect(await db.agentRun.count({ where: { issueId: other.id, status: "CANCELLED" } })).toBe(1);
+  });
+
+  it("MCP agents are shared: any member hands them work and stays (or becomes) the assignee", async () => {
+    const { ctx, user, workspace, web } = await setup();
+    respond = () => new Response(null, { status: 204 });
+    const { agent: bot } = await mcpAgent(ctx);
+    const mo = await makeUser("Mo");
+    const member = await addMember(workspace.id, mo, "MEMBER");
+
+    const unassigned = await makeIssue(ctx, web.todo.id, "Nobody's");
+    await assignAgent(member, unassigned.id, { agentId: bot.id });
+    expect((await getIssue(ctx, unassigned.id)).assignee?.id).toBe(mo.id);
+
+    const owners = await makeIssue(ctx, web.todo.id, "Owner's");
+    await updateIssue(ctx, owners.id, { assigneeUserId: user.id });
+    await assignAgent(member, owners.id, { agentId: bot.id });
+    const full = await getIssue(ctx, owners.id);
+    expect(full.assignee?.id).toBe(user.id);
+    expect(full.assigneeAgent?.name).toBe("Bot");
   });
 
   it("Claude Code needs a connected repository; MCP agents don't", async () => {

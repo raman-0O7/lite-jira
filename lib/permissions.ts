@@ -24,6 +24,7 @@ export type Action =
   | "comment.moderate"
   | "members.manage"
   | "integrations.manage"
+  | "agent.create"
   | "agent.manage"
   | "agent.dispatch"
   | "workspace.update"
@@ -39,6 +40,9 @@ const WRITE: Action[] = [
   "column.write",
   "issue.write",
   "label.write",
+  // Members connect their own agents (their own Claude account) and manage
+  // those; agent.manage is for everyone's (docs/features/17-personal-agents.md).
+  "agent.create",
   "agent.dispatch",
 ];
 const ADMIN: Action[] = [
@@ -66,6 +70,7 @@ const AGENT_NEVER: ReadonlySet<Action> = new Set([
   "comment.moderate",
   "members.manage",
   "integrations.manage",
+  "agent.create",
   "agent.manage",
   // Only people hand work to agents.
   "agent.dispatch",

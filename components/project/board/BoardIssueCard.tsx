@@ -5,11 +5,10 @@ import { CSS } from "@dnd-kit/utilities";
 import { ListTree, MoreHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
 
-import { Avatar } from "@/components/icons/Avatar";
 import { GitHubMark } from "@/components/icons/GitHubMark";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { PriorityIcon } from "@/components/icons/PriorityIcon";
-import { AgentAvatar, cardRunStatus, RunStatusBadge } from "@/components/issue/AgentBadges";
+import { AssigneeAvatars, cardRunStatus, RunStatusBadge } from "@/components/issue/AgentBadges";
 import { DueDate } from "@/components/issue/DueDate";
 import { PullRequestBadge } from "@/components/issue/GitHubBadges";
 import { LabelChip } from "@/components/issue/LabelChip";
@@ -88,11 +87,7 @@ export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.
           ) : null}
           {issue.pullRequests?.length ? <PullRequestBadge pullRequests={issue.pullRequests} /> : null}
           {runStatus ? <RunStatusBadge status={runStatus} name={issue.assigneeAgent?.name} kind={issue.assigneeAgent?.kind} /> : null}
-          {issue.assigneeAgent ? (
-            <AgentAvatar name={issue.assigneeAgent.name} kind={issue.assigneeAgent.kind} className="ml-auto" />
-          ) : issue.assignee ? (
-            <Avatar person={issue.assignee} className="ml-auto" />
-          ) : null}
+          <AssigneeAvatars person={issue.assignee} agent={issue.assigneeAgent} className="ml-auto" />
         </div>
       ) : null}
     </>

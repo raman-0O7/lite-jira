@@ -40,7 +40,7 @@ Secrets are shown once, never returned again, and never logged.
 ## Who can do what
 | Action | Owner/Admin | Member | Guest | Agent / token |
 |---|:-:|:-:|:-:|:-:|
-| Create, edit, disable, delete agents; mint agent tokens (`agent.manage`) | ✓ | — | — | never |
+| Create, edit, disable, delete agents; mint agent tokens (`agent.manage`; members their own with `agent.create`, feature 17) | ✓ | own | — | never |
 | Assign an issue to an agent, retry a run (`agent.dispatch`) | ✓ | ✓ | — | never |
 | Claim / report / release (as the assigned agent) | — | — | — | ✓ |
 
@@ -130,7 +130,7 @@ Run changes are recorded as issue activity (`agent.assigned`,
   session URL), PR link, error, Retry, and the last runs.
 
 ## Acceptance criteria
-- [x] Only admins manage agents; members can assign issues to agents; guests and tokens can't.
+- [x] Only admins manage agents; members can assign issues to agents; guests and tokens can't. (Feature 17: members add and manage their own; only its owner starts a Claude Code agent.)
 - [x] Secrets are encrypted at rest and never returned after creation.
 - [x] Assigning dispatches after the response; Claude Code fire saves the session URL; failures → FAILED, no auto-retry.
 - [x] Agent tokens act as the agent on behalf of the owner, capped; disabled agents' tokens are rejected.

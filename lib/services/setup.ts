@@ -31,7 +31,8 @@ export async function getSetupStatus(ctx: Ctx) {
       where: { workspaceId: ctx.workspaceId, acceptedAt: null, revokedAt: null, expiresAt: { gt: now } },
     }),
     db.gitHubInstallation.count({ where: { workspaceId: ctx.workspaceId, suspendedAt: null } }),
-    db.agent.count({ where: { workspaceId: ctx.workspaceId } }),
+    // Each member connects their own agent (their own Claude account).
+    db.agent.count({ where: { workspaceId: ctx.workspaceId, ownerUserId: userId } }),
     db.apiToken.count({
       where: {
         userId,

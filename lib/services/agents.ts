@@ -18,7 +18,7 @@ import { issueRepository } from "@/lib/agents/repo";
 import { db } from "@/lib/db";
 import { defer } from "@/lib/defer";
 import { branchName } from "@/lib/github/branch";
-import { authorize } from "@/lib/permissions";
+import { authorize, can } from "@/lib/permissions";
 import { recordActivity } from "@/lib/services/activity";
 import { mintAgentToken } from "@/lib/services/api-tokens";
 import { addComment } from "@/lib/services/comments";
@@ -95,11 +95,12 @@ async function assertNameFree(workspaceId: string, agentName: string, exceptId?:
 }
 
 /**
- * Create an agent owned by the caller. Returns secrets once: for an MCP agent,
- * its first token and the webhook signing secret.
+ * Create an agent owned by the caller (members and up: each connects their
+ * own). Returns secrets once: for an MCP agent, its first token and the
+ * webhook signing secret.
  */
 export async function createAgent(ctx: Ctx, input: unknown) {
-  authorize(ctx, "agent.manage");
+  authorize(ctx, "agent.create");
   const data = createAgentSchema.parse(input);
   const ownerUserId = ownerOf(ctx);
   await assertNameFree(ctx.workspaceId, data.name);
@@ -133,6 +134,14 @@ async function findAgent(ctx: Ctx, id: string) {
   return agent;
 }
 
+/** An agent the caller may change: their own, or anyone's for admins. */
+async function findManagedAgent(ctx: Ctx, id: string) {
+  authorize(ctx, "agent.create");
+  const agent = await findAgent(ctx, id);
+  if (agent.ownerUserId !== actingUserId(ctx) && !can(ctx, "agent.manage")) throw forbidden();
+  return agent;
+}
+
 const updateAgentSchema = z.object({
   name: name.optional(),
   enabled: z.boolean().optional(),
@@ -142,9 +151,8 @@ const updateAgentSchema = z.object({
 });
 
 export async function updateAgent(ctx: Ctx, id: string, input: unknown) {
-  authorize(ctx, "agent.manage");
   const patch = updateAgentSchema.parse(input);
-  const agent = await findAgent(ctx, id);
+  const agent = await findManagedAgent(ctx, id);
   if (patch.name) await assertNameFree(ctx.workspaceId, patch.name, id);
 
   const data: Prisma.AgentUpdateInput = {};
@@ -172,8 +180,7 @@ export async function updateAgent(ctx: Ctx, id: string, input: unknown) {
 
 /** Delete an agent: its tokens and runs go with it; its issues become unassigned. */
 export async function deleteAgent(ctx: Ctx, id: string) {
-  authorize(ctx, "agent.manage");
-  const agent = await findAgent(ctx, id);
+  const agent = await findManagedAgent(ctx, id);
   await db.$transaction(async (tx) => {
     await tx.agent.delete({ where: { id } });
     await recordActivity(tx, ctx, { action: "agent.deleted", data: { agentId: id, name: agent.name } });
@@ -181,8 +188,7 @@ export async function deleteAgent(ctx: Ctx, id: string) {
 }
 
 export async function listAgentTokens(ctx: Ctx, id: string) {
-  authorize(ctx, "agent.manage");
-  await findAgent(ctx, id);
+  await findManagedAgent(ctx, id);
   return db.apiToken.findMany({
     where: { agentId: id, revokedAt: null },
     orderBy: { createdAt: "desc" },
@@ -191,8 +197,7 @@ export async function listAgentTokens(ctx: Ctx, id: string) {
 }
 
 export async function createAgentToken(ctx: Ctx, id: string) {
-  authorize(ctx, "agent.manage");
-  const agent = await findAgent(ctx, id);
+  const agent = await findManagedAgent(ctx, id);
   return db.$transaction(async (tx) => {
     const minted = await mintAgentToken(tx, agent);
     await recordActivity(tx, ctx, { action: "agent.token_created", data: { agentId: id, tokenId: minted.token.id } });
@@ -201,8 +206,7 @@ export async function createAgentToken(ctx: Ctx, id: string) {
 }
 
 export async function revokeAgentToken(ctx: Ctx, id: string, tokenId: string) {
-  authorize(ctx, "agent.manage");
-  await findAgent(ctx, id);
+  await findManagedAgent(ctx, id);
   const { count } = await db.apiToken.updateMany({
     where: { id: tokenId, agentId: id, revokedAt: null },
     data: { revokedAt: new Date() },
@@ -232,8 +236,22 @@ async function cancelActiveRuns(tx: Prisma.TransactionClient, issueId: string, r
 }
 
 /**
- * Assign an issue to an agent (or clear the agent with null). Members and
- * above only. Assigning starts a run, dispatched after the response.
+ * A Claude Code routine runs on its owner's Claude account, and only they can
+ * open its session to answer it, so only they can start it.
+ */
+function assertCanStart(ctx: Ctx, agent: { kind: string; ownerUserId: string; name: string; owner: { name: string } }) {
+  if (agent.kind !== "CLAUDE_CODE" || agent.ownerUserId === actingUserId(ctx)) return;
+  throw new ServiceError(
+    403,
+    `Only ${agent.owner.name} can start ${agent.name}: it runs on their Claude account. Connect your own Claude in Settings → Agents.`,
+  );
+}
+
+/**
+ * Hand an issue to an agent (or take it off with null). Members and above
+ * only; a Claude Code agent only by its owner. The person stays the assignee:
+ * the agent's owner for Claude Code, else whoever had it (or the caller).
+ * Assigning starts a run, dispatched after the response.
  */
 export async function assignAgent(ctx: Ctx, issueId: string, input: unknown) {
   authorize(ctx, "agent.dispatch");
@@ -245,19 +263,22 @@ export async function assignAgent(ctx: Ctx, issueId: string, input: unknown) {
       select: { id: true, projectId: true, assigneeAgentId: true, assigneeUserId: true, project: { select: { name: true } } },
     });
     if (!issue) throw notFound("Issue not found");
+    let person = issue.assigneeUserId;
     if (agentId) {
       const agent = await tx.agent.findFirst({
         where: { id: agentId, workspaceId: ctx.workspaceId },
-        select: { enabled: true, kind: true },
+        select: { enabled: true, kind: true, name: true, ownerUserId: true, owner: { select: { name: true } } },
       });
       if (!agent) throw notFound("Agent not found");
       if (!agent.enabled) throw badRequest("That agent is disabled");
+      assertCanStart(ctx, agent);
       // Re-assigning the same agent while it's working is a no-op.
       if (issue.assigneeAgentId === agentId) {
         const active = await tx.agentRun.count({ where: { issueId, agentId, status: { in: ACTIVE_RUN } } });
         if (active) return null;
       }
       await requireRepository(tx, issueId, agent.kind, issue.project.name);
+      person = agent.kind === "CLAUDE_CODE" ? agent.ownerUserId : (person ?? actingUserId(ctx) ?? null);
     } else if (!issue.assigneeAgentId) {
       return null;
     }
@@ -265,16 +286,11 @@ export async function assignAgent(ctx: Ctx, issueId: string, input: unknown) {
     await cancelActiveRuns(tx, issueId, agentId ? "Reassigned" : "Unassigned");
     await tx.issue.update({
       where: { id: issueId },
-      data: {
-        assigneeAgentId: agentId,
-        ...(agentId ? { assigneeUserId: null } : {}),
-        claimedByAgentId: null,
-        claimedAt: null,
-      },
+      data: { assigneeAgentId: agentId, assigneeUserId: person, claimedByAgentId: null, claimedAt: null },
     });
     const changes: Prisma.InputJsonObject = {
       assigneeAgentId: { from: issue.assigneeAgentId, to: agentId },
-      ...(agentId && issue.assigneeUserId ? { assigneeUserId: { from: issue.assigneeUserId, to: null } } : {}),
+      ...(person !== issue.assigneeUserId ? { assigneeUserId: { from: issue.assigneeUserId, to: person } } : {}),
     };
     await recordActivity(tx, ctx, { action: "issue.updated", projectId: issue.projectId, issueId, data: { changes } });
     if (!agentId) return null;
@@ -300,13 +316,14 @@ export async function retryAgentRun(ctx: Ctx, issueId: string) {
       select: {
         id: true,
         assigneeAgentId: true,
-        assigneeAgent: { select: { enabled: true, kind: true } },
+        assigneeAgent: { select: { enabled: true, kind: true, name: true, ownerUserId: true, owner: { select: { name: true } } } },
         project: { select: { name: true } },
       },
     });
     if (!issue) throw notFound("Issue not found");
     if (!issue.assigneeAgentId || !issue.assigneeAgent) throw badRequest("This issue isn't assigned to an agent");
     if (!issue.assigneeAgent.enabled) throw badRequest("That agent is disabled");
+    assertCanStart(ctx, issue.assigneeAgent);
     await requireRepository(tx, issueId, issue.assigneeAgent.kind, issue.project.name);
     if (await tx.agentRun.count({ where: { issueId, status: { in: ACTIVE_RUN } } })) {
       throw new ServiceError(409, "The agent is already working on this issue");

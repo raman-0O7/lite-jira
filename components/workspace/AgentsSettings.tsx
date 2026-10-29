@@ -31,13 +31,17 @@ import {
   revokeAgentToken,
   updateAgent,
 } from "@/lib/api/agents";
+import { useSession } from "@/lib/auth-client";
 
 const KIND_LABEL: Record<AgentKind, string> = { CLAUDE_CODE: "Claude Code routine", MCP: "MCP agent" };
 
 /** Settings → Agents (docs/features/12-agents.md "UI", 13-guided-setup.md "Agent setup"). */
 export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
   const { slug } = useWorkspace();
-  const canManage = useCan("agent.manage");
+  // Members add their own agent and manage it; admins manage everyone's.
+  const canAdd = useCan("agent.create");
+  const canManageAll = useCan("agent.manage");
+  const myId = useSession().data?.user.id;
   const [settingUp, setSettingUp] = useState(false);
   const agents = useQuery({ queryKey: agentKeys.list(slug), queryFn: () => fetchAgents(slug) });
 
@@ -48,11 +52,13 @@ export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
           <div className="min-w-0 flex-1">
             <h2 className="font-heading text-sm font-semibold text-foreground">Agents</h2>
             <p className="text-sm text-muted-foreground">
-              Assign issues to AI agents like you would to a teammate. An agent claims the issue,
-              reports progress, and opens a pull request; a person always merges.
+              Hand issues to an AI agent and stay the assignee. Each member connects their own:
+              a Claude Code agent runs on its owner’s Claude account, so only they can start it.
+              An agent claims the issue, reports progress, and opens a pull request; a person
+              always merges.
             </p>
           </div>
-          {canManage && agents.data?.length ? (
+          {canAdd && agents.data?.length ? (
             <Button size="sm" onClick={() => setSettingUp(true)}>
               <Plus />
               Add an agent
@@ -72,12 +78,12 @@ export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
             <div className="flex max-w-sm flex-col gap-1">
               <p className="text-sm font-medium">No agents yet</p>
               <p className="text-sm text-muted-foreground">
-                {canManage
+                {canAdd
                   ? "Connect Claude Code or your own agent in a few guided steps. You’ll be told exactly what to click."
-                  : "A workspace admin can add one. Once they do, it shows up in every issue’s assignee menu."}
+                  : "Members connect their own agents here. Guests can’t."}
               </p>
             </div>
-            {canManage ? (
+            {canAdd ? (
               <Button onClick={() => setSettingUp(true)}>
                 <Plus />
                 Add an agent
@@ -87,18 +93,34 @@ export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
         ) : (
           <ul className="divide-y rounded-lg border bg-surface shadow-card">
             {agents.data.map((agent) => (
-              <AgentRow key={agent.id} agent={agent} canManage={canManage} mcpUrl={mcpUrl} />
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                canManage={canManageAll || (canAdd && agent.owner.id === myId)}
+                mine={agent.owner.id === myId}
+                mcpUrl={mcpUrl}
+              />
             ))}
           </ul>
         )}
       </section>
 
-      {canManage ? <AgentSetupDialog open={settingUp} onOpenChange={setSettingUp} /> : null}
+      {canAdd ? <AgentSetupDialog open={settingUp} onOpenChange={setSettingUp} /> : null}
     </div>
   );
 }
 
-function AgentRow({ agent, canManage, mcpUrl }: { agent: Agent; canManage: boolean; mcpUrl: string }) {
+function AgentRow({
+  agent,
+  canManage,
+  mine,
+  mcpUrl,
+}: {
+  agent: Agent;
+  canManage: boolean;
+  mine: boolean;
+  mcpUrl: string;
+}) {
   const { slug } = useWorkspace();
   const queryClient = useQueryClient();
   const [showTokens, setShowTokens] = useState(false);
@@ -139,7 +161,7 @@ function AgentRow({ agent, canManage, mcpUrl }: { agent: Agent; canManage: boole
             ) : null}
           </p>
           <p className="truncate text-xs text-muted-foreground">
-            {KIND_LABEL[agent.kind]} · owned by {agent.owner.name} ·{" "}
+            {KIND_LABEL[agent.kind]} · {mine ? "yours" : `${agent.owner.name}’s`} ·{" "}
             {agent.kind === "CLAUDE_CODE" ? (
               <span className="font-mono">{agent.fireUrl}</span>
             ) : agent.webhookUrl ? (
@@ -173,8 +195,8 @@ function AgentRow({ agent, canManage, mcpUrl }: { agent: Agent; canManage: boole
           <DialogHeader>
             <DialogTitle>Delete “{agent.name}”?</DialogTitle>
             <DialogDescription>
-              Its tokens stop working, its runs are removed, and issues assigned to it become
-              unassigned. Comments it wrote stay. This can’t be undone.
+              Its tokens stop working and its runs are removed. Issues it was working on stay with
+              their assignee. Comments it wrote stay. This can’t be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

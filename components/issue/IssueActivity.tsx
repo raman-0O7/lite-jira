@@ -134,13 +134,16 @@ function describe(
       case "type":
         parts.push(<>changed the type to <Strong>{ISSUE_TYPE_LABEL[value.to as IssueType] ?? String(value.to)}</Strong></>);
         break;
-      case "assigneeAgentId":
-        if (value.to) parts.push(<>assigned it to {agent(value.to)}</>);
-        else if (!changes.assigneeUserId) parts.push(<>unassigned {agent(value.from)}</>);
+      case "assigneeAgentId": {
+        // The person stays the assignee; handing your issue to your Claude
+        // reads as one step.
+        const tookIt = (changes.assigneeUserId as Change | undefined)?.to === entry.actor?.id;
+        if (value.to) parts.push(tookIt ? <>took it and handed it to {agent(value.to)}</> : <>handed it to {agent(value.to)}</>);
+        else parts.push(<>took {agent(value.from)} off it</>);
         break;
+      }
       case "assigneeUserId":
-        // Assigning an agent clears the person; the agent sentence covers it.
-        if (!value.to && changes.assigneeAgentId) break;
+        if (value.to && value.to === entry.actor?.id && (changes.assigneeAgentId as Change | undefined)?.to) break;
         if (!value.to) parts.push(<>removed the assignee</>);
         else if (value.to === entry.actor?.id) parts.push(<>self-assigned the issue</>);
         else parts.push(<>assigned it to <Strong>{person(value.to)}</Strong></>);
