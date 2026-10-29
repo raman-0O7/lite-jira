@@ -211,7 +211,9 @@ export type AssigneeShortcuts = { onInvite?: () => void; onAddAgent?: () => void
 
 /**
  * Workspace members who can be assigned (everyone but guests), and, when
- * `agents` is given, the workspace's enabled agents below them.
+ * `agents` is given, the agents the viewer can hand the issue to. The person
+ * stays the assignee while an agent works it
+ * (docs/features/17-personal-agents.md).
  */
 export function AssigneePicker({
   value,
@@ -228,9 +230,10 @@ export function AssigneePicker({
   members: Member[];
   onChange: (next: string | null) => void;
   agents?: (AgentStub & { enabled?: boolean })[];
-  /** The assigned agent, if any; it takes the place of a person. */
+  /** The agent working the issue for the assignee, if any. */
   agentValue?: AgentStub | null;
-  onAgentChange?: (agentId: string) => void;
+  /** null takes the agent off; the person stays. */
+  onAgentChange?: (agentId: string | null) => void;
   shortcuts?: AssigneeShortcuts;
   look?: PickerLook;
   disabled?: boolean;
@@ -245,15 +248,16 @@ export function AssigneePicker({
       disabled={disabled}
       contentClassName="max-h-72 overflow-y-auto"
       trigger={
-        agentValue ? (
-          <>
-            <AgentIcon kind={agentValue.kind} className="size-3.5" />
-            <span className="truncate">{agentValue.name}</span>
-          </>
-        ) : current ? (
+        current ? (
           <>
             <Avatar person={current} size="xs" title={false} />
             <span className="truncate">{current.name}</span>
+            {agentValue ? <AgentTag agent={agentValue} /> : null}
+          </>
+        ) : agentValue ? (
+          <>
+            <AgentIcon kind={agentValue.kind} className="size-3.5" />
+            <span className="truncate">{agentValue.name}</span>
           </>
         ) : (
           <>
@@ -263,25 +267,31 @@ export function AssigneePicker({
         )
       }
     >
-      <Option selected={value === null && !agentValue} onSelect={() => onChange(null)}>
+      <Option selected={value === null} onSelect={() => onChange(null)}>
         <UserRound className="text-muted-foreground" />
         Unassigned
       </Option>
       {assignable.map((member) => (
-        <Option key={member.id} selected={!agentValue && member.id === value} onSelect={() => onChange(member.id)}>
+        <Option key={member.id} selected={member.id === value} onSelect={() => onChange(member.id)}>
           <Avatar person={member} size="xs" title={false} />
           <span className="truncate">{member.name}</span>
         </Option>
       ))}
       {onAgentChange && pickable.length ? (
         <>
-          <div className="px-2 pt-2 pb-1 text-2xs font-medium text-muted-foreground">Agents</div>
+          <div className="px-2 pt-2 pb-1 text-2xs font-medium text-muted-foreground">Hand to an agent</div>
           {pickable.map((agent) => (
             <Option key={agent.id} selected={agent.id === agentValue?.id} onSelect={() => onAgentChange(agent.id)}>
               <AgentIcon kind={agent.kind} />
               <span className="truncate">{agent.name}</span>
             </Option>
           ))}
+          {agentValue ? (
+            <Option selected={false} onSelect={() => onAgentChange(null)}>
+              <UserRound className="text-muted-foreground" />
+              No agent
+            </Option>
+          ) : null}
         </>
       ) : null}
       {shortcuts?.onInvite || shortcuts?.onAddAgent || shortcuts?.hint ? <DropdownMenuSeparator /> : null}
@@ -294,11 +304,22 @@ export function AssigneePicker({
       {shortcuts?.onAddAgent ? (
         <DropdownMenuItem onSelect={shortcuts.onAddAgent}>
           <Sparkles className="text-primary-text" />
-          Add an AI agent…
+          Add your AI agent…
         </DropdownMenuItem>
       ) : null}
       {shortcuts?.hint ? <p className="px-2 py-1.5 text-2xs text-muted-foreground">{shortcuts.hint}</p> : null}
     </Picker>
+  );
+}
+
+/** "· Claude" after the assignee's name while their agent works the issue. */
+function AgentTag({ agent }: { agent: AgentStub }) {
+  return (
+    <span className="flex min-w-0 shrink items-center gap-1 text-muted-foreground" title={`${agent.name} is working on it`}>
+      <span aria-hidden>·</span>
+      <AgentIcon kind={agent.kind} className="size-3 shrink-0" />
+      <span className="truncate">{agent.name}</span>
+    </span>
   );
 }
 

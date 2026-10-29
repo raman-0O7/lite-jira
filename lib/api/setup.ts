@@ -8,6 +8,7 @@ export type SetupStatus = {
   agents: boolean;
   assistant: boolean;
   claudeConnected: boolean;
+  repositories: string[];
 };
 
 export const setupKeys = { status: (slug: string) => ["setup", slug] as const };

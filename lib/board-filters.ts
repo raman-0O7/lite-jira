@@ -37,6 +37,8 @@ export type FilterState = {
   labelIds: string[];
   /** Selected due quick-filters (OR within). Empty = all pass. */
   due: DueFilter[];
+  /** Selected assignees as tokens (see assigneeTokens), OR within. Empty = all pass. */
+  assignees: string[];
 };
 
 export const EMPTY_FILTERS: FilterState = {
@@ -44,7 +46,23 @@ export const EMPTY_FILTERS: FilterState = {
   priorities: [],
   labelIds: [],
   due: [],
+  assignees: [],
 };
+
+/** The "Unassigned" assignee token. */
+export const UNASSIGNED = "none";
+
+/**
+ * Who an issue is assigned to, as filter tokens: "user:<id>" for the person,
+ * "agent:<id>" for the agent working it for them, or just "none".
+ */
+export function assigneeTokens(task: Pick<FilterableTask, "assignee" | "assigneeAgent">): string[] {
+  const tokens = [
+    ...(task.assignee ? [`user:${task.assignee.id}`] : []),
+    ...(task.assigneeAgent ? [`agent:${task.assigneeAgent.id}`] : []),
+  ];
+  return tokens.length ? tokens : [UNASSIGNED];
+}
 
 /**
  * A task as far as the filters care. The board payload's IssueCard has no
@@ -133,6 +151,12 @@ export function matchesDue(
   return false;
 }
 
+/** Task is assigned to one of `assignees` (tokens; "none" = unassigned). Empty passes. */
+export function matchesAssignee(task: FilterableTask, assignees: string[]): boolean {
+  if (assignees.length === 0) return true;
+  return assigneeTokens(task).some((token) => assignees.includes(token));
+}
+
 /** AND across types, OR within each (handled by the per-type predicates). */
 export function matchesFilters(
   task: FilterableTask,
@@ -143,7 +167,8 @@ export function matchesFilters(
     matchesText(task, filters.text) &&
     matchesPriority(task, filters.priorities) &&
     matchesLabels(task, filters.labelIds) &&
-    matchesDue(task, filters.due, now)
+    matchesDue(task, filters.due, now) &&
+    matchesAssignee(task, filters.assignees)
   );
 }
 
@@ -153,7 +178,8 @@ export function isFiltersEmpty(filters: FilterState): boolean {
     filters.text.trim() === "" &&
     filters.priorities.length === 0 &&
     filters.labelIds.length === 0 &&
-    filters.due.length === 0
+    filters.due.length === 0 &&
+    filters.assignees.length === 0
   );
 }
 
@@ -168,6 +194,7 @@ export function activeFilterCount(filters: FilterState): number {
   if (filters.priorities.length > 0) count += 1;
   if (filters.labelIds.length > 0) count += 1;
   if (filters.due.length > 0) count += 1;
+  if (filters.assignees.length > 0) count += 1;
   return count;
 }
 
@@ -180,11 +207,14 @@ export function activeFilterCount(filters: FilterState): number {
 //   priority comma-separated priorities (LOW,HIGH,…)
 //   label    comma-separated label ids
 //   due      comma-separated due filters (overdue,week,none)
+//   assignee comma-separated assignee tokens (user:<id>,agent:<id>,none)
 //
-// We only own these four keys; any other params on the URL are preserved by the
+// We only own these keys; any other params on the URL are preserved by the
 // hook that applies these (it merges into the existing URLSearchParams).
 
-export const FILTER_PARAM_KEYS = ["q", "priority", "label", "due"] as const;
+export const FILTER_PARAM_KEYS = ["q", "priority", "label", "due", "assignee"] as const;
+
+const ASSIGNEE_TOKEN = /^(none|(user|agent):[\w-]+)$/;
 
 const VALID_PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
@@ -212,7 +242,9 @@ export function filtersFromSearchParams(
     DUE_FILTERS.includes(d as DueFilter),
   );
 
-  return { text, priorities, labelIds, due };
+  const assignees = splitCsv(params.get("assignee")).filter((a) => ASSIGNEE_TOKEN.test(a));
+
+  return { text, priorities, labelIds, due, assignees };
 }
 
 /**
@@ -235,6 +267,7 @@ export function filtersToSearchParams(
   }
   if (filters.labelIds.length) params.set("label", filters.labelIds.join(","));
   if (filters.due.length) params.set("due", filters.due.join(","));
+  if (filters.assignees.length) params.set("assignee", filters.assignees.join(","));
 
   return params;
 }

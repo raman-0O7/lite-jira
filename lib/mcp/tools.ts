@@ -20,7 +20,7 @@ import {
 } from "@/lib/mcp/resolve";
 import { listIssueActivity } from "@/lib/services/activity";
 import { claimIssue, listAgentQueue, releaseIssue, reportProgress } from "@/lib/services/agents";
-import { addComment, listComments } from "@/lib/services/comments";
+import { addComment, getAttachment, listComments } from "@/lib/services/comments";
 import type { Ctx } from "@/lib/services/context";
 import { badRequest, forbidden } from "@/lib/services/errors";
 import {
@@ -255,9 +255,12 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
         return ok({
           ...issueDetail(issue),
           comments: comments.map((c) => ({
-            author: c.author?.name ?? (c.authorAgentId ? "Agent" : "Deleted user"),
+            author: c.authorAgent?.name ?? c.author?.name ?? (c.authorAgentId ? "Agent" : "Deleted user"),
             at: c.createdAt.toISOString(),
             body: c.body,
+            ...(c.attachments.length
+              ? { images: c.attachments.map((a) => ({ id: a.id, name: a.name, type: a.contentType, bytes: a.size })) }
+              : {}),
           })),
           recentActivity: activity.entries.slice(-15).map((entry) => ({
             at: entry.createdAt.toISOString(),
@@ -270,6 +273,27 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
                 : undefined,
           })),
         });
+      }),
+  );
+
+  server.registerTool(
+    "get_attachment",
+    {
+      title: "Get attachment",
+      description: "An image attached to a comment (ids are listed under a comment's images in get_issue).",
+      inputSchema: z.object({ workspace, id: z.string().min(1).describe("Attachment id from get_issue") }),
+      annotations: READ,
+    },
+    (args) =>
+      run(async () => {
+        const ctx = await ctxForCall(principal, args.workspace);
+        const attachment = await getAttachment(ctx, args.id);
+        return {
+          content: [
+            { type: "text" as const, text: `${attachment.name} (${attachment.contentType}, ${attachment.size} bytes)` },
+            { type: "image" as const, data: Buffer.from(attachment.data).toString("base64"), mimeType: attachment.contentType },
+          ],
+        };
       }),
   );
 
@@ -548,7 +572,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
     {
       title: "Claim issue (agent)",
       description:
-        "Start work on an issue assigned to your agent: locks it to the agent, marks the run as working, and moves it to In Progress. Returns the issue, the branch to use, and the rules.",
+        "Start work on an issue assigned to your agent: locks it to the agent, marks the run as working, and moves it to In Progress. Returns the issue, the repository and branch to use, and the rules.",
       inputSchema: z.object({ workspace, key: issueKey }),
       annotations: SET,
       scopeChallenge: challenge,
@@ -561,10 +585,15 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
           issue: issueDetail(claimed.issue),
           run: claimed.run,
           branch: claimed.branch,
+          repository: claimed.repository,
           rules: [
+            claimed.repository
+              ? `Work only in ${claimed.repository.fullName}. If you don't have that repository, call release_issue saying so.`
+              : "The project has no connected repository: ask with report_progress (status needs_input) which code to change.",
             `Work on a new branch named ${claimed.branch}, push it, and open a pull request that mentions ${claimed.issue.key}.`,
             "Never merge the pull request: a person reviews and merges.",
-            "Use report_progress for updates; status needs_input if you're blocked.",
+            "Use report_progress for updates. If you're blocked, push your work, call it with status needs_input, then wait: the answer comes in your session (Claude Code) or as an issue comment. Call it with status working when you continue.",
+            "Comments from your teammates on the issue are instructions for this work; read their images with get_attachment.",
             "If you can't finish, call release_issue with the reason.",
           ],
         });

@@ -33,6 +33,8 @@ export type FakeIssue = {
   state: "open" | "closed";
   assignees: string[];
   labels?: { name: string; color: string }[];
+  /** For `since` queries; defaults to "just now". */
+  updatedAt?: string;
 };
 
 export function fakeGitHub() {
@@ -61,6 +63,21 @@ export function fakeGitHub() {
     if (url.hostname === "github.com" && path === "/login/oauth/access_token") {
       return body?.code === "good-code" ? json({ access_token: "user-token" }) : json({ error_description: "bad code" });
     }
+    if (path === "/app-manifests/manifest-code/conversions" && method === "POST") {
+      return json(
+        {
+          id: 4242,
+          slug: "kanso-acme",
+          name: "Kanso acme",
+          html_url: "https://github.com/apps/kanso-acme",
+          client_id: "Iv23.new",
+          client_secret: "new-client-secret",
+          webhook_secret: "new-webhook-secret",
+          pem: "-----BEGIN RSA PRIVATE KEY-----\nAAA\nBBB\n-----END RSA PRIVATE KEY-----\n",
+        },
+        201,
+      );
+    }
     if (path === "/user") return json(state.user);
     if (path === "/user/installations") return json({ installations: state.userInstallations.map((id) => ({ id })) });
 
@@ -78,14 +95,19 @@ export function fakeGitHub() {
     m = /^\/repos\/([^/]+\/[^/]+)\/issues$/.exec(path);
     if (m) {
       const assignee = url.searchParams.get("assignee");
+      const since = url.searchParams.get("since");
+      const all = url.searchParams.get("state") === "all";
       const list = (state.issues[m[1]!] ?? []).filter(
-        (i) => i.state === "open" && (!assignee || i.assignees.includes(assignee)),
+        (i) =>
+          (all || i.state === "open") &&
+          (!assignee || i.assignees.includes(assignee)) &&
+          (!since || Date.parse(i.updatedAt ?? new Date().toISOString()) >= Date.parse(since)),
       );
       return json(
         list.map((i) => ({
           ...i,
           html_url: `https://github.com/${m![1]}/issues/${i.number}`,
-          assignees: i.assignees.map((login, n) => ({ id: n + 1, login })),
+          assignees: i.assignees.map((login, n) => ({ id: login === state.user.login ? state.user.id : 5000 + n, login })),
           labels: i.labels ?? [],
         })),
       );

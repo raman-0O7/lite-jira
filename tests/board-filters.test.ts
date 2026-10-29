@@ -1,0 +1,52 @@
+import { describe, expect, it } from "vitest";
+
+import type { IssueCard } from "@/lib/api/projects";
+import {
+  activeFilterCount,
+  assigneeTokens,
+  EMPTY_FILTERS,
+  filtersFromSearchParams,
+  filtersToSearchParams,
+  matchesFilters,
+} from "@/lib/board-filters";
+
+const card = (patch: Partial<IssueCard>) =>
+  ({ title: "Issue", priority: "MEDIUM", labels: [], dueDate: null, assignee: null, assigneeAgent: null, ...patch }) as IssueCard;
+
+const ada = card({ assignee: { id: "u1", name: "Ada", image: null } });
+const claude = card({ assigneeAgent: { id: "a1", name: "Claude", kind: "CLAUDE_CODE" } });
+const nobody = card({});
+// Ada handed this one to her Claude: it matches either.
+const adaWithClaude = card({ assignee: { id: "u1", name: "Ada", image: null }, assigneeAgent: { id: "a1", name: "Claude", kind: "CLAUDE_CODE" } });
+
+describe("assignee filter", () => {
+  it("tokens people, agents and nobody", () => {
+    expect([ada, claude, nobody, adaWithClaude].map(assigneeTokens)).toEqual([
+      ["user:u1"],
+      ["agent:a1"],
+      ["none"],
+      ["user:u1", "agent:a1"],
+    ]);
+  });
+
+  it("matches any selected assignee; empty matches all", () => {
+    const pick = (assignees: string[]) =>
+      [ada, claude, nobody].filter((t) => matchesFilters(t, { ...EMPTY_FILTERS, assignees }));
+    expect(pick([])).toHaveLength(3);
+    expect(pick(["agent:a1", "none"])).toEqual([claude, nobody]);
+    expect(pick(["user:u1"])).toEqual([ada]);
+    const both = (assignees: string[]) => matchesFilters(adaWithClaude, { ...EMPTY_FILTERS, assignees });
+    expect([both(["user:u1"]), both(["agent:a1"]), both(["none"])]).toEqual([true, true, false]);
+    expect(activeFilterCount({ ...EMPTY_FILTERS, assignees: ["none"] })).toBe(1);
+  });
+
+  it("round-trips through the URL and drops junk", () => {
+    const params = filtersToSearchParams({ ...EMPTY_FILTERS, assignees: ["user:u1", "none"] }, new URLSearchParams("view=list"));
+    expect(params.get("assignee")).toBe("user:u1,none");
+    expect(params.get("view")).toBe("list");
+    expect(filtersFromSearchParams(new URLSearchParams("assignee=user:u1,<script>,agent:a1")).assignees).toEqual([
+      "user:u1",
+      "agent:a1",
+    ]);
+  });
+});

@@ -132,6 +132,29 @@ export async function listAssignedIssues(installationId: number, repo: string, l
   return data.filter((issue) => !issue.pull_request);
 }
 
+/**
+ * Issues (not PRs) in a repo, most recently updated first, up to `limit`:
+ * open ones, or with `since` every issue updated since then (open or closed).
+ */
+export async function listRepoIssues(
+  installationId: number,
+  repo: string,
+  options: { since?: Date; limit?: number } = {},
+): Promise<GhIssue[]> {
+  const limit = options.limit ?? 300;
+  const issues: GhIssue[] = [];
+  const query = options.since ? `state=all&since=${encodeURIComponent(options.since.toISOString())}` : "state=open";
+  for (let page = 1; issues.length < limit && page <= 10; page++) {
+    const data = await asInstallation<GhIssue[]>(
+      installationId,
+      `/repos/${repo}/issues?${query}&sort=updated&direction=desc&per_page=100&page=${page}`,
+    );
+    issues.push(...data.filter((issue) => !issue.pull_request));
+    if (data.length < 100) break;
+  }
+  return issues.slice(0, limit);
+}
+
 export const setIssueState = (installationId: number, repo: string, number: number, state: "open" | "closed") =>
   asInstallation(installationId, `/repos/${repo}/issues/${number}`, "PATCH", {
     state,
@@ -144,6 +167,32 @@ export async function checkSuites(installationId: number, repo: string, sha: str
     `/repos/${repo}/commits/${sha}/check-suites?per_page=100`,
   );
   return data.check_suites;
+}
+
+// ---------- app manifest (guided setup) ----------
+
+/** What GitHub returns once for an app created from a manifest. */
+export type GhManifestApp = {
+  id: number;
+  slug: string;
+  name: string;
+  html_url: string;
+  client_id: string;
+  client_secret: string;
+  webhook_secret: string | null;
+  pem: string;
+};
+
+/** Trade the manifest flow's one-time code for the new app's credentials (no auth needed). */
+export async function convertManifestCode(code: string): Promise<GhManifestApp> {
+  const response = await fetchImpl(`${GITHUB_API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
+    method: "POST",
+    headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Kanso" },
+  });
+  if (!response.ok) {
+    throw new GitHubError(response.status, response.status === 404 ? "GitHub: code not found" : `GitHub: ${response.statusText}`);
+  }
+  return (await response.json()) as GhManifestApp;
 }
 
 // ---------- user OAuth (link callback only) ----------

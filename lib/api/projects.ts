@@ -90,6 +90,8 @@ export type ProjectDetail = {
   mode: ProjectMode;
   createdAt: string;
   updatedAt: string;
+  /** Connected GitHub repositories (docs/features/16-github-sync-and-replies.md). */
+  repos: { id: string; repoFullName: string }[];
   columns: ColumnWithIssues[];
 };
 

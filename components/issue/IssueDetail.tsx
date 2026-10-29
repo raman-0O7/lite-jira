@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAssigneeShortcuts } from "@/components/workspace/AssigneeShortcuts";
 import { agentKeys, fetchAgents } from "@/lib/api/agents";
+import { useSession } from "@/lib/auth-client";
 import {
   assignAgent,
   fetchIssue,
@@ -259,6 +260,10 @@ export function IssueDetail({
     queryFn: () => fetchAgents(slug),
     enabled: canDispatch,
   });
+  const myId = useSession().data?.user.id;
+  const me = membersQuery.data?.find((m) => m.id === myId);
+  // A Claude Code agent runs on its owner's Claude account: only they start it.
+  const startable = agentsQuery.data?.filter((a) => a.kind !== "CLAUDE_CODE" || a.owner.id === myId);
   const assigneeShortcuts = useAssigneeShortcuts({
     onAssignAgent:
       canEdit && canDispatch ? (agent) => changeAgent(agent.id, { id: agent.id, name: agent.name, kind: agent.kind }) : undefined,
@@ -366,19 +371,19 @@ export function IssueDetail({
   }
 
   function changeAssignee(next: string | null) {
-    if (!issue || (next === issue.assigneeUserId && !issue.assigneeAgent)) return;
+    if (!issue || next === issue.assigneeUserId) return;
     const member = membersQuery.data?.find((m) => m.id === next);
     const assignee: PersonStub | null = member ? { id: member.id, name: member.name, image: member.image } : null;
-    // A person (or nobody) replaces an agent; the server cancels its run.
+    // The agent works for the assignee, so the server stops it on a handover.
     commit({ assigneeUserId: next }, { assignee, assigneeAgent: null, agentRuns: [] }, { assigneeUserId: next });
   }
 
   const assign = useMutation({
-    mutationFn: (vars: { agentId: string; previous: ReturnType<typeof snapshot> }) =>
+    mutationFn: (vars: { agentId: string | null; previous: ReturnType<typeof snapshot> }) =>
       assignAgent(issueId, vars.agentId),
     onSuccess: (updated) => {
       queryClient.setQueryData<IssueFull>(issueKeys.detail(issueId), updated);
-      patchCard({ assignee: null, assigneeAgent: updated.assigneeAgent, agentRuns: updated.agentRuns });
+      patchCard({ assignee: updated.assignee, assigneeAgent: updated.assigneeAgent, agentRuns: updated.agentRuns });
       queryClient.invalidateQueries({ queryKey: issueKeys.activity(issueId) });
       queryClient.invalidateQueries({ queryKey: agentKeys.runs(issueId) });
     },
@@ -389,14 +394,23 @@ export function IssueDetail({
   });
 
   /** `known` is for an agent made a moment ago that the list query hasn't refetched yet. */
-  function changeAgent(agentId: string, known?: AgentStub) {
-    if (!issue || agentId === issue.assigneeAgent?.id) return;
+  function changeAgent(agentId: string | null, known?: AgentStub) {
+    if (!issue || agentId === (issue.assigneeAgent?.id ?? null)) return;
+    const previous = snapshot();
+    if (!agentId) {
+      patchCard({ assigneeAgent: null });
+      patchFull({ assigneeAgent: null });
+      assign.mutate({ agentId, previous });
+      return;
+    }
     const agent = known ?? agentsQuery.data?.find((a) => a.id === agentId);
     if (!agent) return;
-    const previous = snapshot();
     const stub = { id: agent.id, name: agent.name, kind: agent.kind };
-    patchCard({ assignee: null, assigneeAgent: stub });
-    patchFull({ assignee: null, assigneeUserId: null, assigneeAgent: stub });
+    // You stay the assignee for your own Claude; another agent keeps whoever had it.
+    const person =
+      agent.kind === "CLAUDE_CODE" || !issue.assignee ? (me ? { id: me.id, name: me.name, image: me.image } : issue.assignee) : issue.assignee;
+    patchCard({ assignee: person, assigneeAgent: stub });
+    patchFull({ assignee: person, assigneeUserId: person?.id ?? null, assigneeAgent: stub });
     assign.mutate({ agentId, previous });
   }
 
@@ -536,7 +550,7 @@ export function IssueDetail({
                 (issue.assignee ? [{ ...issue.assignee, email: "", role: "MEMBER", joinedAt: "", projectIds: [] }] : [])
               }
               onChange={changeAssignee}
-              agents={agentsQuery.data}
+              agents={startable}
               agentValue={issue.assigneeAgent ?? null}
               onAgentChange={canDispatch ? changeAgent : undefined}
               shortcuts={canEdit ? assigneeShortcuts.shortcuts : undefined}

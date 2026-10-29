@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatDistanceToNowStrict } from "date-fns";
 import { ArrowRight, RefreshCw, Trash2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -12,9 +13,11 @@ import { useCan, useWorkspace } from "@/components/providers/workspace-provider"
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { GitHubAppSetup } from "@/components/workspace/GitHubAppSetup";
 import {
   type ConnectedRepo,
   type GitHubInstallation,
+  type ImportMode,
   type RepoToggles,
   connectRepo,
   disconnectRepo,
@@ -29,6 +32,7 @@ import {
   updateRepo,
 } from "@/lib/api/github";
 import { fetchProjects, projectKeys } from "@/lib/api/projects";
+import { setupKeys } from "@/lib/api/setup";
 
 const RESULT_MESSAGES: Record<string, string> = {
   installed: "GitHub App installed. Connect a repository to a project below.",
@@ -36,11 +40,26 @@ const RESULT_MESSAGES: Record<string, string> = {
   requested: "Install requested. An owner of the GitHub organization needs to approve it.",
 };
 
-const TOGGLES: { key: keyof RepoToggles; label: string; hint: string }[] = [
-  { key: "importAssigned", label: "Import assigned issues", hint: "Open issues assigned to linked members" },
+const IMPORT_MODES: { value: ImportMode; label: string }[] = [
+  { value: "ALL", label: "All open issues" },
+  { value: "ASSIGNED", label: "Issues assigned to linked members" },
+  { value: "OFF", label: "Don’t import issues" },
+];
+
+const TOGGLES: { key: "statusSync" | "moveOnMerge"; label: string; hint: string }[] = [
   { key: "statusSync", label: "Status sync", hint: "Done ⇄ closed, both ways" },
   { key: "moveOnMerge", label: "Move on merge", hint: "Merged PR moves the issue to Done" },
 ];
+
+function syncSummary(imported: number, updated: number) {
+  const parts = [
+    imported ? `imported ${imported} issue${imported === 1 ? "" : "s"}` : "",
+    updated ? `updated ${updated}` : "",
+  ].filter(Boolean);
+  if (!parts.length) return "Up to date.";
+  const text = parts.join(", ");
+  return `${text[0]!.toUpperCase()}${text.slice(1)}.`;
+}
 
 /** Settings → Integrations (docs/features/11-github-app.md "UI"). */
 export function IntegrationsSettings() {
@@ -68,11 +87,14 @@ export function IntegrationsSettings() {
       ) : settings.isError ? (
         <p className="text-sm text-muted-foreground">{settings.error.message}</p>
       ) : !settings.data.configured ? (
-        <div className="rounded-lg border bg-surface p-4 text-sm text-muted-foreground shadow-card">
-          The GitHub App isn’t configured on this server. An operator sets it up with the{" "}
-          <code className="font-mono text-xs">GITHUB_APP_*</code> environment variables. See{" "}
-          <code className="font-mono text-xs">docs/github-app.md</code>.
-        </div>
+        settings.data.setup ? (
+          <GitHubAppSetup setup={settings.data.setup} />
+        ) : (
+          <div className="rounded-lg border bg-surface p-4 text-sm text-muted-foreground shadow-card">
+            GitHub isn’t available on this server yet. Whoever runs this Kanso server sets it up once; then
+            you can install it here on your own GitHub account.
+          </div>
+        )
       ) : (
         <>
           <AccountLink link={settings.data.link} />
@@ -103,7 +125,11 @@ function useCallbackToast() {
 function useRefresh() {
   const { slug } = useWorkspace();
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: ["github", slug] });
+  return () => {
+    queryClient.invalidateQueries({ queryKey: ["github", slug] });
+    // The Get started checklist and the agent setup dialog show GitHub state too.
+    queryClient.invalidateQueries({ queryKey: setupKeys.status(slug) });
+  };
 }
 
 function AccountLink({ link }: { link: { login: string } | null }) {
@@ -244,8 +270,10 @@ function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean 
   });
   const sync = useMutation({
     mutationFn: () => syncRepo(slug, repo.id),
-    onSuccess: ({ imported }) =>
-      toast.success(imported ? `Imported ${imported} issue${imported === 1 ? "" : "s"}.` : "Up to date."),
+    onSuccess: ({ imported, updated }) => {
+      refresh();
+      toast.success(syncSummary(imported, updated));
+    },
     onError: (error: Error) => toast.error(error.message),
   });
   const remove = useMutation({
@@ -286,7 +314,23 @@ function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean 
           ) : null}
         </div>
       </div>
-      <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+        <Select
+          value={repo.importIssues}
+          disabled={!canManage || update.isPending}
+          onValueChange={(value) => update.mutate({ importIssues: value as ImportMode })}
+        >
+          <SelectTrigger size="sm" className="text-xs" aria-label={`Which ${repo.repoFullName} issues to import`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {IMPORT_MODES.map((mode) => (
+              <SelectItem key={mode.value} value={mode.value}>
+                {mode.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {TOGGLES.map((toggle) => (
           <label key={toggle.key} className="flex items-center gap-2 text-xs text-muted-foreground" title={toggle.hint}>
             <input
@@ -299,6 +343,11 @@ function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean 
             <span className="text-foreground">{toggle.label}</span>
           </label>
         ))}
+        <span className="ml-auto text-xs text-muted-foreground">
+          {repo.lastSyncedAt
+            ? `Synced ${formatDistanceToNowStrict(new Date(repo.lastSyncedAt), { addSuffix: true })}`
+            : "Not synced yet"}
+        </span>
       </div>
     </li>
   );
@@ -326,7 +375,7 @@ function ConnectRepoForm({ installation }: { installation: GitHubInstallation })
       setProjectId("");
       setOpen(false);
       refresh();
-      toast.success(`Connected ${repo.repoFullName} to ${repo.project.key}. Importing assigned issues…`);
+      toast.success(`Connected ${repo.repoFullName} to ${repo.project.key}. Importing its issues…`);
     },
     onError: (error: Error) => toast.error(error.message),
   });

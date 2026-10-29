@@ -51,7 +51,8 @@ export type ActivityAction =
   | "agent.pr_opened"
   | "agent.done"
   | "agent.failed"
-  | "agent.released";
+  | "agent.released"
+  | "agent.resumed";
 
 type ActivityEntry = {
   action: ActivityAction;
@@ -113,6 +114,7 @@ const ISSUE_TIMELINE_ACTIONS = [
   "agent.done",
   "agent.failed",
   "agent.released",
+  "agent.resumed",
 ];
 
 type Person = { id: string; name: string; image: string | null };

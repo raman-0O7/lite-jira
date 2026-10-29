@@ -3,11 +3,10 @@
 import { Plus } from "lucide-react";
 import { useRef, useState } from "react";
 
-import { Avatar } from "@/components/icons/Avatar";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { PriorityIcon } from "@/components/icons/PriorityIcon";
 import { StatusIcon } from "@/components/icons/StatusIcon";
-import { AgentAvatar, cardRunStatus, RunStatusBadge } from "@/components/issue/AgentBadges";
+import { AssigneeAvatars, cardRunStatus, RunStatusBadge } from "@/components/issue/AgentBadges";
 import { DueDate } from "@/components/issue/DueDate";
 import { LabelChip } from "@/components/issue/LabelChip";
 import { useCan } from "@/components/providers/workspace-provider";
@@ -143,12 +142,8 @@ export function IssueList({
                           className="hidden sm:inline-flex"
                         />
                       ) : null}
-                      <span className="flex w-5 shrink-0 justify-end">
-                        {issue.assigneeAgent ? (
-                          <AgentAvatar name={issue.assigneeAgent.name} kind={issue.assigneeAgent.kind} />
-                        ) : issue.assignee ? (
-                          <Avatar person={issue.assignee} />
-                        ) : null}
+                      <span className="flex min-w-5 shrink-0 justify-end">
+                        <AssigneeAvatars person={issue.assignee} agent={issue.assigneeAgent} />
                       </span>
                     </button>
                   </li>

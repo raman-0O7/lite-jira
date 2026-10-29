@@ -1,7 +1,8 @@
 "use client";
 
-import { CalendarClock, Flag, ListFilter, Search, Tag, X } from "lucide-react";
+import { CalendarClock, CircleDashed, Flag, ListFilter, Search, Tag, UserRound, X } from "lucide-react";
 
+import { Avatar } from "@/components/icons/Avatar";
 import { Kbd } from "@/components/icons/Kbd";
 import { PriorityIcon } from "@/components/icons/PriorityIcon";
 import {
@@ -13,10 +14,16 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { AgentAvatar } from "@/components/issue/AgentBadges";
 import type { UseBoardFilters } from "@/hooks/use-board-filters";
-import type { LabelStub } from "@/lib/api/projects";
-import { DUE_FILTER_LABEL, DUE_FILTERS } from "@/lib/board-filters";
+import type { AgentStub, LabelStub, PersonStub } from "@/lib/api/projects";
+import { DUE_FILTER_LABEL, DUE_FILTERS, UNASSIGNED } from "@/lib/board-filters";
 import { PRIORITIES, PRIORITY_LABEL } from "@/lib/task-meta";
+
+/** An assignee filter option: a person or an agent, keyed by its filter token. */
+export type AssigneeOption =
+  | { token: string; name: string; person: PersonStub }
+  | { token: string; name: string; agent: AgentStub };
 
 /** One active filter: "Priority | High, Urgent | ×". */
 function FilterChip({
@@ -51,19 +58,35 @@ function FilterChip({
  */
 export function FilterBar({
   labels,
+  assignees,
   filters,
   progress,
   searchRef,
 }: {
   labels: LabelStub[];
+  /** People and agents with issues on this project. */
+  assignees: AssigneeOption[];
   filters: UseBoardFilters;
   progress: { done: number; total: number };
   /** The text input, so `/` can focus it. */
   searchRef?: React.Ref<HTMLInputElement>;
 }) {
-  const { filters: state, textDraft, setText, togglePriority, toggleLabel, toggleDue, update, clear, count } =
-    filters;
+  const {
+    filters: state,
+    textDraft,
+    setText,
+    togglePriority,
+    toggleLabel,
+    toggleDue,
+    toggleAssignee,
+    update,
+    clear,
+    count,
+  } = filters;
   const labelNames = labels.filter((l) => state.labelIds.includes(l.id)).map((l) => l.name);
+  const assigneeNames = state.assignees.map((token) =>
+    token === UNASSIGNED ? "Unassigned" : (assignees.find((a) => a.token === token)?.name ?? "Someone"),
+  );
   const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
@@ -102,6 +125,37 @@ export function FilterBar({
           Filter
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-48">
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <UserRound />
+              Assignee
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="max-h-72 w-52 overflow-y-auto">
+              <DropdownMenuCheckboxItem
+                checked={state.assignees.includes(UNASSIGNED)}
+                onCheckedChange={() => toggleAssignee(UNASSIGNED)}
+                onSelect={(event) => event.preventDefault()}
+              >
+                <CircleDashed className="text-muted-foreground" />
+                Unassigned
+              </DropdownMenuCheckboxItem>
+              {assignees.map((option) => (
+                <DropdownMenuCheckboxItem
+                  key={option.token}
+                  checked={state.assignees.includes(option.token)}
+                  onCheckedChange={() => toggleAssignee(option.token)}
+                  onSelect={(event) => event.preventDefault()}
+                >
+                  {"person" in option ? (
+                    <Avatar person={option.person} size="xs" title={false} />
+                  ) : (
+                    <AgentAvatar name={option.agent.name} kind={option.agent.kind} className="size-4" />
+                  )}
+                  <span className="truncate">{option.name}</span>
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <Flag />
@@ -165,6 +219,9 @@ export function FilterBar({
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {assigneeNames.length ? (
+        <FilterChip name="Assignee" value={assigneeNames.join(", ")} onRemove={() => update({ assignees: [] })} />
+      ) : null}
       {state.priorities.length ? (
         <FilterChip
           name="Priority"

@@ -6,9 +6,10 @@ import { db } from "@/lib/db";
 import { checkSuites, type GhCheckSuite } from "@/lib/github/client";
 import { parseKey } from "@/lib/services/issue-shapes";
 import {
+  applyGitHubState,
   githubCtx,
   importGitHubIssue,
-  linkedMembers,
+  importTarget,
   moveToCategory,
 } from "@/lib/services/github";
 import { updateIssue } from "@/lib/services/issues";
@@ -142,41 +143,34 @@ async function onIssue(payload: z.infer<typeof issuePayload>) {
   const repoFullName = payload.repository.full_name.toLowerCase();
   const { issue } = payload;
 
-  if (payload.action === "opened" || payload.action === "assigned") {
-    const repo = await db.projectRepo.findUnique({
-      where: { installationId_repoFullName: { installationId: installation.id, repoFullName } },
-      select: { id: true, projectId: true, repoFullName: true, importAssigned: true },
-    });
-    if (!repo?.importAssigned || issue.pull_request) return;
-    const [member] = await linkedMembers(
-      installation.workspaceId,
-      issue.assignees.map((a) => a.id),
-    );
-    if (member) await importGitHubIssue(ctx, repo, issue, member.userId);
-    return;
-  }
-
   const link = await db.gitHubIssueLink.findUnique({
     where: { repoFullName_number: { repoFullName, number: issue.number } },
     select: {
       id: true,
       issueId: true,
+      state: true,
       issue: { select: { project: { select: { workspaceId: true } } } },
       projectRepo: { select: { statusSync: true } },
     },
   });
+
+  if (!link) {
+    // New to Kanso: import it if the repo's mode covers it (all open issues, or assigned to a linked member).
+    if (!["opened", "assigned", "reopened"].includes(payload.action) || issue.pull_request || issue.state !== "open") return;
+    const repo = await db.projectRepo.findUnique({
+      where: { installationId_repoFullName: { installationId: installation.id, repoFullName } },
+      select: { id: true, projectId: true, repoFullName: true, importIssues: true },
+    });
+    if (!repo) return;
+    const target = await importTarget(repo, installation.workspaceId, issue);
+    if (target) await importGitHubIssue(ctx, repo, issue, target.assigneeUserId);
+    return;
+  }
   // Only issues imported into this installation's workspace.
-  if (!link || link.issue.project.workspaceId !== installation.workspaceId) return;
+  if (link.issue.project.workspaceId !== installation.workspaceId) return;
 
   if (payload.action === "closed" || payload.action === "reopened") {
-    const closed = payload.action === "closed";
-    await db.gitHubIssueLink.update({
-      where: { id: link.id },
-      data: { state: closed ? "CLOSED" : "OPEN", lastSyncedAt: new Date() },
-    });
-    if (link.projectRepo?.statusSync) {
-      await moveToCategory(ctx, link.issueId, closed ? "DONE" : "TODO");
-    }
+    await applyGitHubState(ctx, link, payload.action === "closed" ? "closed" : "open", link.projectRepo?.statusSync ?? false);
     return;
   }
 

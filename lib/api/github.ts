@@ -1,10 +1,13 @@
 import { request } from "@/lib/api/http";
 
-export type RepoToggles = { importAssigned: boolean; statusSync: boolean; moveOnMerge: boolean };
+export type ImportMode = "ALL" | "ASSIGNED" | "OFF";
+
+export type RepoToggles = { importIssues: ImportMode; statusSync: boolean; moveOnMerge: boolean };
 
 export type ConnectedRepo = RepoToggles & {
   id: string;
   repoFullName: string;
+  lastSyncedAt: string | null;
   project: { id: string; name: string; key: string };
 };
 
@@ -21,6 +24,7 @@ export type GitHubInstallation = {
 export type GitHubSettings = {
   configured: boolean;
   canManage: boolean;
+  setup: { defaultName: string; local: boolean } | null;
   link: { login: string; createdAt: string } | null;
   installations: GitHubInstallation[];
 };
@@ -76,4 +80,24 @@ export const disconnectRepo = (slug: string, id: string) =>
   request(`${base(slug)}/repos/${id}`, "Couldn’t disconnect the repository", { method: "DELETE" });
 
 export const syncRepo = (slug: string, id: string) =>
-  request<{ imported: number }>(`${base(slug)}/repos/${id}/sync`, "Sync failed", { method: "POST" });
+  request<{ imported: number; updated: number }>(`${base(slug)}/repos/${id}/sync`, "Sync failed", { method: "POST" });
+
+export type GitHubAppSetupInput = { name: string; org: string; public: boolean };
+
+export const startAppSetup = (slug: string, input: GitHubAppSetupInput) =>
+  request<{ action: string; manifest: string }>(`${base(slug)}/app`, "Couldn’t start creating the app", {
+    method: "POST",
+    body: input,
+  });
+
+export type CreatedGitHubApp = {
+  app: { name: string; slug: string; url: string };
+  env: string;
+  webhookSecretMissing: boolean;
+};
+
+export const completeAppSetup = (slug: string, input: { code: string; state: string }) =>
+  request<CreatedGitHubApp>(`${base(slug)}/app/complete`, "Couldn’t get the app’s credentials", {
+    method: "POST",
+    body: input,
+  });

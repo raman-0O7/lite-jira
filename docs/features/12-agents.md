@@ -11,7 +11,7 @@ step shows on the card and in the issue's history.
 
 ```
 Assign WEB-42 to "Claude" ─► AgentRun QUEUED ─► adapter.dispatch()   (after the response)
-  Claude Code: POST the routine's /fire URL, text "WEB-42" ─► session URL saved, DISPATCHED
+  Claude Code: POST the routine's /fire URL, text naming WEB-42 and its repo ─► session URL saved, DISPATCHED
   MCP agent:   signed webhook to the agent (optional); it can also poll list_agent_queue ─► DISPATCHED
   agent ─MCP─► claim_issue ─► RUNNING, card "Claude working", moved to In Progress
         ─MCP─► report_progress / add_comment (authored by the agent)
@@ -40,7 +40,7 @@ Secrets are shown once, never returned again, and never logged.
 ## Who can do what
 | Action | Owner/Admin | Member | Guest | Agent / token |
 |---|:-:|:-:|:-:|:-:|
-| Create, edit, disable, delete agents; mint agent tokens (`agent.manage`) | ✓ | — | — | never |
+| Create, edit, disable, delete agents; mint agent tokens (`agent.manage`; members their own with `agent.create`, feature 17) | ✓ | own | — | never |
 | Assign an issue to an agent, retry a run (`agent.dispatch`) | ✓ | ✓ | — | never |
 | Claim / report / release (as the assigned agent) | — | — | — | ✓ |
 
@@ -62,7 +62,8 @@ routines run on the owner's claude.ai account.
 - **Claude Code.** `POST {fireUrl}` sends:
   - headers `Authorization: Bearer <token>`, `anthropic-version: 2023-06-01`,
     `anthropic-beta: experimental-cc-routine-2026-04-01`;
-  - body `{text: "WEB-42"}`.
+  - body `{text: "Kanso issue WEB-42 in workspace \"acme\". Repository: acme/web"}`
+    (the repository: see [15-github-setup.md](15-github-setup.md)).
 
   The fire URL must be `https://api.anthropic.com/v1/claude_code/routines/trig_…/fire`.
   A 200 response saves `claude_code_session_id` and the session URL. **Fires
@@ -87,7 +88,9 @@ routines run on the owner's claude.ai account.
   It returns the issue, a branch name, and the rules. A claim by another
   agent is a 409.
 - `report_progress {key, message, status?: "working"|"needs_input"}` adds a
-  comment authored by the agent and updates the run.
+  comment authored by the agent and updates the run. A `needs_input` Claude
+  Code run is answered in its session; an MCP agent gets teammates' replies as
+  `issue.comment` webhooks (Feature 16).
 - `release_issue {key, reason?}` clears the claim, marks the run FAILED with
   the reason, and posts an optional comment.
 
@@ -127,7 +130,7 @@ Run changes are recorded as issue activity (`agent.assigned`,
   session URL), PR link, error, Retry, and the last runs.
 
 ## Acceptance criteria
-- [x] Only admins manage agents; members can assign issues to agents; guests and tokens can't.
+- [x] Only admins manage agents; members can assign issues to agents; guests and tokens can't. (Feature 17: members add and manage their own; only its owner starts a Claude Code agent.)
 - [x] Secrets are encrypted at rest and never returned after creation.
 - [x] Assigning dispatches after the response; Claude Code fire saves the session URL; failures → FAILED, no auto-retry.
 - [x] Agent tokens act as the agent on behalf of the owner, capped; disabled agents' tokens are rejected.

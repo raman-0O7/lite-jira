@@ -24,14 +24,15 @@ export async function getSetupStatus(ctx: Ctx) {
   authorize(ctx, "workspace.read");
   const userId = actingUserId(ctx) ?? "";
   const now = new Date();
-  const [projects, members, invites, github, agents, tokens, consents] = await Promise.all([
+  const [projects, members, invites, github, agents, tokens, consents, repos] = await Promise.all([
     db.project.count({ where: projectScope(ctx) }),
     db.membership.count({ where: { workspaceId: ctx.workspaceId } }),
     db.invite.count({
       where: { workspaceId: ctx.workspaceId, acceptedAt: null, revokedAt: null, expiresAt: { gt: now } },
     }),
     db.gitHubInstallation.count({ where: { workspaceId: ctx.workspaceId, suspendedAt: null } }),
-    db.agent.count({ where: { workspaceId: ctx.workspaceId } }),
+    // Each member connects their own agent (their own Claude account).
+    db.agent.count({ where: { workspaceId: ctx.workspaceId, ownerUserId: userId } }),
     db.apiToken.count({
       where: {
         userId,
@@ -44,6 +45,11 @@ export async function getSetupStatus(ctx: Ctx) {
     db.oauthConsent.findMany({
       where: { userId },
       select: { oauthclient: { select: { clientId: true, redirectUris: true } } },
+    }),
+    db.projectRepo.findMany({
+      where: { project: projectScope(ctx), installation: { suspendedAt: null } },
+      orderBy: { repoFullName: "asc" },
+      select: { repoFullName: true },
     }),
   ]);
 
@@ -58,6 +64,8 @@ export async function getSetupStatus(ctx: Ctx) {
     claudeConnected: consents.some(
       ({ oauthclient }) => isClaudeUrl(oauthclient.clientId) || oauthclient.redirectUris.some(isClaudeUrl),
     ),
+    // Repos connected to projects the caller sees: what a Claude Code task should clone.
+    repositories: repos.map((repo) => repo.repoFullName),
   };
 }
 

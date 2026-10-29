@@ -4,6 +4,7 @@ import { GET as watchdogGET } from "@/app/api/cron/agent-watchdog/route";
 import { ROUTINE_BETA } from "@/lib/agents/claude-code";
 import { setAgentFetch } from "@/lib/agents/http";
 import { failStaleRuns, onPullRequestLinked } from "@/lib/agents/lifecycle";
+import { issueRepository } from "@/lib/agents/repo";
 import { hmacHex } from "@/lib/crypto";
 import { db } from "@/lib/db";
 import { flushDeferred } from "@/lib/defer";
@@ -26,13 +27,13 @@ import {
   updateAgent,
 } from "@/lib/services/agents";
 import { ctxForApiToken, listApiTokens } from "@/lib/services/api-tokens";
-import { listComments } from "@/lib/services/comments";
+import { addComment, listComments } from "@/lib/services/comments";
 import type { Ctx } from "@/lib/services/context";
 import { githubCtx } from "@/lib/services/github";
 import { createImportedIssue, getIssue, updateIssue } from "@/lib/services/issues";
 import { createColumn } from "@/lib/services/columns";
 
-import { addMember, makeTeam, makeUser } from "../factories";
+import { addMember, makeTeam, makeUser, shareProject } from "../factories";
 import { expectStatus, makeIssue, makeProject } from "../helpers";
 
 const FIRE_URL = "https://api.anthropic.com/v1/claude_code/routines/trig_01abcDEF/fire";
@@ -65,12 +66,13 @@ beforeEach(() => {
   respond = () => fired();
 });
 
-/** A team with a Web project and a Claude Code agent owned by the owner. */
+/** A team with a Web project (acme/web connected) and a Claude Code agent owned by the owner. */
 async function setup() {
   const team = await makeTeam();
   const web = await makeProject(team.ctx, "Web", "WEB");
+  const { gh, repo } = await connected(team.ctx, web.project.id);
   const { agent } = await createAgent(team.ctx, { kind: "CLAUDE_CODE", name: "Claude", fireUrl: FIRE_URL, token: ROUTINE_TOKEN });
-  return { ...team, web, agent };
+  return { ...team, web, agent, gh, repo };
 }
 
 /** An MCP agent and a Ctx for its token. */
@@ -100,21 +102,30 @@ async function assigned() {
 }
 
 describe("managing agents", () => {
-  it("only admins manage agents; members can view; guests can view only the list", async () => {
+  it("members add and manage their own agents; admins manage everyone's; guests only view", async () => {
     const { ctx, workspace, agent } = await setup();
     const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
     const guest = await addMember(workspace.id, await makeUser("Gil"), "GUEST");
 
-    await expectStatus(createAgent(member, { kind: "MCP", name: "Nope", webhookUrl: null }), 403);
+    await expectStatus(createAgent(guest, { kind: "MCP", name: "Nope", webhookUrl: null }), 403);
+    const { agent: mine } = await createAgent(member, { kind: "CLAUDE_CODE", name: "Mo’s Claude", fireUrl: FIRE_URL, token: ROUTINE_TOKEN });
+    expect(mine.owner.name).toBe("Mo");
+    await updateAgent(member, mine.id, { enabled: false });
+    await listAgentTokens(member, mine.id);
+
+    // Someone else's agent is theirs to change.
     await expectStatus(updateAgent(member, agent.id, { enabled: false }), 403);
     await expectStatus(deleteAgent(member, agent.id), 403);
     await expectStatus(createAgentToken(member, agent.id), 403);
-    expect((await listAgents(member)).map((a) => a.name)).toEqual(["Claude"]);
-    expect((await listAgents(guest)).length).toBe(1);
+    await expectStatus(listAgentTokens(member, agent.id), 403);
+    expect((await listAgents(member)).map((a) => a.name)).toEqual(["Claude", "Mo’s Claude"]);
+    expect((await listAgents(guest)).length).toBe(2);
 
     const admin = await addMember(workspace.id, await makeUser("Ann"), "ADMIN");
+    await updateAgent(admin, mine.id, { enabled: true });
     await createAgent(admin, { kind: "MCP", name: "Helper", webhookUrl: null });
     await expectStatus(createAgent(ctx, { kind: "MCP", name: "helper", webhookUrl: null }), 409);
+    await deleteAgent(admin, mine.id);
   });
 
   it("encrypts secrets and never returns them after creation", async () => {
@@ -178,15 +189,21 @@ describe("agent tokens", () => {
 });
 
 describe("assigning & dispatch", () => {
-  it("members assign; guests can't; assigning clears the person and fires the routine after the response", async () => {
-    const { ctx, workspace, web, agent } = await setup();
+  it("only its owner starts a Claude Code agent; they become the assignee; the routine fires after the response", async () => {
+    const { ctx, user, workspace, web, agent } = await setup();
     const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
     const guest = await addMember(workspace.id, await makeUser("Gil"), "GUEST");
     const issue = await makeIssue(ctx, web.todo.id, "Fix login");
     await updateIssue(ctx, issue.id, { assigneeUserId: (member.actor as { userId: string }).userId });
 
     await expectStatus(assignAgent(guest, issue.id, { agentId: agent.id }), 403);
-    const { runId } = await assignAgent(member, issue.id, { agentId: agent.id });
+    // Owner's Claude runs on the owner's Claude account: Mo can't start it.
+    await expect(assignAgent(member, issue.id, { agentId: agent.id })).rejects.toThrow(
+      "Only Owner can start Claude: it runs on their Claude account. Connect your own Claude in Settings → Agents.",
+    );
+    expect(await db.agentRun.count({ where: { issueId: issue.id } })).toBe(0);
+
+    const { runId } = await assignAgent(ctx, issue.id, { agentId: agent.id });
     expect(calls).toHaveLength(0);
     let run = await db.agentRun.findUniqueOrThrow({ where: { id: runId! } });
     expect(run.status).toBe("QUEUED");
@@ -199,19 +216,35 @@ describe("assigning & dispatch", () => {
     expect(headers.Authorization).toBe(`Bearer ${ROUTINE_TOKEN}`);
     expect(headers["anthropic-beta"]).toBe(ROUTINE_BETA);
     expect(headers["anthropic-version"]).toBe("2023-06-01");
-    expect(JSON.parse(String(call!.init.body))).toEqual({ text: `Kanso issue WEB-1 in workspace "${workspace.slug}"` });
+    expect(JSON.parse(String(call!.init.body))).toEqual({
+      text: `Kanso issue WEB-1 in workspace "${workspace.slug}". Repository: acme/web`,
+    });
 
     run = await db.agentRun.findUniqueOrThrow({ where: { id: runId! } });
     expect(run).toMatchObject({ status: "DISPATCHED", externalSessionId: "session_01", sessionUrl: "https://claude.ai/code/session_01" });
 
+    // The person stays: whoever's Claude it is, here the owner, taking it from Mo.
     const full = await getIssue(ctx, issue.id);
-    expect(full.assignee).toBeNull();
+    expect(full.assignee?.id).toBe(user.id);
     expect(full.assigneeAgent).toMatchObject({ id: agent.id, name: "Claude" });
     expect(full.agentRuns[0]).toMatchObject({ status: "DISPATCHED", sessionUrl: "https://claude.ai/code/session_01" });
 
     const activity = await listIssueActivity(ctx, issue.id);
     expect(activity.entries.map((e) => e.action)).toContain("agent.assigned");
     expect(activity.refs.agents[agent.id]?.name).toBe("Claude");
+    const handover = activity.entries.find((e) => e.action === "issue.updated" && JSON.stringify(e.data).includes(agent.id));
+    expect(handover?.data).toMatchObject({
+      changes: { assigneeAgentId: { from: null, to: agent.id }, assigneeUserId: { to: user.id } },
+    });
+
+    // Mo can't retry the owner's agent either; with his own Claude the issue is his again.
+    await db.agentRun.updateMany({ where: { issueId: issue.id }, data: { status: "FAILED" } });
+    await expectStatus(retryAgentRun(member, issue.id), 403);
+    const { agent: mos } = await createAgent(member, { kind: "CLAUDE_CODE", name: "Mo’s Claude", fireUrl: FIRE_URL, token: ROUTINE_TOKEN });
+    await assignAgent(member, issue.id, { agentId: mos.id });
+    const mine = await getIssue(member, issue.id);
+    expect(mine.assignee?.name).toBe("Mo");
+    expect(mine.assigneeAgent?.name).toBe("Mo’s Claude");
   });
 
   it("a failed fire marks the run FAILED with the API's message and is never retried", async () => {
@@ -247,7 +280,12 @@ describe("assigning & dispatch", () => {
     expect(call!.url).toBe("https://agent.example.com/hook");
     const body = String(call!.init.body);
     expect((call!.init.headers as Record<string, string>)["X-Kanso-Signature"]).toBe(`sha256=${hmacHex(secrets.webhookSecret!, body)}`);
-    expect(JSON.parse(body)).toMatchObject({ event: "issue.assigned", issue: { key: "WEB-1", title: "Webhook me" }, run: { id: first.runId } });
+    expect(JSON.parse(body)).toMatchObject({
+      event: "issue.assigned",
+      issue: { key: "WEB-1", title: "Webhook me" },
+      repository: { fullName: "acme/web", url: "https://github.com/acme/web" },
+      run: { id: first.runId },
+    });
     expect((await db.agentRun.findUniqueOrThrow({ where: { id: first.runId! } })).status).toBe("DISPATCHED");
 
     respond = () => fired();
@@ -255,13 +293,94 @@ describe("assigning & dispatch", () => {
     expect((await db.agentRun.findUniqueOrThrow({ where: { id: first.runId! } })).status).toBe("CANCELLED");
   });
 
-  it("assigning a person (or nobody) clears the agent and cancels its run", async () => {
-    const { ctx, issue, runId } = await assigned();
-    await updateIssue(ctx, issue.id, { assigneeUserId: (ctx.actor as { userId: string }).userId });
+  it("handing the issue to another person stops its agent; taking the agent off keeps the person", async () => {
+    const { ctx, user, workspace, issue, runId } = await assigned();
+    // Re-setting the same person changes nothing.
+    await updateIssue(ctx, issue.id, { assigneeUserId: user.id });
+    expect((await getIssue(ctx, issue.id)).assigneeAgent?.name).toBe("Claude");
+    expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("DISPATCHED");
+
+    const mo = await makeUser("Mo");
+    await addMember(workspace.id, mo, "MEMBER");
+    await updateIssue(ctx, issue.id, { assigneeUserId: mo.id });
     const full = await getIssue(ctx, issue.id);
     expect(full.assigneeAgent).toBeNull();
-    expect(full.assignee).not.toBeNull();
+    expect(full.assignee?.id).toBe(mo.id);
     expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("CANCELLED");
+
+    const other = await makeIssue(ctx, full.columnId, "Another");
+    await assignAgent(ctx, other.id, { agentId: (await listAgents(ctx))[0]!.id });
+    await assignAgent(ctx, other.id, { agentId: null });
+    const off = await getIssue(ctx, other.id);
+    expect(off.assigneeAgent).toBeNull();
+    expect(off.assignee?.id).toBe(user.id);
+    expect(await db.agentRun.count({ where: { issueId: other.id, status: "CANCELLED" } })).toBe(1);
+  });
+
+  it("MCP agents are shared: any member hands them work and stays (or becomes) the assignee", async () => {
+    const { ctx, user, workspace, web } = await setup();
+    respond = () => new Response(null, { status: 204 });
+    const { agent: bot } = await mcpAgent(ctx);
+    const mo = await makeUser("Mo");
+    const member = await addMember(workspace.id, mo, "MEMBER");
+
+    const unassigned = await makeIssue(ctx, web.todo.id, "Nobody's");
+    await assignAgent(member, unassigned.id, { agentId: bot.id });
+    expect((await getIssue(ctx, unassigned.id)).assignee?.id).toBe(mo.id);
+
+    const owners = await makeIssue(ctx, web.todo.id, "Owner's");
+    await updateIssue(ctx, owners.id, { assigneeUserId: user.id });
+    await assignAgent(member, owners.id, { agentId: bot.id });
+    const full = await getIssue(ctx, owners.id);
+    expect(full.assignee?.id).toBe(user.id);
+    expect(full.assigneeAgent?.name).toBe("Bot");
+  });
+
+  it("Claude Code needs a connected repository; MCP agents don't", async () => {
+    const { ctx, agent } = await setup();
+    const docs = await makeProject(ctx, "Docs", "DOC");
+    const issue = await makeIssue(ctx, docs.todo.id);
+    const error = await assignAgent(ctx, issue.id, { agentId: agent.id }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 400, message: expect.stringMatching(/Connect a GitHub repository to Docs/) });
+    expect(await db.agentRun.count({ where: { issueId: issue.id } })).toBe(0);
+    expect((await getIssue(ctx, issue.id)).assigneeAgent).toBeNull();
+
+    const { agent: bot } = await createAgent(ctx, { kind: "MCP", name: "Bot", webhookUrl: null });
+    await assignAgent(ctx, issue.id, { agentId: bot.id });
+    expect((await claimIssue(ctx, `DOC-${issue.number}`)).repository).toBeNull();
+  });
+
+  it("a repo disconnected after assigning blocks retry and fails a queued dispatch", async () => {
+    const { ctx, web, agent, repo } = await setup();
+    const issue = await makeIssue(ctx, web.todo.id);
+    const { runId } = await assignAgent(ctx, issue.id, { agentId: agent.id });
+    await db.projectRepo.delete({ where: { id: repo.id } });
+    await flushDeferred();
+    expect(calls).toHaveLength(0);
+    const run = await db.agentRun.findUniqueOrThrow({ where: { id: runId! } });
+    expect(run).toMatchObject({ status: "FAILED", error: "The project has no connected GitHub repository" });
+    await expectStatus(retryAgentRun(ctx, issue.id), 400);
+  });
+
+  it("an imported issue uses its own repo, else the project's first connected one", async () => {
+    const { ctx, web, gh } = await setup();
+    const installation = await db.gitHubInstallation.findFirstOrThrow({ where: { workspaceId: ctx.workspaceId } });
+    const api = await db.projectRepo.create({ data: { projectId: web.project.id, installationId: installation.id, repoFullName: "acme/api" } });
+    const plain = await makeIssue(ctx, web.todo.id);
+    const imported = (await createImportedIssue(gh, {
+      projectId: web.project.id,
+      columnId: web.todo.id,
+      title: "From api",
+      description: null,
+      assigneeUserId: null,
+      labelIds: [],
+      link: { projectRepoId: api.id, repoFullName: "acme/api", number: 9, url: "https://github.com/acme/api/issues/9" },
+    }))!;
+    expect(await issueRepository(plain.id)).toEqual({ fullName: "acme/web", url: "https://github.com/acme/web" });
+    expect((await issueRepository(imported.id))?.fullName).toBe("acme/api");
+
+    await db.gitHubInstallation.update({ where: { id: installation.id }, data: { suspendedAt: new Date() } });
+    expect(await issueRepository(plain.id)).toBeNull();
   });
 
   it("disabled agents can't be assigned", async () => {
@@ -287,6 +406,7 @@ describe("claim, progress, release", () => {
 
     const claimed = await claimIssue(agentCtx, "WEB-1");
     expect(claimed.branch).toBe("web-1-fix-login-redirect");
+    expect(claimed.repository).toEqual({ fullName: "acme/web", url: "https://github.com/acme/web" });
     expect(claimed.run.status).toBe("RUNNING");
     expect(claimed.issue.column.category).toBe("IN_PROGRESS");
     expect(await claimedBy(issue.id)).toBe(agent.id);
@@ -326,10 +446,9 @@ describe("claim, progress, release", () => {
 
 describe("lifecycle", () => {
   it("a linked PR moves the run to PR_OPEN and the card to Review; merge finishes it", async () => {
-    const { ctx, web, issue, agent } = await assigned();
+    const { ctx, web, issue, agent, gh } = await assigned();
     const review = await createColumn(ctx, web.project.id, { name: "In Review", category: "IN_PROGRESS" });
     await claimIssue(ctx, "WEB-1");
-    const { gh } = await connected(ctx, web.project.id);
 
     await onPullRequestLinked(gh, issue.id, { url: "https://github.com/acme/web/pull/7", state: "OPEN" });
     let full = await getIssue(ctx, issue.id);
@@ -346,7 +465,10 @@ describe("lifecycle", () => {
   it("the watchdog fails runs nobody claimed in time", async () => {
     const { ctx, issue, runId } = await assigned();
     expect(await failStaleRuns()).toBe(0);
-    await db.agentRun.update({ where: { id: runId }, data: { createdAt: new Date(Date.now() - 16 * 60_000) } });
+    const old = new Date(Date.now() - 16 * 60_000);
+    await db.agentRun.update({ where: { id: runId }, data: { createdAt: old } });
+    expect(await failStaleRuns()).toBe(0); // dispatched just now
+    await db.agentRun.update({ where: { id: runId }, data: { dispatchedAt: old } });
     expect(await failStaleRuns()).toBe(1);
     const run = await db.agentRun.findUniqueOrThrow({ where: { id: runId } });
     expect(run.status).toBe("FAILED");
@@ -370,10 +492,78 @@ describe("lifecycle", () => {
   });
 });
 
+describe("answering an agent that needs input", () => {
+  it("Claude Code waits in its session: comments don't fire it; it resumes there", async () => {
+    const s = await assigned();
+    await claimIssue(s.ctx, "WEB-1");
+    await reportProgress(s.ctx, "WEB-1", { message: "Which redirect URL?", status: "needs_input" });
+    const member = await addMember(s.workspace.id, await makeUser("Mo"), "MEMBER");
+    calls = [];
+
+    await addComment(member, s.issue.id, { body: "Use /dashboard" });
+    await flushDeferred();
+    expect(calls).toHaveLength(0);
+    const [run] = await listAgentRuns(s.ctx, s.issue.id);
+    expect(run).toMatchObject({
+      status: "NEEDS_INPUT",
+      sessionUrl: "https://claude.ai/code/session_01",
+      agent: { kind: "CLAUDE_CODE", owner: { id: s.user.id } },
+    });
+
+    // The owner answered in the session; Claude reports back in.
+    await reportProgress(s.ctx, "WEB-1", { message: "Thanks, continuing", status: "working" });
+    expect((await db.agentRun.findUniqueOrThrow({ where: { id: s.runId } })).status).toBe("RUNNING");
+  });
+
+  /** An MCP agent with a webhook that claimed WEB-1 and asked for input. */
+  async function mcpWaiting() {
+    const s = await setup();
+    respond = () => new Response(null, { status: 204 });
+    const { agent, secrets } = await createAgent(s.ctx, { kind: "MCP", name: "Bot", webhookUrl: "https://agent.example.com/hook" });
+    const agentCtx = (await ctxForApiToken(secrets.token!))!;
+    const issue = await makeIssue(s.ctx, s.web.todo.id, "Webhook me");
+    const { runId } = await assignAgent(s.ctx, issue.id, { agentId: agent.id });
+    await flushDeferred();
+    await claimIssue(agentCtx, "WEB-1");
+    await reportProgress(agentCtx, "WEB-1", { message: "Which?", status: "needs_input" });
+    calls = [];
+    return { ...s, secrets, agentCtx, issue, runId: runId! };
+  }
+
+  it("MCP agents get a teammate's reply as a signed issue.comment webhook", async () => {
+    const { ctx, workspace, issue, runId, secrets } = await mcpWaiting();
+    const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
+    const reply = await addComment(member, issue.id, { body: "This one" });
+    await flushDeferred();
+    const body = String(calls[0]!.init.body);
+    expect((calls[0]!.init.headers as Record<string, string>)["X-Kanso-Signature"]).toBe(`sha256=${hmacHex(secrets.webhookSecret!, body)}`);
+    expect(JSON.parse(body)).toMatchObject({ event: "issue.comment", issue: { key: "WEB-1" }, run: { id: runId }, comment: { id: reply.id } });
+    expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("RUNNING");
+    const resumed = (await listIssueActivity(ctx, issue.id)).entries.find((e) => e.action === "agent.resumed");
+    expect(resumed).toMatchObject({ actor: { name: "Mo" }, data: expect.objectContaining({ commentId: reply.id }) });
+  });
+
+  it("guests, the agent itself, and comments while it isn't waiting send nothing", async () => {
+    const { ctx, workspace, web, issue, runId, agentCtx } = await mcpWaiting();
+    const guestUser = await makeUser("Gil");
+    const guest = await addMember(workspace.id, guestUser, "GUEST");
+    await shareProject(workspace.id, guestUser.id, web.project.id);
+    await addComment(guest, issue.id, { body: "guest says hi" });
+    await reportProgress(agentCtx, "WEB-1", { message: "Still waiting" });
+    await flushDeferred();
+    expect(calls).toHaveLength(0);
+    expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("NEEDS_INPUT");
+
+    await reportProgress(agentCtx, "WEB-1", { message: "Back on it", status: "working" });
+    await addComment(ctx, issue.id, { body: "FYI" });
+    await flushDeferred();
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe("untrusted content", () => {
   it("labels GitHub-imported issues as untrusted in agent payloads", async () => {
-    const { ctx, web, agent } = await setup();
-    const { gh, repo } = await connected(ctx, web.project.id);
+    const { ctx, web, agent, gh, repo } = await setup();
     const issue = (await createImportedIssue(gh, {
       projectId: web.project.id,
       columnId: web.todo.id,

@@ -9,7 +9,7 @@ import { InviteDialog } from "@/components/workspace/InvitePeople";
 import type { Agent } from "@/lib/api/agents";
 
 /**
- * The assignee menu's "Invite people…" and "Add an AI agent…" rows and the
+ * The assignee menu's "Invite people…" and "Add your AI agent…" rows and the
  * dialogs they open (docs/features/13-guided-setup.md "Assignee menu"). Render
  * `dialogs` next to the picker; pass `shortcuts` to it.
  */
@@ -18,7 +18,8 @@ export function useAssigneeShortcuts({ onAssignAgent }: { onAssignAgent?: (agent
   // A personal workspace is just for its owner: nobody to invite or ask.
   const canInvite = useCan("members.manage") && !personal;
   const askAdminToInvite = !personal && !canInvite;
-  const canAddAgent = useCan("agent.manage");
+  // Every member can connect their own agent; guests get no shortcuts.
+  const canAddAgent = useCan("agent.create");
   const [inviting, setInviting] = useState(false);
   const [addingAgent, setAddingAgent] = useState(false);
 
@@ -32,14 +33,7 @@ export function useAssigneeShortcuts({ onAssignAgent }: { onAssignAgent?: (agent
       : {
           onInvite: canInvite ? openLater(setInviting) : undefined,
           onAddAgent: canAddAgent ? openLater(setAddingAgent) : undefined,
-          hint:
-            askAdminToInvite && !canAddAgent
-              ? "Ask an admin to invite people or add an AI agent."
-              : !canAddAgent
-                ? "Ask an admin to add an AI agent."
-                : askAdminToInvite
-                  ? "Ask an admin to invite people."
-                  : undefined,
+          hint: askAdminToInvite ? "Ask an admin to invite people." : undefined,
         };
 
   const dialogs = (

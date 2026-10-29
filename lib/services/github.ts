@@ -8,12 +8,14 @@ import { db } from "@/lib/db";
 import { defer } from "@/lib/defer";
 import * as gh from "@/lib/github/client";
 import { githubConfigured } from "@/lib/github/config";
+import { APP_NAME_MAX, appManifest, defaultAppName, envLines, isLocalOrigin, manifestFormAction } from "@/lib/github/manifest";
 import { authorize, can } from "@/lib/permissions";
 import { recordActivity } from "@/lib/services/activity";
 import { actingUserId, type Ctx, userCtx } from "@/lib/services/context";
 import { badRequest, forbidden, notFound, ServiceError } from "@/lib/services/errors";
 import { createImportedIssue, moveIssue } from "@/lib/services/issues";
 import { projectScope } from "@/lib/services/scope";
+import { isServerOwner } from "@/lib/server-owner";
 
 /**
  * The GitHub App integration (docs/features/11-github-app.md): installing the
@@ -75,19 +77,98 @@ export async function getGitHubSettings(ctx: Ctx) {
               select: {
                 id: true,
                 repoFullName: true,
-                importAssigned: true,
+                importIssues: true,
                 statusSync: true,
                 moveOnMerge: true,
+                lastSyncedAt: true,
                 project: { select: { id: true, name: true, key: true } },
               },
             },
           },
         });
+  const configured = githubConfigured();
+  const canManage = can(ctx, "integrations.manage");
   return {
-    configured: githubConfigured(),
-    canManage: can(ctx, "integrations.manage"),
+    configured,
+    canManage,
+    // What the one-time app setup needs: the server owner, before the app exists.
+    setup:
+      !configured && canManage && (await isServerOwner(userId))
+        ? { defaultName: defaultAppName(appUrl()), local: isLocalOrigin(appUrl()) }
+        : null,
     link,
     installations,
+  };
+}
+
+// ---------- guided app setup (docs/features/15-github-setup.md) ----------
+
+type ManifestState = { kind: "manifest"; workspaceId: string; userId: string };
+
+const appSetupSchema = z.object({
+  name: z.string().trim().min(1, "Name the app").max(APP_NAME_MAX, `App names are at most ${APP_NAME_MAX} characters`),
+  org: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/, "That isn't a GitHub organization name")
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  public: z.boolean().default(false),
+});
+
+/** Creating the app is server-wide: its owner only, from a workspace they admin. */
+async function authorizeAppSetup(ctx: Ctx) {
+  authorize(ctx, "integrations.manage");
+  if (!(await isServerOwner(actingUserId(ctx)))) {
+    throw forbidden("Only the person who runs this Kanso server can create its GitHub App");
+  }
+}
+
+/**
+ * The manifest form to post to GitHub, which creates a GitHub App with every
+ * setting filled in. Once per server, by its owner, while it has no app.
+ */
+export async function startGitHubAppSetup(ctx: Ctx, slug: string, input: unknown) {
+  await authorizeAppSetup(ctx);
+  if (githubConfigured()) throw new ServiceError(409, "This server already has a GitHub App");
+  const { name, org, public: isPublic } = appSetupSchema.parse(input);
+  const origin = appUrl();
+  const state = signState({ kind: "manifest", workspaceId: ctx.workspaceId, userId: actingUserId(ctx)! }, 3600);
+  const manifest = appManifest(origin, {
+    name,
+    public: isPublic,
+    redirectUrl: `${origin}/${slug}/settings/integrations/github-app`,
+  });
+  return { action: manifestFormAction(state, org), manifest: JSON.stringify(manifest) };
+}
+
+/**
+ * Trade GitHub's one-time code for the new app's credentials, as environment
+ * variables for the owner to add to the server. Shown once; never stored or
+ * logged: an app's credentials are server-wide, so only the environment, which
+ * only the owner controls, decides which app the server uses.
+ */
+export async function completeGitHubAppSetup(ctx: Ctx, input: unknown) {
+  await authorizeAppSetup(ctx);
+  const { code, state } = z.object({ code: z.string().min(1).max(200), state: z.string().min(1) }).parse(input);
+  const signed = verifyState<ManifestState>(state);
+  if (signed?.kind !== "manifest" || signed.workspaceId !== ctx.workspaceId || signed.userId !== actingUserId(ctx)) {
+    throw badRequest("This setup link has expired or wasn't started from your account. Start again from Integrations.");
+  }
+  let app: gh.GhManifestApp;
+  try {
+    app = await gh.convertManifestCode(code);
+  } catch (error) {
+    if (error instanceof gh.GitHubError && error.status === 404) {
+      throw badRequest("GitHub has already handed these credentials over, or the link expired. Credentials are shown only once.");
+    }
+    if (error instanceof gh.GitHubError) throw badRequest("GitHub didn't hand over the app's credentials. Please try again.");
+    throw error;
+  }
+  return {
+    app: { name: app.name, slug: app.slug, url: app.html_url },
+    env: envLines(app).join("\n"),
+    webhookSecretMissing: !app.webhook_secret,
   };
 }
 
@@ -131,7 +212,7 @@ export async function completeGitHubCallback(userId: string, input: unknown) {
   requireGitHub();
   const { code, state, installationId, setupAction } = callbackSchema.parse(input);
   const signed = state ? verifyState<CallbackState>(state) : null;
-  if (!signed || signed.userId !== userId) {
+  if (!signed || signed.userId !== userId || (signed.kind !== "install" && signed.kind !== "link")) {
     throw badRequest("This GitHub request has expired or wasn't started from your account. Please try again.");
   }
   const membership = await db.membership.findUnique({
@@ -257,7 +338,7 @@ export async function listInstallationRepos(ctx: Ctx, id: string) {
 }
 
 const repoToggles = {
-  importAssigned: z.boolean().optional(),
+  importIssues: z.enum(["ALL", "ASSIGNED", "OFF"]).optional(),
   statusSync: z.boolean().optional(),
   moveOnMerge: z.boolean().optional(),
 };
@@ -275,9 +356,10 @@ const connectRepoSchema = z.object({
 const repoSelect = {
   id: true,
   repoFullName: true,
-  importAssigned: true,
+  importIssues: true,
   statusSync: true,
   moveOnMerge: true,
+  lastSyncedAt: true,
   project: { select: { id: true, name: true, key: true } },
 } satisfies Prisma.ProjectRepoSelect;
 
@@ -306,16 +388,14 @@ export async function connectRepo(ctx: Ctx, input: unknown) {
     await recordActivity(tx, ctx, { action: "github.repo_connected", projectId, data: { repo } });
     return created;
   });
-  if (row.importAssigned) {
-    defer("github.import", () => importAssignedIssues(row.id));
-  }
+  defer("github.sync", () => syncRepo(row.id));
   return row;
 }
 
 async function findProjectRepo(ctx: Ctx, id: string) {
   const row = await db.projectRepo.findFirst({
     where: { id, project: projectScope(ctx) },
-    select: { id: true, projectId: true, repoFullName: true },
+    select: { id: true, projectId: true, repoFullName: true, importIssues: true },
   });
   if (!row) throw notFound("Repository connection not found");
   return row;
@@ -325,8 +405,14 @@ export async function updateProjectRepo(ctx: Ctx, id: string, input: unknown) {
   authorize(ctx, "integrations.manage");
   const patch = z.object(repoToggles).parse(input);
   const row = await findProjectRepo(ctx, id);
-  return db.$transaction(async (tx) => {
-    const updated = await tx.projectRepo.update({ where: { id: row.id }, data: patch, select: repoSelect });
+  // A new import mode starts over with a full import of what it now covers.
+  const restart = patch.importIssues !== undefined && patch.importIssues !== row.importIssues;
+  const updated = await db.$transaction(async (tx) => {
+    const updated = await tx.projectRepo.update({
+      where: { id: row.id },
+      data: { ...patch, ...(restart ? { lastSyncedAt: null } : {}) },
+      select: repoSelect,
+    });
     await recordActivity(tx, ctx, {
       action: "github.repo_updated",
       projectId: row.projectId,
@@ -334,6 +420,8 @@ export async function updateProjectRepo(ctx: Ctx, id: string, input: unknown) {
     });
     return updated;
   });
+  if (restart) defer("github.sync", () => syncRepo(row.id));
+  return updated;
 }
 
 export async function disconnectRepo(ctx: Ctx, id: string) {
@@ -349,33 +437,120 @@ export async function disconnectRepo(ctx: Ctx, id: string) {
   });
 }
 
-/** "Sync now": import assigned issues for one connected repository. */
+/** "Sync now": catch one connected repository up with GitHub. */
 export async function syncProjectRepo(ctx: Ctx, id: string) {
   authorize(ctx, "issue.write");
   requireGitHub();
   const row = await findProjectRepo(ctx, id);
-  return ghCall(() => importAssignedIssues(row.id));
+  return ghCall(() => syncRepo(row.id));
 }
 
-// ---------- import ----------
+// ---------- import & sync ----------
 
-/** Import every open issue assigned to a linked member, for one connected repo. */
-export async function importAssignedIssues(projectRepoId: string) {
+type ImportMode = { importIssues: "ALL" | "ASSIGNED" | "OFF" };
+
+/**
+ * Whether a connected repo imports an open GitHub issue, and who it's for: a
+ * linked member it's assigned to on GitHub, else nobody (ALL only). Null: skip.
+ */
+export async function importTarget(
+  repo: ImportMode,
+  workspaceId: string,
+  issue: Pick<gh.GhIssue, "assignees">,
+): Promise<{ assigneeUserId: string | null } | null> {
+  if (repo.importIssues === "OFF") return null;
+  const githubIds = (issue.assignees ?? []).map((a) => a.id);
+  const [member] = githubIds.length ? await linkedMembers(workspaceId, githubIds) : [];
+  if (member) return { assigneeUserId: member.userId };
+  return repo.importIssues === "ALL" ? { assigneeUserId: null } : null;
+}
+
+/** Apply a GitHub issue's open/closed state to its Kanso issue. True if it changed. */
+export async function applyGitHubState(
+  ctx: Ctx,
+  link: { id: string; issueId: string; state: "OPEN" | "CLOSED" },
+  state: "open" | "closed",
+  statusSync: boolean,
+) {
+  const closed = state === "closed";
+  if ((link.state === "CLOSED") === closed) return false;
+  await db.gitHubIssueLink.update({
+    where: { id: link.id },
+    data: { state: closed ? "CLOSED" : "OPEN", lastSyncedAt: new Date() },
+  });
+  if (statusSync) await moveToCategory(ctx, link.issueId, closed ? "DONE" : "TODO");
+  return true;
+}
+
+/**
+ * Catch a connected repo up with GitHub (docs/features/16-github-sync-and-replies.md
+ * "Sync"). The first time, import the open issues its mode covers; after that,
+ * look at every issue updated since the last sync: import new ones, and apply
+ * closes and reopens that webhooks may have missed. Webhooks do the same live.
+ */
+export async function syncRepo(projectRepoId: string) {
   const repo = await db.projectRepo.findUnique({
     where: { id: projectRepoId },
     include: { installation: true },
   });
-  if (!repo || repo.installation.suspendedAt) return { imported: 0 };
-  const members = await linkedMembers(repo.installation.workspaceId);
+  if (!repo || repo.installation.suspendedAt) return { imported: 0, updated: 0 };
+  const startedAt = new Date();
   const ctx = githubCtx(repo.installation);
-  let imported = 0;
-  for (const member of members) {
-    const issues = await gh.listAssignedIssues(repo.installation.installationId, repo.repoFullName, member.login);
-    for (const issue of issues) {
-      if (await importGitHubIssue(ctx, repo, issue, member.userId)) imported++;
+  const installationId = repo.installation.installationId;
+  // A minute of overlap, so an update during the last sync isn't missed.
+  const since = repo.lastSyncedAt ? new Date(repo.lastSyncedAt.getTime() - 60_000) : undefined;
+
+  let issues: gh.GhIssue[] = [];
+  if (since) {
+    issues = await gh.listRepoIssues(installationId, repo.repoFullName, { since });
+  } else if (repo.importIssues === "ALL") {
+    issues = await gh.listRepoIssues(installationId, repo.repoFullName);
+  } else if (repo.importIssues === "ASSIGNED") {
+    for (const member of await linkedMembers(repo.installation.workspaceId)) {
+      issues.push(...(await gh.listAssignedIssues(installationId, repo.repoFullName, member.login)));
     }
   }
-  return { imported };
+
+  let imported = 0;
+  let updated = 0;
+  for (const issue of issues) {
+    const link = await db.gitHubIssueLink.findUnique({
+      where: { repoFullName_number: { repoFullName: repo.repoFullName, number: issue.number } },
+      select: { id: true, issueId: true, state: true, issue: { select: { project: { select: { workspaceId: true } } } } },
+    });
+    if (link) {
+      if (link.issue.project.workspaceId !== repo.installation.workspaceId) continue;
+      if (await applyGitHubState(ctx, link, issue.state, repo.statusSync)) updated++;
+      continue;
+    }
+    if (issue.state !== "open") continue;
+    const target = await importTarget(repo, repo.installation.workspaceId, issue);
+    if (target && (await importGitHubIssue(ctx, repo, issue, target.assigneeUserId))) imported++;
+  }
+  await db.projectRepo.update({ where: { id: repo.id }, data: { lastSyncedAt: startedAt } });
+  return { imported, updated };
+}
+
+/** The cron: sync every connected repo. One repo failing doesn't stop the rest. */
+export async function syncAllRepos() {
+  const repos = await db.projectRepo.findMany({
+    where: { installation: { suspendedAt: null } },
+    select: { id: true },
+  });
+  let imported = 0;
+  let updated = 0;
+  let failed = 0;
+  for (const repo of repos) {
+    try {
+      const result = await syncRepo(repo.id);
+      imported += result.imported;
+      updated += result.updated;
+    } catch (error) {
+      failed++;
+      console.error("[github.sync]", repo.id, error instanceof Error ? error.message : "error");
+    }
+  }
+  return { repos: repos.length, imported, updated, failed };
 }
 
 /** Non-guest members of a workspace with a linked GitHub account. */
@@ -429,7 +604,7 @@ export async function importGitHubIssue(
   ctx: Ctx,
   repo: { id: string; projectId: string; repoFullName: string },
   issue: gh.GhIssue,
-  assigneeUserId: string,
+  assigneeUserId: string | null,
 ) {
   if (issue.pull_request || issue.state !== "open") return null;
   const linked = await db.gitHubIssueLink.findUnique({

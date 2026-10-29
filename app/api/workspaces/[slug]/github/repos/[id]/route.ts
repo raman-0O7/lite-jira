@@ -6,7 +6,7 @@ import { disconnectRepo, updateProjectRepo } from "@/lib/services/github";
 
 type RouteContext = { params: Promise<{ slug: string; id: string }> };
 
-// PATCH /api/workspaces/[slug]/github/repos/[id] {importAssigned?, statusSync?, moveOnMerge?}
+// PATCH /api/workspaces/[slug]/github/repos/[id] {importIssues?, statusSync?, moveOnMerge?}
 export const PATCH = apiRoute(async (request: Request, { params }: RouteContext) => {
   const { slug, id } = await params;
   const repo = await updateProjectRepo(await ctxForWorkspaceSlug(slug), id, await readJson(request));

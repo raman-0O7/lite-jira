@@ -8,6 +8,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader, PageTitle } from "@/components/app-shell/PageHeader";
+import { ProjectRepos } from "@/components/project/ProjectRepos";
 import { useRegisterNewIssue } from "@/components/app-shell/app-ui";
 import { AvatarStack } from "@/components/icons/Avatar";
 import { Kbd } from "@/components/icons/Kbd";
@@ -16,7 +17,7 @@ import { IssuePanel } from "@/components/issue/IssuePanel";
 import { NewIssueDialog } from "@/components/issue/NewIssueDialog";
 import { ProjectSkeleton } from "@/components/loading/skeletons";
 import { KanbanBoard } from "@/components/project/board/KanbanBoard";
-import { FilterBar } from "@/components/project/filters/FilterBar";
+import { type AssigneeOption, FilterBar } from "@/components/project/filters/FilterBar";
 import { IssueList } from "@/components/project/list/IssueList";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
@@ -45,6 +46,7 @@ import {
   type ColumnCategory,
   type ColumnWithIssues,
   type IssueCard,
+  type AgentStub,
   type LabelStub,
   type PersonStub,
   type ProjectDetail,
@@ -78,6 +80,22 @@ function deriveAssignees(columns: ColumnWithIssues[]): PersonStub[] {
     }
   }
   return [...counts.values()].sort((a, b) => b.count - a.count).map((e) => e.person);
+}
+
+/** Assignee filter options: people (most issues first), then agents. */
+function deriveAssigneeOptions(columns: ColumnWithIssues[], people: PersonStub[]): AssigneeOption[] {
+  const agents = new Map<string, AgentStub>();
+  for (const column of columns) {
+    for (const issue of column.issues) {
+      if (issue.assigneeAgent) agents.set(issue.assigneeAgent.id, issue.assigneeAgent);
+    }
+  }
+  return [
+    ...people.map((person) => ({ token: `user:${person.id}`, name: person.name, person })),
+    ...[...agents.values()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((agent) => ({ token: `agent:${agent.id}`, name: agent.name, agent })),
+  ];
 }
 
 /**
@@ -293,6 +311,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
                 <AvatarStack people={assignees} max={4} />
               </span>
             ) : null}
+            <ProjectRepos project={project} />
             <ThemeToggle />
             {canEditIssues && columns.length > 0 ? (
               <Button size="sm" onClick={() => startNewIssue()} className="gap-1.5">
@@ -345,6 +364,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
       <FilterBar
         labels={deriveLabels(columns)}
+        assignees={deriveAssigneeOptions(columns, assignees)}
         filters={filters}
         progress={progress}
         searchRef={searchRef}

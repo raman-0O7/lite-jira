@@ -2,6 +2,7 @@ import { fireRoutine } from "@/lib/agents/claude-code";
 import { type ClaudeCodeConfig, decryptConfig, type McpAgentConfig } from "@/lib/agents/config";
 import { DispatchError } from "@/lib/agents/http";
 import { failRun } from "@/lib/agents/lifecycle";
+import { issueRepository } from "@/lib/agents/repo";
 import { postAgentWebhook } from "@/lib/agents/webhook";
 import { appUrl } from "@/lib/app-url";
 import { db } from "@/lib/db";
@@ -19,7 +20,7 @@ export async function dispatchRun(runId: string) {
       id: true,
       status: true,
       agent: { select: { id: true, kind: true, enabled: true, configEnc: true } },
-      issue: { select: { number: true, title: true, project: { select: { key: true, workspace: { select: { slug: true } } } } } },
+      issue: { select: { id: true, number: true, title: true, project: { select: { key: true, workspace: { select: { slug: true } } } } } },
     },
   });
   if (!run || run.status !== "QUEUED") return;
@@ -31,9 +32,15 @@ export async function dispatchRun(runId: string) {
   const key = formatKey(run.issue.project.key, run.issue.number);
   const workspace = run.issue.project.workspace.slug;
   try {
+    const repository = await issueRepository(run.issue.id);
     if (run.agent.kind === "CLAUDE_CODE") {
+      // Checked at assign time too; the repo may have been disconnected since.
+      if (!repository) throw new DispatchError("The project has no connected GitHub repository");
       const config = decryptConfig<ClaudeCodeConfig>(run.agent.configEnc);
-      const session = await fireRoutine(config, `Kanso issue ${key} in workspace "${workspace}"`);
+      const session = await fireRoutine(
+        config,
+        `Kanso issue ${key} in workspace "${workspace}". Repository: ${repository.fullName}`,
+      );
       await db.agentRun.updateMany({
         where: { id: run.id, status: "QUEUED" },
         data: {
@@ -49,6 +56,7 @@ export async function dispatchRun(runId: string) {
         event: "issue.assigned",
         workspace,
         issue: { key, title: run.issue.title, url: `${appUrl()}/${workspace}/issues/${key}` },
+        repository,
         run: { id: run.id },
       });
       await db.agentRun.updateMany({

@@ -19,7 +19,7 @@ export function SettingsNav({ slug }: { slug: string }) {
     <nav className="ml-2 flex h-7 items-center rounded-md bg-chip p-0.5" aria-label="Settings">
       {TABS.map((tab) => {
         const href = `/${slug}/settings/${tab.href}`;
-        const active = pathname === href;
+        const active = pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link
             key={tab.href}

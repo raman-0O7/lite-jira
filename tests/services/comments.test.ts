@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
-import { addComment, deleteComment, editComment, listComments } from "@/lib/services/comments";
+import { cleanName, MAX_ATTACHMENT_BYTES, readImages, sniffImage } from "@/lib/attachments";
+import { addComment, deleteComment, editComment, getAttachment, listComments } from "@/lib/services/comments";
 import type { Ctx } from "@/lib/services/context";
 import { addMember, makeOwner, makeUser, shareProject } from "@/tests/factories";
 import { expectStatus, makeIssue, makeProject } from "@/tests/helpers";
@@ -76,5 +77,47 @@ describe("comments", () => {
     const { issue } = await setup();
     const stranger = await makeOwner("Stranger");
     await expectStatus(addComment(stranger.ctx, issue.id, { body: "hi" }), 404);
+  });
+});
+
+const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
+const file = (bytes: Uint8Array | string, name: string, type = "image/png") =>
+  new File([typeof bytes === "string" ? bytes : new Uint8Array(bytes)], name, { type });
+
+describe("comment images", () => {
+  it("identifies images by their bytes, not their name or claimed type", async () => {
+    expect(sniffImage(PNG)).toBe("image/png");
+    expect(sniffImage(Buffer.from("ffd8ffe000", "hex"))).toBe("image/jpeg");
+    expect(sniffImage(Buffer.from("GIF89a"))).toBe("image/gif");
+    expect(sniffImage(Buffer.from("RIFF\0\0\0\0WEBPVP8 "))).toBe("image/webp");
+    expect(sniffImage(Buffer.from("<svg onload=alert(1)>"))).toBeNull();
+
+    await expect(readImages([file("<svg/>", "x.png")])).rejects.toThrow(/Only PNG, JPEG, GIF, and WebP/);
+    await expect(readImages([file("", "empty.png")])).rejects.toThrow(/empty/);
+    await expect(readImages([1, 2, 3, 4].map((n) => file(PNG, `${n}.png`)))).rejects.toThrow(/at most 3/);
+    const big = new Uint8Array(MAX_ATTACHMENT_BYTES + 1);
+    big.set(PNG);
+    await expect(readImages([file(big, "big.png")])).rejects.toThrow(/4 MB/);
+
+    const [image] = await readImages([file(PNG, "../../etc/screen shot.gif", "image/gif")]);
+    expect(image).toMatchObject({ name: "screen shot.png", contentType: "image/png" });
+    expect(cleanName('a\u0000"b.jpeg', "image/jpeg")).toBe("ab.jpg");
+  });
+
+  it("are stored with the comment and readable only where the issue is", async () => {
+    const { owner, issue, guest } = await setup();
+    const images = await readImages([file(PNG, "shot.png")]);
+    await expect(addComment(owner.ctx, issue.id, { body: "" })).rejects.toThrow(/can.t be empty/);
+    const comment = await addComment(owner.ctx, issue.id, { body: "" }, images);
+    expect(comment.attachments).toEqual([
+      expect.objectContaining({ name: "shot.png", contentType: "image/png", size: PNG.length }),
+    ]);
+    const id = comment.attachments[0]!.id;
+    expect(Buffer.from((await getAttachment(guest, id)).data).equals(PNG)).toBe(true);
+
+    const other = await makeOwner("Eve");
+    await expectStatus(getAttachment(other.ctx, id), 404);
+    await deleteComment(owner.ctx, comment.id);
+    expect(await db.attachment.count()).toBe(0);
   });
 });

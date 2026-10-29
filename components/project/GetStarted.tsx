@@ -65,7 +65,7 @@ export function GetStarted({ projectCount }: { projectCount: number }) {
   const { slug, role, personal } = useWorkspace();
   const canCreateProject = useCan("project.create");
   const canInvite = useCan("members.manage") && !personal;
-  const canAddAgent = useCan("agent.manage");
+  const canAddAgent = useCan("agent.create");
   const canConnectGitHub = useCan("integrations.manage");
   const { setCreateProjectOpen } = useAppUI();
   const [inviting, setInviting] = useState(false);
@@ -100,8 +100,8 @@ export function GetStarted({ projectCount }: { projectCount: number }) {
     },
     canAddAgent && {
       id: "agent",
-      title: "Add an AI agent",
-      description: "Assign issues to Claude Code. It works in your repo and opens a pull request for you to review.",
+      title: "Connect your Claude",
+      description: "Hand issues to Claude Code on your own Claude account. It works in your repo and opens a pull request for you to review.",
       done: status.agents,
       action: { label: "Set up", onClick: () => setAddingAgent(true) },
     },
