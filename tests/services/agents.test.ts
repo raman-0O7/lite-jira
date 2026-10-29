@@ -429,85 +429,72 @@ describe("lifecycle", () => {
   });
 });
 
-describe("replies resume the agent", () => {
-  /** Claude asked for input on WEB-1 (acting through its owner's credentials). */
-  async function waiting() {
+describe("answering an agent that needs input", () => {
+  it("Claude Code waits in its session: comments don't fire it; it resumes there", async () => {
     const s = await assigned();
     await claimIssue(s.ctx, "WEB-1");
     await reportProgress(s.ctx, "WEB-1", { message: "Which redirect URL?", status: "needs_input" });
     const member = await addMember(s.workspace.id, await makeUser("Mo"), "MEMBER");
     calls = [];
-    return { ...s, member };
-  }
 
-  it("a teammate's reply fires the routine again and the new session can claim", async () => {
-    const { ctx, member, issue, runId } = await waiting();
-    respond = () => fired(2);
-    const reply = await addComment(member, issue.id, { body: "Use /dashboard" });
-    await flushDeferred();
-
-    expect(calls).toHaveLength(1);
-    const text = JSON.parse(String(calls[0]!.init.body)).text as string;
-    expect(text).toContain('Kanso issue WEB-1 in workspace "');
-    expect(text).toContain("Repository: acme/web");
-    expect(text).toContain("Resuming");
-    expect(text).toContain("Branch: web-1-fix-login-redirect");
-    expect(text).not.toContain("Use /dashboard"); // the reply is read with get_issue, not passed along
-
-    const run = await db.agentRun.findUniqueOrThrow({ where: { id: runId } });
-    expect(run).toMatchObject({ status: "DISPATCHED", sessionUrl: "https://claude.ai/code/session_02", externalSessionId: "session_02" });
-    const resumed = (await listIssueActivity(ctx, issue.id)).entries.find((e) => e.action === "agent.resumed");
-    expect(resumed).toMatchObject({ actor: { name: "Mo" }, data: expect.objectContaining({ commentId: reply.id }) });
-
-    expect((await claimIssue(ctx, "WEB-1")).run).toEqual({ id: runId, status: "RUNNING" });
-  });
-
-  it("only a teammate who can dispatch resumes, and only while the agent waits", async () => {
-    const { ctx, workspace, web, issue, runId } = await waiting();
-    const guestUser = await makeUser("Gil");
-    const guest = await addMember(workspace.id, guestUser, "GUEST");
-    await shareProject(workspace.id, guestUser.id, web.project.id);
-    await addComment(guest, issue.id, { body: "guest says hi" });
-    await reportProgress(ctx, "WEB-1", { message: "Still waiting" }); // the agent itself
+    await addComment(member, s.issue.id, { body: "Use /dashboard" });
     await flushDeferred();
     expect(calls).toHaveLength(0);
-    expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("NEEDS_INPUT");
+    const [run] = await listAgentRuns(s.ctx, s.issue.id);
+    expect(run).toMatchObject({
+      status: "NEEDS_INPUT",
+      sessionUrl: "https://claude.ai/code/session_01",
+      agent: { kind: "CLAUDE_CODE", owner: { id: s.user.id } },
+    });
 
-    await reportProgress(ctx, "WEB-1", { message: "Back on it", status: "working" });
-    await addComment(ctx, issue.id, { body: "FYI" });
-    await flushDeferred();
-    expect(calls).toHaveLength(0);
+    // The owner answered in the session; Claude reports back in.
+    await reportProgress(s.ctx, "WEB-1", { message: "Thanks, continuing", status: "working" });
+    expect((await db.agentRun.findUniqueOrThrow({ where: { id: s.runId } })).status).toBe("RUNNING");
   });
 
-  it("a failed fire ends the run so it can be retried", async () => {
-    const { member, issue, runId } = await waiting();
-    respond = () => json(429, { error: { message: "Rate limited" } });
-    await addComment(member, issue.id, { body: "Use /dashboard" });
-    await flushDeferred();
-    const run = await db.agentRun.findUniqueOrThrow({ where: { id: runId } });
-    expect(run.status).toBe("FAILED");
-    expect(await claimedBy(issue.id)).toBeNull();
-  });
-
-  it("MCP agents get a signed issue.comment webhook and keep running", async () => {
-    const { ctx, web, workspace } = await setup();
+  /** An MCP agent with a webhook that claimed WEB-1 and asked for input. */
+  async function mcpWaiting() {
+    const s = await setup();
     respond = () => new Response(null, { status: 204 });
-    const { agent, secrets } = await createAgent(ctx, { kind: "MCP", name: "Bot", webhookUrl: "https://agent.example.com/hook" });
+    const { agent, secrets } = await createAgent(s.ctx, { kind: "MCP", name: "Bot", webhookUrl: "https://agent.example.com/hook" });
     const agentCtx = (await ctxForApiToken(secrets.token!))!;
-    const issue = await makeIssue(ctx, web.todo.id, "Webhook me");
-    const { runId } = await assignAgent(ctx, issue.id, { agentId: agent.id });
+    const issue = await makeIssue(s.ctx, s.web.todo.id, "Webhook me");
+    const { runId } = await assignAgent(s.ctx, issue.id, { agentId: agent.id });
     await flushDeferred();
     await claimIssue(agentCtx, "WEB-1");
     await reportProgress(agentCtx, "WEB-1", { message: "Which?", status: "needs_input" });
-    const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
     calls = [];
+    return { ...s, secrets, agentCtx, issue, runId: runId! };
+  }
 
+  it("MCP agents get a teammate's reply as a signed issue.comment webhook", async () => {
+    const { ctx, workspace, issue, runId, secrets } = await mcpWaiting();
+    const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
     const reply = await addComment(member, issue.id, { body: "This one" });
     await flushDeferred();
     const body = String(calls[0]!.init.body);
     expect((calls[0]!.init.headers as Record<string, string>)["X-Kanso-Signature"]).toBe(`sha256=${hmacHex(secrets.webhookSecret!, body)}`);
     expect(JSON.parse(body)).toMatchObject({ event: "issue.comment", issue: { key: "WEB-1" }, run: { id: runId }, comment: { id: reply.id } });
-    expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId! } })).status).toBe("RUNNING");
+    expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("RUNNING");
+    const resumed = (await listIssueActivity(ctx, issue.id)).entries.find((e) => e.action === "agent.resumed");
+    expect(resumed).toMatchObject({ actor: { name: "Mo" }, data: expect.objectContaining({ commentId: reply.id }) });
+  });
+
+  it("guests, the agent itself, and comments while it isn't waiting send nothing", async () => {
+    const { ctx, workspace, web, issue, runId, agentCtx } = await mcpWaiting();
+    const guestUser = await makeUser("Gil");
+    const guest = await addMember(workspace.id, guestUser, "GUEST");
+    await shareProject(workspace.id, guestUser.id, web.project.id);
+    await addComment(guest, issue.id, { body: "guest says hi" });
+    await reportProgress(agentCtx, "WEB-1", { message: "Still waiting" });
+    await flushDeferred();
+    expect(calls).toHaveLength(0);
+    expect((await db.agentRun.findUniqueOrThrow({ where: { id: runId } })).status).toBe("NEEDS_INPUT");
+
+    await reportProgress(agentCtx, "WEB-1", { message: "Back on it", status: "working" });
+    await addComment(ctx, issue.id, { body: "FYI" });
+    await flushDeferred();
+    expect(calls).toHaveLength(0);
   });
 });
 

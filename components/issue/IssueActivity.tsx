@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNowStrict } from "date-fns";
-import { ImagePlus, MessageCircleQuestion, Trash2, X } from "lucide-react";
+import { ExternalLink, ImagePlus, MessageCircleQuestion, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
@@ -13,7 +13,7 @@ import { StatusIcon } from "@/components/icons/StatusIcon";
 import { ActivitySkeleton } from "@/components/loading/skeletons";
 import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
-import { agentKeys, fetchAgentRuns } from "@/lib/api/agents";
+import { type AgentRun, agentKeys, fetchAgentRuns } from "@/lib/api/agents";
 import {
   addComment,
   ATTACHMENT_TYPES,
@@ -294,6 +294,33 @@ function Attachments({ attachments }: { attachments: CommentAttachment[] }) {
   );
 }
 
+/**
+ * A Claude Code run waiting for input: its session stays open (and idle, so
+ * it costs nothing) until the agent's owner answers there.
+ */
+function SessionPrompt({ run, isOwner }: { run: AgentRun; isOwner: boolean }) {
+  const { agent } = run;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-foreground">
+      <MessageCircleQuestion className="size-3.5 shrink-0 text-warning" />
+      <p className="min-w-0 flex-1">
+        {agent.name} needs input.{" "}
+        {isOwner
+          ? "Answer in its Claude session (you can paste images there); it picks up where it left off."
+          : `Only ${agent.owner.name} can answer: the session is in their Claude account. Comments here don’t reach it.`}
+      </p>
+      {run.sessionUrl && isOwner ? (
+        <Button asChild size="xs" variant="outline">
+          <a href={run.sessionUrl} target="_blank" rel="noreferrer">
+            Open session
+            <ExternalLink />
+          </a>
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 /** Images picked or pasted into the composer, previewed before sending. */
 function PendingImages({ files, onRemove }: { files: File[]; onRemove: (index: number) => void }) {
   const urls = useMemo(() => files.map((file) => URL.createObjectURL(file)), [files]);
@@ -341,8 +368,11 @@ export function IssueActivity({
   const fileInput = useRef<HTMLInputElement>(null);
   // Filled by the Agent block in the sidebar; read here only to prompt a reply.
   const runsQuery = useQuery({ queryKey: agentKeys.runs(issueId), queryFn: () => fetchAgentRuns(issueId), enabled: false });
+  const latestRun = runsQuery.data?.[0];
+  const waitingRun = latestRun?.status === "NEEDS_INPUT" ? latestRun : null;
+  // MCP agents get teammates' comments; Claude Code is answered in its session.
   const canResume = useCan("agent.dispatch");
-  const waiting = canResume && runsQuery.data?.[0]?.status === "NEEDS_INPUT" ? runsQuery.data[0].agent : null;
+  const waiting = canResume && waitingRun?.agent.kind === "MCP" ? waitingRun.agent : null;
 
   function addImages(files: File[]) {
     const accepted = files.filter((file) => ATTACHMENT_TYPES.includes(file.type));
@@ -449,6 +479,9 @@ export function IssueActivity({
           )}
         </ol>
       )}
+      {waitingRun?.agent.kind === "CLAUDE_CODE" ? (
+        <SessionPrompt run={waitingRun} isOwner={waitingRun.agent.owner.id === myId} />
+      ) : null}
       {canComment && waiting ? (
         <p className="mt-1 flex items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-foreground">
           <MessageCircleQuestion className="size-3.5 shrink-0 text-warning" />

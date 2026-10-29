@@ -50,7 +50,8 @@ export type AgentRun = {
   dispatchedAt: string | null;
   claimedAt: string | null;
   finishedAt: string | null;
-  agent: { id: string; name: string; kind: AgentKind };
+  /** The owner's Claude account holds a Claude Code session; only they can open it. */
+  agent: { id: string; name: string; kind: AgentKind; owner: { id: string; name: string } };
   requestedBy: { id: string; name: string; image: string | null } | null;
 };
 

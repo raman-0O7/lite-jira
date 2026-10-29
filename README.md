@@ -145,8 +145,9 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   [`docs/features/11-github-app.md`](docs/features/11-github-app.md),
   [`docs/features/15-github-setup.md`](docs/features/15-github-setup.md),
   [`docs/features/16-github-sync-and-replies.md`](docs/features/16-github-sync-and-replies.md).
-- **Comments** take up to 3 images (pasted or attached, ≤ 4 MB in total). A
-  teammate's reply to an agent that asked for input resumes it.
+- **Comments** take up to 3 images (pasted or attached, ≤ 4 MB in total).
+  When Claude Code needs input, the issue links its owner to the Claude
+  session to answer there; MCP agents get teammates' replies by webhook.
 - **Agents**: Settings → Agents adds Claude Code routines (fired with the
   routine's own trigger token; Kanso never handles Claude.ai credentials) or
   self-hosted MCP agents (agent tokens, optional signed webhook). Assigning an

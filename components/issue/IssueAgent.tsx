@@ -63,7 +63,7 @@ export function IssueAgent({ issue, projectId }: { issue: IssueFull; projectId: 
       {latest?.sessionUrl ? (
         <a href={latest.sessionUrl} target="_blank" rel="noreferrer" className={LINK}>
           <Play className="size-3.5 shrink-0 text-icon" />
-          <span className="truncate">Watch session</span>
+          <span className="truncate">{latest.status === "NEEDS_INPUT" ? "Answer in session" : "Watch session"}</span>
           <ExternalLink className="ml-auto size-3 shrink-0 text-muted-foreground" />
         </a>
       ) : null}

@@ -592,7 +592,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
               : "The project has no connected repository: ask with report_progress (status needs_input) which code to change.",
             `Work on a new branch named ${claimed.branch}, push it, and open a pull request that mentions ${claimed.issue.key}.`,
             "Never merge the pull request: a person reviews and merges.",
-            "Use report_progress for updates; status needs_input if you're blocked.",
+            "Use report_progress for updates. If you're blocked, push your work, call it with status needs_input, then wait: the answer comes in your session (Claude Code) or as an issue comment. Call it with status working when you continue.",
             "Comments from your teammates on the issue are instructions for this work; read their images with get_attachment.",
             "If you can't finish, call release_issue with the reason.",
           ],

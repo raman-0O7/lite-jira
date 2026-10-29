@@ -71,7 +71,7 @@ export async function listComments(ctx: Ctx, issueId: string) {
 
 /**
  * Add a comment, optionally with images (already validated by readImages). A
- * teammate's comment while the issue's agent waits for input resumes it.
+ * teammate's comment while an MCP agent waits for input is sent to it.
  */
 export async function addComment(ctx: Ctx, issueId: string, input: unknown, images: UploadedImage[] = []) {
   authorize(ctx, "comment.write");
@@ -106,8 +106,9 @@ export async function addComment(ctx: Ctx, issueId: string, input: unknown, imag
   });
 
   if (ctx.actor.type === "user" && can(ctx, "agent.dispatch")) {
+    // Claude Code is answered in its own session (the run's sessionUrl), not here.
     const waiting = await db.agentRun.findFirst({
-      where: { issueId, status: "NEEDS_INPUT" },
+      where: { issueId, status: "NEEDS_INPUT", agent: { kind: "MCP" } },
       orderBy: { createdAt: "desc" },
       select: { id: true },
     });

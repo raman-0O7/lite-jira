@@ -11,9 +11,9 @@ Four gaps closed:
    new issues and closes on GitHub never arrived.
 3. **The repo was a settings detail.** Connecting a repository meant leaving
    the project for Settings → Integrations.
-4. **An agent that asked a question waited forever.** Claude Code sessions end
-   when they call `report_progress` with `needs_input`; nothing started them
-   again, and people could only answer in text.
+4. **An agent that asked a question had no clear way to get an answer.**
+   Claude Code sessions ended after asking, and people could only answer in
+   text.
 
 Plus a board filter by assignee.
 
@@ -87,35 +87,38 @@ cascade with the comment), so there's no storage service to run.
   `bytes`); the new read-only `get_attachment` returns the image as MCP image
   content so the agent can see it.
 
-## Replies resume the agent
-When a person who can dispatch (members and up, acting as themselves) comments
-on an issue whose latest active run is `NEEDS_INPUT`, `resumeRun` runs after
-the response:
-- **Claude Code:** fire the routine again with
-  `Kanso issue WEB-42 in workspace "acme". Repository: acme/web` and
-  `Resuming: a teammate replied to your question on the issue. Branch: web-42-…`.
-  The reply itself isn't in the fire text; the session reads it with
-  `get_issue` (and `get_attachment`). The run goes back to `DISPATCHED` with
-  the new session URL; the new session's `claim_issue` resumes the same run.
-  If the fire fails, the run fails (claim cleared) so it can be retried.
-- **MCP agents:** a signed `issue.comment` webhook (`issue`, `repository`,
-  `run`, `comment.id`); the run goes back to `RUNNING`.
-- History: "<person> replied, so <agent> picked the issue back up"
-  (`agent.resumed`).
-- The watchdog times `DISPATCHED` runs from `dispatchedAt`, so a resumed run
-  isn't failed for its age.
-- Agents' own comments, guests' comments, and comments while the agent isn't
-  waiting change nothing.
+## Answering an agent
+**Claude Code: answer in its session.** The scheduled task API can only start
+new sessions, so a reply in Kanso can't reach a running one, and starting a new
+session per answer loses the agent's context. Instead the agent asks and waits:
+- The routine prompt and `claim_issue`'s rules say: commit and push, call
+  `report_progress` with `needs_input` saying exactly what's needed, then stop
+  and wait in the session (don't release). When answered, call
+  `report_progress` with `working` and carry on.
+- A session waiting for its user is idle, so waiting costs nothing, for as long
+  as it takes.
+- The issue shows "<agent> needs input" with **Open session** (the run's
+  `sessionUrl`) to the agent's owner: the session lives in their Claude
+  account, so only they can open it. They answer there, images included.
+  Everyone else sees that the owner answers in the session and that comments
+  here don't reach it. The sidebar link reads "Answer in session".
+- `listAgentRuns` returns `agent.owner` so the issue knows who that is.
+- Kanso comments never fire the routine.
 
-The issue shows "<agent> needs your input. Reply below (text or images) and it
-picks the work back up." above the composer while the run waits.
+**MCP agents: answer in a comment.** When a person who can dispatch (members
+and up, acting as themselves) comments while an MCP agent's latest run is
+`NEEDS_INPUT`, `resumeRun` runs after the response: a signed `issue.comment`
+webhook (`issue`, `repository`, `run`, `comment.id`), and the run goes back to
+`RUNNING` with "<person> replied, so <agent> picked the issue back up"
+(`agent.resumed`). Agents' own comments and guests' comments change nothing.
+The issue shows "<agent> needs your input. Reply below (text or images)…"
+above the composer.
 
-**Prompts.** The routine prompt (setup dialog) and `claim_issue`'s rules say
-teammates' comments are instructions for the work, images are read with
-`get_attachment`, and a "Resuming" run picks up from the latest comments and
-the pushed branch. GitHub-imported text stays untrusted.
+**Prompts.** Teammates' comments are instructions for the work, and images
+are read with `get_attachment`. GitHub-imported text stays untrusted. GitHub
+issue comments aren't synced.
 
-Only Kanso comments resume an agent; GitHub issue comments aren't synced.
+The watchdog times `DISPATCHED` runs from `dispatchedAt`.
 
 ## Assignee filter
 The board and list filter bar gains **Assignee**: Unassigned, then each person
@@ -128,6 +131,6 @@ URL as `assignee=user:<id>,agent:<id>,none`.
 - [x] The sync cron needs `CRON_SECRET` and syncs every repo; `vercel.json` schedules it daily.
 - [x] New project can connect a repo; the project header shows it or offers Connect repo.
 - [x] Comment images: type by magic bytes, ≤ 3 and ≤ 4 MB, served only to people who can see the issue; MCP lists and returns them.
-- [x] A teammate's reply to a waiting Claude Code run fires the routine again and the run resumes; MCP agents get `issue.comment`; others change nothing.
+- [x] A waiting Claude Code run points its owner to the session (no new session, no cost while waiting); comments don't fire it. MCP agents get `issue.comment`; guests' and agents' comments change nothing.
 - [x] Assignee filter, kept in the URL.
 - [x] `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` clean.

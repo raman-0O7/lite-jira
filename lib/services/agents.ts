@@ -342,7 +342,7 @@ export async function listAgentRuns(ctx: Ctx, issueId: string) {
       dispatchedAt: true,
       claimedAt: true,
       finishedAt: true,
-      agent: { select: { id: true, name: true, kind: true } },
+      agent: { select: { id: true, name: true, kind: true, owner: { select: { id: true, name: true } } } },
       requestedBy: { select: { id: true, name: true, image: true } },
     },
   });
