@@ -134,9 +134,10 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   Both act as the user, capped by the credential. See
   [`docs/features/10-mcp-server.md`](docs/features/10-mcp-server.md).
 - **GitHub App** (optional): install from Settings → Integrations to import
-  assigned issues, sync status both ways, and link PRs with checks. With no app
-  yet, admins create one there in a few clicks and paste the env values it
-  shows into the host. Setup: [`docs/github-app.md`](docs/github-app.md); specs:
+  assigned issues, sync status both ways, and link PRs with checks. Whoever
+  runs the server registers the app once from that page (the owner:
+  `OWNER_EMAILS`, else the first account) and pastes the env values it shows
+  into the host; after that every workspace just installs it on its own account. Setup: [`docs/github-app.md`](docs/github-app.md); specs:
   [`docs/features/11-github-app.md`](docs/features/11-github-app.md),
   [`docs/features/15-github-setup.md`](docs/features/15-github-setup.md).
 - **Agents**: Settings → Agents adds Claude Code routines (fired with the

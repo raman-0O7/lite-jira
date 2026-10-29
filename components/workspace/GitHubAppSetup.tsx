@@ -57,11 +57,17 @@ export function GitHubAppSetup({ setup }: { setup: { defaultName: string; local:
       }}
     >
       <div>
-        <p className="text-sm font-medium">Create Kanso’s GitHub App</p>
+        <p className="flex items-center gap-2 text-sm font-medium">
+          Set up GitHub for this server
+          <span className="rounded-full bg-chip px-2 py-px text-xs font-normal text-muted-foreground">One time</span>
+        </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Kanso reads issues and pull requests through a GitHub App that you own. GitHub fills in every
-          setting; you only pick a name. Afterwards you’ll install it on the repositories agents should
-          work in.
+          You run this Kanso server, so you register it on GitHub once. Only you see this. Afterwards every
+          workspace, yours included, just clicks Install GitHub App and picks its own GitHub account and
+          repositories.
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          GitHub fills in every setting; you only pick a name.
         </p>
       </div>
 
@@ -202,7 +208,8 @@ export function GitHubAppCreated() {
         <div>
           <h2 className="font-heading text-sm font-semibold">“{app.name}” is created</h2>
           <p className="text-sm text-muted-foreground">
-            Three steps left. Kanso shows these credentials only now and doesn’t keep them.
+            Finish the one-time server setup. Kanso shows these credentials only now and doesn’t keep
+            them. Workspaces never need them: they just install the app.
           </p>
         </div>
       </div>
@@ -210,7 +217,7 @@ export function GitHubAppCreated() {
       <ol className="flex flex-col gap-5 text-sm">
         <li className="flex flex-col gap-2">
           <p>
-            <span className="font-medium">1. Add these to your server’s environment variables.</span>{" "}
+            <span className="font-medium">1. Add these to the server’s environment variables.</span>{" "}
             <span className="text-muted-foreground">
               On Vercel: Project → Settings → Environment Variables, then paste the whole block into the
               first Key field.
@@ -256,8 +263,8 @@ export function GitHubAppCreated() {
         <li>
           <span className="font-medium">3. Install the app.</span>{" "}
           <span className="text-muted-foreground">
-            Back in Settings → Integrations, click Install GitHub App, choose the repositories, then connect
-            each one to a project. Agents work in the repository of the issue’s project.
+            Back in Settings → Integrations, click Install GitHub App, choose your account and repositories,
+            then connect each one to a project. Other workspaces do the same with their own accounts.
           </span>
         </li>
       </ol>

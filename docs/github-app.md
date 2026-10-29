@@ -7,8 +7,12 @@ public webhook URL, so the dev app points at a tunnel.
 
 ## The quick way
 
-On your deployed Kanso, open **Settings → Integrations** as an admin and click
-**Create on GitHub**. GitHub fills in every setting below from a manifest; you
+This is a one-time step for whoever runs the server. Workspaces never do it:
+they only click **Install GitHub App** afterwards.
+
+On your deployed Kanso, open **Settings → Integrations** as the server owner
+(an email in `OWNER_EMAILS`, or the first account created when that's unset)
+and click **Create on GitHub**. GitHub fills in every setting below from a manifest; you
 confirm, come back, and Kanso shows the environment variables once. Add them to
 your host (on Vercel, paste the block into Project → Settings → Environment
 Variables), redeploy, then continue at [4. Use it](#4-use-it). Kanso doesn't

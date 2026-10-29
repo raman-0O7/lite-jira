@@ -74,8 +74,8 @@ export function IntegrationsSettings() {
           <GitHubAppSetup setup={settings.data.setup} />
         ) : (
           <div className="rounded-lg border bg-surface p-4 text-sm text-muted-foreground shadow-card">
-            GitHub isn’t set up on this server yet. A workspace admin can create the GitHub App from this
-            page.
+            GitHub isn’t available on this server yet. Whoever runs this Kanso server sets it up once; then
+            you can install it here on your own GitHub account.
           </div>
         )
       ) : (

@@ -15,6 +15,7 @@ import { actingUserId, type Ctx, userCtx } from "@/lib/services/context";
 import { badRequest, forbidden, notFound, ServiceError } from "@/lib/services/errors";
 import { createImportedIssue, moveIssue } from "@/lib/services/issues";
 import { projectScope } from "@/lib/services/scope";
+import { isServerOwner } from "@/lib/server-owner";
 
 /**
  * The GitHub App integration (docs/features/11-github-app.md): installing the
@@ -89,8 +90,11 @@ export async function getGitHubSettings(ctx: Ctx) {
   return {
     configured,
     canManage,
-    // What the guided app setup needs (admins, before the app exists).
-    setup: !configured && canManage ? { defaultName: defaultAppName(appUrl()), local: isLocalOrigin(appUrl()) } : null,
+    // What the one-time app setup needs: the server owner, before the app exists.
+    setup:
+      !configured && canManage && (await isServerOwner(userId))
+        ? { defaultName: defaultAppName(appUrl()), local: isLocalOrigin(appUrl()) }
+        : null,
     link,
     installations,
   };
@@ -111,12 +115,20 @@ const appSetupSchema = z.object({
   public: z.boolean().default(false),
 });
 
+/** Creating the app is server-wide: its owner only, from a workspace they admin. */
+async function authorizeAppSetup(ctx: Ctx) {
+  authorize(ctx, "integrations.manage");
+  if (!(await isServerOwner(actingUserId(ctx)))) {
+    throw forbidden("Only the person who runs this Kanso server can create its GitHub App");
+  }
+}
+
 /**
  * The manifest form to post to GitHub, which creates a GitHub App with every
- * setting filled in. Admins only, and only while the server has no app.
+ * setting filled in. Once per server, by its owner, while it has no app.
  */
-export function startGitHubAppSetup(ctx: Ctx, slug: string, input: unknown) {
-  authorize(ctx, "integrations.manage");
+export async function startGitHubAppSetup(ctx: Ctx, slug: string, input: unknown) {
+  await authorizeAppSetup(ctx);
   if (githubConfigured()) throw new ServiceError(409, "This server already has a GitHub App");
   const { name, org, public: isPublic } = appSetupSchema.parse(input);
   const origin = appUrl();
@@ -131,12 +143,12 @@ export function startGitHubAppSetup(ctx: Ctx, slug: string, input: unknown) {
 
 /**
  * Trade GitHub's one-time code for the new app's credentials, as environment
- * variables for the operator to add to the server. Shown once; never stored
- * or logged: an app's credentials are instance-wide, so only whoever runs the
- * server can put them to use.
+ * variables for the owner to add to the server. Shown once; never stored or
+ * logged: an app's credentials are server-wide, so only the environment, which
+ * only the owner controls, decides which app the server uses.
  */
 export async function completeGitHubAppSetup(ctx: Ctx, input: unknown) {
-  authorize(ctx, "integrations.manage");
+  await authorizeAppSetup(ctx);
   const { code, state } = z.object({ code: z.string().min(1).max(200), state: z.string().min(1) }).parse(input);
   const signed = verifyState<ManifestState>(state);
   if (signed?.kind !== "manifest" || signed.workspaceId !== ctx.workspaceId || signed.userId !== actingUserId(ctx)) {

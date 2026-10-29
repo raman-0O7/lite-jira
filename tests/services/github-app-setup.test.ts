@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { signState } from "@/lib/crypto";
+import { db } from "@/lib/db";
 import { githubAppConfig } from "@/lib/github/config";
 import { completeGitHubAppSetup, getGitHubSettings, startGitHubAppSetup } from "@/lib/services/github";
 
@@ -30,25 +31,39 @@ afterAll(() => {
 let calls: ReturnType<typeof fakeGitHub>["calls"];
 beforeEach(() => {
   unconfigure();
+  delete process.env.OWNER_EMAILS;
   calls = fakeGitHub().calls;
 });
 
 const userId = (ctx: { actor: unknown }) => (ctx.actor as { userId: string }).userId;
 
 describe("guided GitHub App setup", () => {
-  it("offers admins the setup while the server has no app; members just see it isn't set up", async () => {
+  it("only the server owner (the first account) sees and starts the setup", async () => {
     const { ctx, workspace } = await makeTeam();
     const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
+    const other = await makeTeam("Other", "Olga");
     expect((await getGitHubSettings(ctx)).setup).toEqual({ defaultName: "Kanso localhost:3000", local: true });
     expect((await getGitHubSettings(member)).setup).toBeNull();
-    expect(() => startGitHubAppSetup(member, workspace.slug, { name: "Kanso" })).toThrow(
-      expect.objectContaining({ status: 403 }),
-    );
+    // Admin of their own workspace, but not the server's owner.
+    expect((await getGitHubSettings(other.ctx)).setup).toBeNull();
+    await expectStatus(startGitHubAppSetup(other.ctx, other.workspace.slug, { name: "Kanso" }), 403);
+    await expectStatus(startGitHubAppSetup(member, workspace.slug, { name: "Kanso" }), 403);
+  });
+
+  it("OWNER_EMAILS names the owners instead", async () => {
+    const first = await makeTeam();
+    const other = await makeTeam("Other", "Olga");
+    process.env.OWNER_EMAILS = ` someone@example.test, ${other.user.email.toUpperCase()} `;
+    expect((await getGitHubSettings(first.ctx)).setup).toBeNull();
+    expect((await getGitHubSettings(other.ctx)).setup).not.toBeNull();
+    await startGitHubAppSetup(other.ctx, other.workspace.slug, { name: "Kanso" });
+    await expectStatus(startGitHubAppSetup(first.ctx, first.workspace.slug, { name: "Kanso" }), 403);
+    expect(await db.user.count()).toBe(2);
   });
 
   it("builds a manifest with Kanso's URLs, permissions and events", async () => {
     const { ctx, workspace } = await makeTeam();
-    const { action, manifest } = startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso Acme", org: "acme", public: true });
+    const { action, manifest } = await startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso Acme", org: "acme", public: true });
     const url = new URL(action);
     expect(url.origin + url.pathname).toBe("https://github.com/organizations/acme/settings/apps/new");
     expect(url.searchParams.get("state")).toBeTruthy();
@@ -64,24 +79,22 @@ describe("guided GitHub App setup", () => {
       default_events: ["issues", "pull_request", "check_suite"],
     });
 
-    const personal = new URL(startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso", org: "" }).action);
+    const personal = new URL((await startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso", org: "" })).action);
     expect(personal.pathname).toBe("/settings/apps/new");
-    expect(() => startGitHubAppSetup(ctx, workspace.slug, { name: "x".repeat(35) })).toThrow();
-    expect(() => startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso", org: "../evil" })).toThrow();
+    await expect(startGitHubAppSetup(ctx, workspace.slug, { name: "x".repeat(35) })).rejects.toThrow(/at most 34/);
+    await expect(startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso", org: "../evil" })).rejects.toThrow(/organization/);
   });
 
   it("refuses once the server has an app", async () => {
     const { ctx, workspace } = await makeTeam();
     configureGitHubEnv();
-    expect(() => startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso" })).toThrow(
-      expect.objectContaining({ status: 409 }),
-    );
+    await expectStatus(startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso" }), 409);
     expect((await getGitHubSettings(ctx)).setup).toBeNull();
   });
 
   it("hands the credentials back once as env lines that the config reads", async () => {
     const { ctx, workspace } = await makeTeam();
-    const state = new URL(startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso acme" }).action).searchParams.get("state")!;
+    const state = new URL((await startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso acme" })).action).searchParams.get("state")!;
     const result = await completeGitHubAppSetup(ctx, { code: "manifest-code", state });
     expect(result.app).toEqual({ name: "Kanso acme", slug: "kanso-acme", url: "https://github.com/apps/kanso-acme" });
     expect(result.webhookSecretMissing).toBe(false);
@@ -113,8 +126,8 @@ describe("guided GitHub App setup", () => {
   it("only the admin who started it can finish it, and a used code says so", async () => {
     const { ctx, workspace } = await makeTeam();
     const admin = await addMember(workspace.id, await makeUser("Ad"), "ADMIN");
-    const state = new URL(startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso" }).action).searchParams.get("state")!;
-    await expectStatus(completeGitHubAppSetup(admin, { code: "manifest-code", state }), 400);
+    const state = new URL((await startGitHubAppSetup(ctx, workspace.slug, { name: "Kanso" })).action).searchParams.get("state")!;
+    await expectStatus(completeGitHubAppSetup(admin, { code: "manifest-code", state }), 403);
     const install = signState({ kind: "install", workspaceId: ctx.workspaceId, userId: userId(ctx) });
     await expectStatus(completeGitHubAppSetup(ctx, { code: "manifest-code", state: install }), 400);
     const used = await completeGitHubAppSetup(ctx, { code: "used-code", state }).catch((e: unknown) => e);

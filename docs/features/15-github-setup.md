@@ -14,9 +14,28 @@ Three gaps closed:
    session worked in whatever repo the scheduled task happened to pick.
 3. **Nothing stopped a run with no repo.** Claude Code runs now need one.
 
-## Create the app (manifest flow)
-Settings → Integrations, while the server has no GitHub App, shows admins a
-**Create Kanso's GitHub App** card:
+## Two layers: register once, install per workspace
+- **Register** (once per server, by whoever runs it): create the GitHub App,
+  which gives Kanso its identity on GitHub: an app ID and keys that sign its
+  API calls and webhooks. These are server-wide, so they live in environment
+  variables.
+- **Install** (per workspace, any admin): Install GitHub App, pick their own
+  GitHub account or organization and repositories. Stored in the database
+  (`GitHubInstallation`); no environment changes. Each workspace sees only its
+  own installations.
+
+## Who is the server owner
+`isServerOwner` (`lib/server-owner.ts`): a user whose email is in
+`OWNER_EMAILS` (comma-separated, case-insensitive), or, when that's unset, the
+first account ever created (whoever deployed the server). Only they see the
+registration card and can start or finish it (403 otherwise). Other admins see
+"GitHub isn't available on this server yet. Whoever runs this Kanso server
+sets it up once; then you can install it here on your own GitHub account."
+
+## Register the app (manifest flow)
+Settings → Integrations, while the server has no GitHub App, shows the server
+owner (when they admin that workspace) a **Set up GitHub for this server · One
+time** card:
 - **App name** (default `Kanso <host>`, at most 34 characters; GitHub names are
   global, and GitHub lets you edit it on its form).
 - **Organization** (optional): own the app as an organization you administer.
@@ -41,7 +60,7 @@ with a signed `state` (1 hour, bound to the workspace and admin). The manifest:
 GitHub creates the app and sends the admin to `redirect_url` with a one-time
 `code`. That page posts `{code, state}` to
 `POST /api/workspaces/[slug]/github/app/complete`, which checks the state (same
-workspace, same admin, kind `manifest`), trades the code at
+workspace, same user, kind `manifest`, still the server owner), trades the code at
 `POST /app-manifests/{code}/conversions`, and returns the app's credentials as
 `.env` lines: `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`,
 `GITHUB_APP_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`, and
@@ -50,11 +69,10 @@ it wrapped in quotes). The page shows them once, secrets masked until
 revealed, with **Copy all** and **Download .env**, then: add them to the host
 (Vercel: paste the block into the first Key field), redeploy, install the app.
 
-**Nothing is stored.** An app's credentials are instance-wide: whoever holds
-them receives every installation's webhooks. Storing them from a workspace
-admin's click would let any admin on a shared server take that over, so only
-the operator, by setting environment variables, decides which app the server
-uses. The response is `no-store`; the private key is never logged. A used or
+**Nothing is stored.** An app's credentials are server-wide: whoever holds
+them receives every installation's webhooks. Storing them from a click would
+let anyone who could click take that over, so only the environment, which only
+the owner controls, decides which app the server uses. The response is `no-store`; the private key is never logged. A used or
 expired code says the credentials are shown only once. Once the server has an
 app, starting again is refused (409).
 
@@ -91,7 +109,7 @@ don't need a repository.
 - A note links to the Claude GitHub app for repos Claude can't see yet.
 
 ## Acceptance criteria
-- [x] Admins create the GitHub App from Integrations; members see that it isn't set up.
+- [x] Only the server owner (OWNER_EMAILS, else the first account) registers the app; other admins see that it isn't available yet.
 - [x] The manifest carries Kanso's URLs, permissions and events; org and public options work.
 - [x] Credentials are shown once as env lines the config reads; never stored or logged.
 - [x] Only the admin who started it can finish it; a used code says so; a configured server refuses.

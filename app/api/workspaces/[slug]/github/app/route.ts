@@ -10,5 +10,5 @@ type RouteContext = { params: Promise<{ slug: string }> };
 export const POST = apiRoute(async (request: Request, { params }: RouteContext) => {
   const { slug } = await params;
   const ctx = await ctxForWorkspaceSlug(slug);
-  return NextResponse.json(startGitHubAppSetup(ctx, slug, await readJson(request)));
+  return NextResponse.json(await startGitHubAppSetup(ctx, slug, await readJson(request)));
 });
