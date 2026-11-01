@@ -9,7 +9,7 @@ import { toast } from "sonner";
 
 import { GitHubMark } from "@/components/icons/GitHubMark";
 import { CardSkeleton, InlineLoading } from "@/components/loading/skeletons";
-import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
+import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -230,6 +230,7 @@ function Installation({ installation, canManage }: { installation: GitHubInstall
             {installation.repos.length
               ? `${installation.repos.length} connected ${installation.repos.length === 1 ? "repository" : "repositories"}`
               : "No repositories connected yet"}
+            {installation.connectedBy ? ` · connected by ${installation.connectedBy.name}` : null}
           </p>
         </div>
         {canManage ? (
@@ -261,7 +262,6 @@ function Installation({ installation, canManage }: { installation: GitHubInstall
 
 function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean }) {
   const { slug } = useWorkspace();
-  const canSync = useCan("issue.write");
   const refresh = useRefresh();
   const update = useMutation({
     mutationFn: (patch: Partial<RepoToggles>) => updateRepo(slug, repo.id, patch),
@@ -294,7 +294,7 @@ function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean 
           <span className="font-mono text-xs text-muted-foreground">{repo.project.key}</span> {repo.project.name}
         </span>
         <div className="ml-auto flex items-center gap-1">
-          {canSync ? (
+          {canManage ? (
             <Button variant="ghost" size="sm" loading={sync.isPending} loadingText="Syncing…" onClick={() => sync.mutate()}>
               <RefreshCw />
               Sync now
@@ -315,34 +315,48 @@ function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean 
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
-        <Select
-          value={repo.importIssues}
-          disabled={!canManage || update.isPending}
-          onValueChange={(value) => update.mutate({ importIssues: value as ImportMode })}
-        >
-          <SelectTrigger size="sm" className="text-xs" aria-label={`Which ${repo.repoFullName} issues to import`}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {IMPORT_MODES.map((mode) => (
-              <SelectItem key={mode.value} value={mode.value}>
-                {mode.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {TOGGLES.map((toggle) => (
-          <label key={toggle.key} className="flex items-center gap-2 text-xs text-muted-foreground" title={toggle.hint}>
-            <input
-              type="checkbox"
-              className="size-3.5 accent-primary"
-              checked={repo[toggle.key]}
-              disabled={!canManage || update.isPending}
-              onChange={(event) => update.mutate({ [toggle.key]: event.target.checked })}
-            />
-            <span className="text-foreground">{toggle.label}</span>
-          </label>
-        ))}
+        {canManage ? (
+          <>
+          <Select
+            value={repo.importIssues}
+            disabled={update.isPending}
+            onValueChange={(value) => update.mutate({ importIssues: value as ImportMode })}
+          >
+            <SelectTrigger size="sm" className="text-xs" aria-label={`Which ${repo.repoFullName} issues to import`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {IMPORT_MODES.map((mode) => (
+                <SelectItem key={mode.value} value={mode.value}>
+                  {mode.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {TOGGLES.map((toggle) => (
+            <label key={toggle.key} className="flex items-center gap-2 text-xs text-muted-foreground" title={toggle.hint}>
+              <input
+                type="checkbox"
+                className="size-3.5 accent-primary"
+                checked={repo[toggle.key]}
+                disabled={update.isPending}
+                onChange={(event) => update.mutate({ [toggle.key]: event.target.checked })}
+              />
+              <span className="text-foreground">{toggle.label}</span>
+            </label>
+          ))}
+          </>
+        ) : (
+          // Members see how the repo is set up; admins change it.
+          <span className="text-xs text-muted-foreground">
+            {[
+              IMPORT_MODES.find((mode) => mode.value === repo.importIssues)?.label,
+              ...TOGGLES.filter((toggle) => repo[toggle.key]).map((toggle) => toggle.label),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        )}
         <span className="ml-auto text-xs text-muted-foreground">
           {repo.lastSyncedAt
             ? `Synced ${formatDistanceToNowStrict(new Date(repo.lastSyncedAt), { addSuffix: true })}`
@@ -367,6 +381,7 @@ function ConnectRepoForm({ installation }: { installation: GitHubInstallation })
   });
   const projects = useQuery({ queryKey: projectKeys.lists(slug), queryFn: () => fetchProjects(slug), enabled: open });
   const available = (repos.data ?? []).filter((r) => !r.connected);
+  const chosenPrivate = available.find((r) => r.fullName === repoName)?.private ?? false;
 
   const connect = useMutation({
     mutationFn: () => connectRepo(slug, { installationId: installation.id, repoFullName: repoName, projectId }),
@@ -447,6 +462,12 @@ function ConnectRepoForm({ installation }: { installation: GitHubInstallation })
           Connect
         </Button>
       </div>
+      {chosenPrivate ? (
+        <p className="basis-full text-xs text-muted-foreground">
+          {repoName} is private. Everyone who can see the project will see its imported issues, even without
+          access on GitHub.
+        </p>
+      ) : null}
     </form>
   );
 }

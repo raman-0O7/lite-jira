@@ -50,8 +50,10 @@ export type AgentRun = {
   dispatchedAt: string | null;
   claimedAt: string | null;
   finishedAt: string | null;
-  /** The owner's Claude account holds a Claude Code session; only they can open it. */
+  /** A Claude Code session lives in the Claude account that claimed the run: the runner's, else the owner's. */
   agent: { id: string; name: string; kind: AgentKind; owner: { id: string; name: string } };
+  /** Whose connection claimed the run with its claim code, when not the owner's. */
+  runner: { id: string; name: string } | null;
   requestedBy: { id: string; name: string; image: string | null } | null;
 };
 

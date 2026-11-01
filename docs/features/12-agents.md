@@ -62,7 +62,7 @@ routines run on the owner's claude.ai account.
 - **Claude Code.** `POST {fireUrl}` sends:
   - headers `Authorization: Bearer <token>`, `anthropic-version: 2023-06-01`,
     `anthropic-beta: experimental-cc-routine-2026-04-01`;
-  - body `{text: "Kanso issue WEB-42 in workspace \"acme\". Repository: acme/web"}`
+  - body `{text: "Kanso issue WEB-42 in workspace \"acme\". Repository: acme/web. Claim code: kcc_…"}` (the one-time claim code: see 17-personal-agents.md "Claim codes")
     (the repository: see [15-github-setup.md](15-github-setup.md)).
 
   The fire URL must be `https://api.anthropic.com/v1/claude_code/routines/trig_…/fire`.

@@ -331,7 +331,7 @@ describe("agent tools", () => {
     await addMember(owner.workspace.id, other, "ADMIN");
     const claim = await tool(oauth(other.id), "claim_issue", { key: "WEB-1", workspace: owner.workspace.slug });
     expect(claim.isError).toBe(true);
-    expect(claim.text).toContain("isn't your agent");
+    expect(claim.text).toContain("which isn't yours (this connection is signed in to Kanso as");
     const mine = await tool(oauth(owner.user.id), "claim_issue", { key: "WEB-1", workspace: owner.workspace.slug });
     expect(mine.isError).toBe(false);
   });

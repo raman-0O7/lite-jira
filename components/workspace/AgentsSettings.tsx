@@ -91,21 +91,66 @@ export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
             ) : null}
           </div>
         ) : (
-          <ul className="divide-y rounded-lg border bg-surface shadow-card">
-            {agents.data.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                canManage={canManageAll || (canAdd && agent.owner.id === myId)}
-                mine={agent.owner.id === myId}
-                mcpUrl={mcpUrl}
-              />
-            ))}
-          </ul>
+          <>
+            <AgentList
+              title="Your agents"
+              agents={agents.data.filter((agent) => agent.owner.id === myId)}
+              canManage={canManageAll || canAdd}
+              myId={myId}
+              mcpUrl={mcpUrl}
+              empty={canAdd ? "You haven’t connected an agent yet." : null}
+            />
+            <AgentList
+              // Members see only teammates' shared MCP agents; admins see everyone's.
+              title={canManageAll ? "Other members’ agents" : "Shared agents"}
+              hint={canManageAll ? null : "Self-hosted agents anyone in the workspace can hand work to."}
+              agents={agents.data.filter((agent) => agent.owner.id !== myId)}
+              canManage={canManageAll}
+              myId={myId}
+              mcpUrl={mcpUrl}
+            />
+          </>
         )}
       </section>
 
       {canAdd ? <AgentSetupDialog open={settingUp} onOpenChange={setSettingUp} /> : null}
+    </div>
+  );
+}
+
+function AgentList({
+  title,
+  hint,
+  agents,
+  canManage,
+  myId,
+  mcpUrl,
+  empty = null,
+}: {
+  title: string;
+  hint?: string | null;
+  agents: Agent[];
+  canManage: boolean;
+  myId: string | undefined;
+  mcpUrl: string;
+  empty?: string | null;
+}) {
+  if (!agents.length && !empty) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <div>
+        <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      </div>
+      {agents.length ? (
+        <ul className="divide-y rounded-lg border bg-surface shadow-card">
+          {agents.map((agent) => (
+            <AgentRow key={agent.id} agent={agent} canManage={canManage} mine={agent.owner.id === myId} mcpUrl={mcpUrl} />
+          ))}
+        </ul>
+      ) : (
+        <p className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground">{empty}</p>
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { newClaimCode } from "@/lib/agents/claim-code";
 import { fireRoutine } from "@/lib/agents/claude-code";
 import { type ClaudeCodeConfig, decryptConfig, type McpAgentConfig } from "@/lib/agents/config";
 import { DispatchError } from "@/lib/agents/http";
@@ -37,9 +38,12 @@ export async function dispatchRun(runId: string) {
       // Checked at assign time too; the repo may have been disconnected since.
       if (!repository) throw new DispatchError("The project has no connected GitHub repository");
       const config = decryptConfig<ClaudeCodeConfig>(run.agent.configEnc);
+      // Stored before firing so a fast session can't claim ahead of it.
+      const claim = newClaimCode();
+      await db.agentRun.updateMany({ where: { id: run.id, status: "QUEUED" }, data: { claimCodeHash: claim.hash } });
       const session = await fireRoutine(
         config,
-        `Kanso issue ${key} in workspace "${workspace}". Repository: ${repository.fullName}`,
+        `Kanso issue ${key} in workspace "${workspace}". Repository: ${repository.fullName}. Claim code: ${claim.code}`,
       );
       await db.agentRun.updateMany({
         where: { id: run.id, status: "QUEUED" },

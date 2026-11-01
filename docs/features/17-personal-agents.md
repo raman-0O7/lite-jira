@@ -47,6 +47,47 @@ the person is responsible, the agent works the issue for them.
 - Migration `20261029120000_agent_delegation` gives issues already handed to
   an agent their agent's owner as assignee.
 
+## Claim codes: which connection may work a run
+A Claude Code routine reaches Kanso through the Kanso connector of the Claude
+account it runs in. That connector may be signed in to Kanso as someone other
+than the agent's owner, for example one person with two Kanso accounts and one
+Claude account. So the claim doesn't rely on the connector's identity alone:
+- When Kanso fires a run it creates a **one-time claim code** and adds it to the
+  fire text: `… Repository: acme/web. Claim code: kcc_…`. Only its sha256 is
+  stored (`AgentRun.claimCodeHash`), written before the fire so a fast session
+  can't claim ahead of it.
+- The routine prompt passes it to `claim_issue` (`claimCode`). A matching code
+  on the issue's active run binds the run to the connector's user
+  (`AgentRun.runnerUserId`) and is cleared, so it works once.
+- From then on that user's connection acts **as the agent on behalf of its
+  owner** for this run: `report_progress`, `release_issue`, and the queue
+  (`list_agent_queue` includes runs you're the runner of). History and comments
+  are the agent's, attributed to its owner, never to the runner.
+- When the run ends (done, failed, released, cancelled by a reassignment) the
+  runner's access ends with it. A retry fires a new run with a new code.
+- Without a code, only the owner (OAuth or personal token) or the agent's own
+  token can claim. The refusal names the Kanso user the connection is signed
+  in as, so a mismatch is obvious.
+- Nothing about the assignee rules changes: only the owner starts their Claude
+  Code agent, the owner stays the assignee, and the runner must be a member of
+  the workspace (the connection is scoped to workspaces its user belongs to).
+- The "needs input" prompt names whoever can answer: the runner if there is
+  one (the session is in their Claude account), else the owner.
+
+## What members see in Settings
+- **Agents:** "Your agents", then "Shared agents" (teammates' MCP agents,
+  which anyone can hand work to). A teammate's Claude Code agent is theirs
+  alone, so members don't list it. Admins see "Other members' agents", all of
+  them, to manage. `listAgents` enforces this server-side; the setup dialog's
+  name suggestion uses `claudeNameTaken` from the setup status instead.
+- **Integrations:** the GitHub connection is workspace setup, so every member
+  sees which accounts and repos feed which projects, and who connected each
+  ("connected by Ana"). Only admins see Sync now, Remove, Connect repository,
+  and the import and sync controls; members get a read-only summary.
+  Connecting a private repo warns that everyone who can see the project will
+  see its imported issues. Kanso doesn't check members' repo access: GitHub
+  does, when an agent pushes with its Claude account's access.
+
 ## UI
 - **Assignee menu:** people as before; then **Hand to an agent** listing only
   the agents you can start (your own Claude Code agents and any MCP agent), and
@@ -54,8 +95,9 @@ the person is responsible, the agent works the issue for them.
 - **Cards and list rows** show the person's avatar with the agent's badge
   tucked against it.
 - **Assignee filter:** an issue matches its person and its agent.
-- **Settings → Agents:** every member can add one; each row says "yours" or
-  "Ana's"; only your own (or, for admins, any) have Tokens, Disable, Delete.
+- **Settings → Agents:** every member can add one; your agents come first,
+  then the others you may see (see "What members see in Settings"); only your
+  own (or, for admins, any) have Tokens, Disable, Delete.
 - **Setup dialog:** names a Claude Code agent "Claude", or "Bob's Claude" when
   "Claude" is taken (names stay unique in a workspace). The Get started item
   is "Connect your Claude" and ticks when *you* have an agent.
@@ -63,7 +105,9 @@ the person is responsible, the agent works the issue for them.
   "took Claude off it".
 
 ## Shared Claude accounts
-Several people logging into one Claude account isn't something Kanso supports:
+Claim codes let one person run agents for several of their own Kanso accounts
+from one Claude account. Several people logging into one Claude account isn't
+something Kanso supports or advertises:
 Anthropic's consumer terms forbid sharing an account or making it available to
 anyone else. For a company:
 - **Claude Team or Enterprise:** each member has their own seat with Claude
@@ -80,4 +124,6 @@ anyone else. For a company:
 - [x] Handing to an agent keeps (or sets) the person; No agent keeps the person; a different person stops the agent.
 - [x] Menu lists only startable agents; cards, rows, filter and activity show person and agent.
 - [x] Setup dialog suggests a free name; Get started counts your own agent.
+- [x] A routine whose connector is signed in as another member claims with the run's one-time code and acts as the agent for its owner; the code works once and the access ends with the run.
+- [x] Members list their own agents and shared MCP agents; admins list all. Integrations controls are admin-only; members see a summary and who connected it.
 - [x] `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` clean.

@@ -12,6 +12,7 @@ import {
   encryptConfig,
   type McpAgentConfig,
 } from "@/lib/agents/config";
+import { hashClaimCode } from "@/lib/agents/claim-code";
 import { dispatchRun } from "@/lib/agents/dispatcher";
 import { ACTIVE_RUN, failStaleRuns, recordRunActivity } from "@/lib/agents/lifecycle";
 import { issueRepository } from "@/lib/agents/repo";
@@ -63,10 +64,17 @@ function toAgent(row: AgentRow) {
   };
 }
 
+/**
+ * Admins see every agent. Others see their own and the shared MCP agents: a
+ * teammate's Claude Code agent is theirs alone (only they can start it).
+ */
 export async function listAgents(ctx: Ctx) {
   authorize(ctx, "workspace.read");
+  const scope: Prisma.AgentWhereInput = can(ctx, "agent.manage")
+    ? {}
+    : { OR: [{ ownerUserId: actingUserId(ctx) ?? "" }, { kind: "MCP" }] };
   const rows = await db.agent.findMany({
-    where: { workspaceId: ctx.workspaceId },
+    where: { workspaceId: ctx.workspaceId, ...scope },
     orderBy: { createdAt: "asc" },
     select: agentSelect,
   });
@@ -360,6 +368,7 @@ export async function listAgentRuns(ctx: Ctx, issueId: string) {
       claimedAt: true,
       finishedAt: true,
       agent: { select: { id: true, name: true, kind: true, owner: { select: { id: true, name: true } } } },
+      runner: { select: { id: true, name: true } },
       requestedBy: { select: { id: true, name: true, image: true } },
     },
   });
@@ -401,10 +410,12 @@ async function findAgentIssue(ctx: Ctx, key: string): Promise<AgentIssue> {
 
 /**
  * The Ctx to act as the issue's agent. An agent token must be the assigned
- * agent; a user (OAuth or personal token) must own the assigned agent, and
- * from then on the agent is the actor.
+ * agent; a user (OAuth or personal token) must own the assigned agent, or be
+ * the runner of its active run: the user whose connection claimed it with the
+ * run's one-time claim code (passing `claimCode` binds the run to them). From
+ * then on the agent is the actor, on behalf of its owner.
  */
-function agentCtxFor(ctx: Ctx, issue: AgentIssue): Ctx {
+async function agentCtxFor(ctx: Ctx, issue: AgentIssue, claimCode?: string): Promise<Ctx> {
   const key = formatKey(issue.project.key, issue.number);
   const agent = issue.assigneeAgent;
   if (!agent) throw new ServiceError(409, `${key} isn't assigned to an agent`);
@@ -413,10 +424,27 @@ function agentCtxFor(ctx: Ctx, issue: AgentIssue): Ctx {
     if (ctx.actor.agentId !== agent.id) throw new ServiceError(409, `${key} is assigned to another agent`);
     return ctx;
   }
-  if (ctx.actor.type === "user" && agent.ownerUserId === ctx.actor.userId) {
-    return { ...ctx, actor: { type: "agent", agentId: agent.id, onBehalfOf: ctx.actor.userId } };
+  if (ctx.actor.type !== "user") throw forbidden();
+  const userId = ctx.actor.userId;
+  const asAgent: Ctx = { ...ctx, actor: { type: "agent", agentId: agent.id, onBehalfOf: agent.ownerUserId } };
+  if (agent.ownerUserId === userId) return asAgent;
+
+  const active = { issueId: issue.id, agentId: agent.id, status: { in: ACTIVE_RUN } };
+  if (await db.agentRun.count({ where: { ...active, runnerUserId: userId } })) return asAgent;
+  if (claimCode?.trim()) {
+    // One-time: the code is cleared as the run is bound, so a second use matches nothing.
+    const { count } = await db.agentRun.updateMany({
+      where: { ...active, claimCodeHash: hashClaimCode(claimCode) },
+      data: { claimCodeHash: null, runnerUserId: userId },
+    });
+    if (count) return asAgent;
+    throw new ServiceError(409, `That claim code isn't valid for ${key}'s current run. It works once, while the run is active.`);
   }
-  throw new ServiceError(409, `${key} is assigned to ${agent.name}, which isn't your agent`);
+  const me = await db.user.findUnique({ where: { id: userId }, select: { name: true } });
+  throw new ServiceError(
+    409,
+    `${key} is assigned to ${agent.name}, which isn't yours (this connection is signed in to Kanso as ${me?.name ?? "someone else"}). Pass the claim code from the run's message to claim_issue.`,
+  );
 }
 
 /** Issues assigned to the calling agent (or to the caller's agents) that aren't done. */
@@ -426,7 +454,14 @@ export async function listAgentQueue(ctx: Ctx) {
   const agentFilter: Prisma.IssueWhereInput =
     ctx.actor.type === "agent"
       ? { assigneeAgentId: ctx.actor.agentId }
-      : { assigneeAgent: { ownerUserId: actingUserId(ctx) ?? "", enabled: true } };
+      : {
+          assigneeAgent: { enabled: true },
+          OR: [
+            { assigneeAgent: { ownerUserId: actingUserId(ctx) ?? "" } },
+            // Runs this user's connection claimed with a claim code.
+            { agentRuns: { some: { runnerUserId: actingUserId(ctx) ?? "", status: { in: ACTIVE_RUN } } } },
+          ],
+        };
   const issues = await db.issue.findMany({
     where: { ...agentFilter, project: projectScope(ctx), column: { category: { not: "DONE" } } },
     orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
@@ -456,10 +491,10 @@ export async function listAgentQueue(ctx: Ctx) {
 }
 
 /** Lock the issue to its agent and start (or resume) the run. */
-export async function claimIssue(ctx: Ctx, key: string) {
+export async function claimIssue(ctx: Ctx, key: string, claimCode?: string) {
   authorize(ctx, "issue.write");
   const issue = await findAgentIssue(ctx, key);
-  const agentCtx = agentCtxFor(ctx, issue);
+  const agentCtx = await agentCtxFor(ctx, issue, claimCode);
   const agentId = issue.assigneeAgent!.id;
 
   const run = await db.$transaction(async (tx) => {
@@ -508,7 +543,7 @@ export async function reportProgress(ctx: Ctx, key: string, input: unknown) {
   authorize(ctx, "issue.write");
   const { message, status } = progressSchema.parse(input);
   const issue = await findAgentIssue(ctx, key);
-  const agentCtx = agentCtxFor(ctx, issue);
+  const agentCtx = await agentCtxFor(ctx, issue);
   if (issue.claimedByAgentId !== issue.assigneeAgent!.id) throw new ServiceError(409, `Claim ${key} first`);
 
   const comment = await addComment(agentCtx, issue.id, { body: message });
@@ -532,7 +567,7 @@ export async function releaseIssue(ctx: Ctx, key: string, input: unknown) {
   authorize(ctx, "issue.write");
   const { reason } = z.object({ reason: z.string().trim().max(2000).optional() }).parse(input);
   const issue = await findAgentIssue(ctx, key);
-  const agentCtx = agentCtxFor(ctx, issue);
+  const agentCtx = await agentCtxFor(ctx, issue);
   const agentId = issue.assigneeAgent!.id;
   if (issue.claimedByAgentId !== agentId) throw new ServiceError(409, `${key} isn't claimed by this agent`);
 

@@ -9,6 +9,7 @@ export type SetupStatus = {
   assistant: boolean;
   claudeConnected: boolean;
   repositories: string[];
+  claudeNameTaken: boolean;
 };
 
 export const setupKeys = { status: (slug: string) => ["setup", slug] as const };

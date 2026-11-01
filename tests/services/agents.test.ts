@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { GET as watchdogGET } from "@/app/api/cron/agent-watchdog/route";
+import { hashClaimCode } from "@/lib/agents/claim-code";
 import { ROUTINE_BETA } from "@/lib/agents/claude-code";
 import { setAgentFetch } from "@/lib/agents/http";
 import { failStaleRuns, onPullRequestLinked } from "@/lib/agents/lifecycle";
@@ -102,7 +103,7 @@ async function assigned() {
 }
 
 describe("managing agents", () => {
-  it("members add and manage their own agents; admins manage everyone's; guests only view", async () => {
+  it("members add and manage their own agents; admins manage everyone's; guests can't add", async () => {
     const { ctx, workspace, agent } = await setup();
     const member = await addMember(workspace.id, await makeUser("Mo"), "MEMBER");
     const guest = await addMember(workspace.id, await makeUser("Gil"), "GUEST");
@@ -118,12 +119,14 @@ describe("managing agents", () => {
     await expectStatus(deleteAgent(member, agent.id), 403);
     await expectStatus(createAgentToken(member, agent.id), 403);
     await expectStatus(listAgentTokens(member, agent.id), 403);
-    expect((await listAgents(member)).map((a) => a.name)).toEqual(["Claude", "Mo’s Claude"]);
-    expect((await listAgents(guest)).length).toBe(2);
 
     const admin = await addMember(workspace.id, await makeUser("Ann"), "ADMIN");
     await updateAgent(admin, mine.id, { enabled: true });
     await createAgent(admin, { kind: "MCP", name: "Helper", webhookUrl: null });
+    // Members list their own agents and the shared MCP ones; admins list everyone's.
+    expect((await listAgents(member)).map((a) => a.name)).toEqual(["Mo’s Claude", "Helper"]);
+    expect((await listAgents(guest)).map((a) => a.name)).toEqual(["Helper"]);
+    expect((await listAgents(admin)).map((a) => a.name)).toEqual(["Claude", "Mo’s Claude", "Helper"]);
     await expectStatus(createAgent(ctx, { kind: "MCP", name: "helper", webhookUrl: null }), 409);
     await deleteAgent(admin, mine.id);
   });
@@ -216,12 +219,16 @@ describe("assigning & dispatch", () => {
     expect(headers.Authorization).toBe(`Bearer ${ROUTINE_TOKEN}`);
     expect(headers["anthropic-beta"]).toBe(ROUTINE_BETA);
     expect(headers["anthropic-version"]).toBe("2023-06-01");
-    expect(JSON.parse(String(call!.init.body))).toEqual({
-      text: `Kanso issue WEB-1 in workspace "${workspace.slug}". Repository: acme/web`,
-    });
+    const { text } = JSON.parse(String(call!.init.body)) as { text: string };
+    const prefix = `Kanso issue WEB-1 in workspace "${workspace.slug}". Repository: acme/web. Claim code: `;
+    expect(text.startsWith(prefix)).toBe(true);
+    const code = text.slice(prefix.length);
+    expect(code).toMatch(/^kcc_[A-Za-z0-9_-]{24}$/);
 
     run = await db.agentRun.findUniqueOrThrow({ where: { id: runId! } });
     expect(run).toMatchObject({ status: "DISPATCHED", externalSessionId: "session_01", sessionUrl: "https://claude.ai/code/session_01" });
+    // Only the hash is stored.
+    expect(run.claimCodeHash).toBe(hashClaimCode(code));
 
     // The person stays: whoever's Claude it is, here the owner, taking it from Mo.
     const full = await getIssue(ctx, issue.id);
@@ -441,6 +448,43 @@ describe("claim, progress, release", () => {
     await expectStatus(claimIssue(admin, "WEB-1"), 409);
     const plain = await makeIssue(ctx, web.todo.id, "Nobody's");
     await expectStatus(claimIssue(ctx, `WEB-${plain.number}`), 409);
+  });
+
+  it("a member's connection claims with the run's one-time code and acts as the agent for its owner", async () => {
+    const { ctx, user, workspace, issue, agent, runId } = await assigned();
+    const code = (JSON.parse(String(calls[0]!.init.body)) as { text: string }).text.split("Claim code: ")[1]!;
+    // The routine's Claude account is signed in to Kanso as Ann, not the agent's owner.
+    const ann = await addMember(workspace.id, await makeUser("Ann"), "MEMBER");
+    const bob = await addMember(workspace.id, await makeUser("Bob"), "MEMBER");
+
+    await expect(claimIssue(ann, "WEB-1")).rejects.toThrow(
+      "WEB-1 is assigned to Claude, which isn't yours (this connection is signed in to Kanso as Ann). Pass the claim code from the run's message to claim_issue.",
+    );
+    await expectStatus(claimIssue(ann, "WEB-1", "kcc_wrong"), 409);
+
+    const claimed = await claimIssue(ann, "WEB-1", code);
+    expect(claimed.run).toMatchObject({ id: runId, status: "RUNNING" });
+    const run = await db.agentRun.findUniqueOrThrow({ where: { id: runId } });
+    expect(run).toMatchObject({ runnerUserId: ann.actor.type === "user" ? ann.actor.userId : "", claimCodeHash: null });
+
+    // Bound to Ann: she keeps working without the code; it doesn't work twice.
+    await claimIssue(ann, "WEB-1");
+    expect((await listAgentQueue(ann)).map((i) => i.key)).toEqual(["WEB-1"]);
+    await expectStatus(claimIssue(bob, "WEB-1", code), 409);
+    await expectStatus(reportProgress(bob, "WEB-1", { message: "hi" }), 409);
+
+    // Updates are the agent's, on behalf of its owner; the owner stays the assignee.
+    const { commentId } = await reportProgress(ann, "WEB-1", { message: "On it", status: "working" });
+    expect(await db.comment.findUniqueOrThrow({ where: { id: commentId } })).toMatchObject({ authorAgentId: agent.id });
+    const claimRow = await db.activity.findFirstOrThrow({ where: { issueId: issue.id, action: "agent.claimed" } });
+    expect(claimRow).toMatchObject({ actorUserId: user.id, actorAgentId: agent.id });
+    expect((await getIssue(ctx, issue.id)).assignee?.id).toBe(user.id);
+    expect((await listAgentRuns(ctx, issue.id))[0]!.runner?.name).toBe("Ann");
+
+    // When the run ends, so does Ann's access.
+    await releaseIssue(ann, "WEB-1", { reason: "No access to the repo" });
+    await expectStatus(claimIssue(ann, "WEB-1"), 409);
+    expect(await listAgentQueue(ann)).toEqual([]);
   });
 });
 
