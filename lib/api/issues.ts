@@ -4,7 +4,8 @@
  * updates there and reconcile with these results.
  */
 
-import { request } from "@/lib/api/http";
+import { type CommentAttachment } from "@/lib/api/comments";
+import { parseError, request } from "@/lib/api/http";
 import type {
   AgentStub,
   IssueCard,
@@ -20,6 +21,7 @@ type Related = { id: string; key: string; number: number; title: string; type: I
 export type IssueFull = IssueCard & {
   description: string | null;
   acceptanceCriteria: string | null;
+  attachments: CommentAttachment[];
   projectId: string;
   epicId: string | null;
   assigneeUserId: string | null;
@@ -63,7 +65,19 @@ export type CreateIssuePayload = {
 };
 
 /** Append an issue to a column: a title, or the new-issue dialog's fields. */
-export async function createIssue(columnId: string, input: string | CreateIssuePayload) {
+export async function createIssue(columnId: string, input: string | CreateIssuePayload, images: File[] = []) {
+  if (images.length && typeof input !== "string") {
+    const form = new FormData();
+    form.set("title", input.title);
+    for (const key of ["type", "priority", "description", "assigneeUserId"] as const) {
+      const value = input[key];
+      if (value) form.set(key, value);
+    }
+    for (const image of images) form.append("image", image);
+    const res = await fetch(`/api/columns/${columnId}/issues`, { method: "POST", body: form });
+    if (!res.ok) await parseError(res, "Failed to add issue");
+    return ((await res.json()) as { issue: IssueCard }).issue;
+  }
   const data = await request<{ issue: IssueCard }>(
     `/api/columns/${columnId}/issues`,
     "Failed to add issue",

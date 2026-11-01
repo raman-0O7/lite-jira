@@ -270,6 +270,7 @@ model Issue {
   source             IssueSource       @default(NATIVE)
   labels             Label[]           @relation("IssueLabels")
   comments           Comment[]
+  attachments        Attachment[]
   linksFrom          IssueLink[]       @relation("IssueLinkFrom")
   linksTo            IssueLink[]       @relation("IssueLinkTo")
   githubLink         GitHubIssueLink?
@@ -338,15 +339,22 @@ model Comment {
 // Postgres: small (≤ 4 MB), and no extra storage service to run.
 model Attachment {
   id          String   @id @default(cuid())
-  commentId   String
-  comment     Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  // Exactly one of commentId / issueId is set: an image on a comment, or on
+  // the issue itself (added at creation, or imported from GitHub).
+  commentId   String?
+  comment     Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  issueId     String?
+  issue       Issue?   @relation(fields: [issueId], references: [id], onDelete: Cascade)
   name        String
   contentType String
   size        Int
+  // Where GitHub-synced images were copied from, so a re-sync reuses them.
+  sourceUrl   String?
   data        Bytes
   createdAt   DateTime @default(now())
 
   @@index([commentId])
+  @@index([issueId])
 }
 
 // Scrum projects only. Schema lands in 07; UI in Feature 15.

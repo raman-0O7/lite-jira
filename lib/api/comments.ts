@@ -20,6 +20,19 @@ export const ATTACHMENT_TYPES = ["image/png", "image/jpeg", "image/gif", "image/
 export const MAX_ATTACHMENTS = 3;
 export const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
 
+/** Add picked/pasted/dropped files to those already chosen: the new list, or the reason it can't be. */
+export function mergeImages(current: File[], incoming: File[]): { files: File[]; error?: string; warning?: string } {
+  const accepted = incoming.filter((file) => ATTACHMENT_TYPES.includes(file.type));
+  const warning =
+    accepted.length < incoming.length ? "Only PNG, JPEG, GIF, and WebP images can be attached." : undefined;
+  const files = [...current, ...accepted];
+  if (files.length > MAX_ATTACHMENTS) return { files: current, warning, error: `Attach at most ${MAX_ATTACHMENTS} images.` };
+  if (files.reduce((sum, file) => sum + file.size, 0) > MAX_ATTACHMENT_BYTES) {
+    return { files: current, warning, error: "Images can be at most 4 MB in total." };
+  }
+  return { files, warning };
+}
+
 export const attachmentUrl = (id: string) => `/api/attachments/${id}`;
 
 export async function fetchComments(issueId: string) {

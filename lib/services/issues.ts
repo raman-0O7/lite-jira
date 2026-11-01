@@ -15,6 +15,7 @@ import {
   toCard,
   toFull,
 } from "@/lib/services/issue-shapes";
+import { toAttachmentData, type UploadedImage } from "@/lib/attachments";
 import { projectScope } from "@/lib/services/scope";
 import {
   createIssueSchema,
@@ -109,7 +110,7 @@ export async function getIssueByKey(ctx: Ctx, key: string) {
 }
 
 /** Append an issue to a column. Sub-issues go through createSubIssue. */
-export async function createIssue(ctx: Ctx, columnId: string, input: unknown) {
+export async function createIssue(ctx: Ctx, columnId: string, input: unknown, images: UploadedImage[] = []) {
   authorize(ctx, "issue.write");
   const { title, type, priority, description, assigneeUserId } = createIssueSchema.parse(input);
 
@@ -132,6 +133,7 @@ export async function createIssue(ctx: Ctx, columnId: string, input: unknown) {
         number: await nextNumber(tx, column.projectId),
         position: await nextPosition(tx, columnId),
         reporterUserId: actingUserId(ctx),
+        attachments: { create: images.map(toAttachmentData) },
       },
       select: cardSelect,
     });
@@ -140,7 +142,14 @@ export async function createIssue(ctx: Ctx, columnId: string, input: unknown) {
       action: "issue.created",
       projectId: column.projectId,
       issueId: issue.id,
-      data: { key: card.key, title, type, columnId, ...(assigneeUserId ? { assigneeUserId } : {}) },
+      data: {
+        key: card.key,
+        title,
+        type,
+        columnId,
+        ...(assigneeUserId ? { assigneeUserId } : {}),
+        ...(images.length ? { images: images.length } : {}),
+      },
     });
     return card;
   });
@@ -441,6 +450,8 @@ export async function createImportedIssue(
     description: string | null;
     assigneeUserId: string | null;
     labelIds: string[];
+    /** Images copied from the GitHub issue; ids are pre-chosen so `description` can point at them. */
+    images?: { id: string; image: UploadedImage; sourceUrl: string }[];
     link: { projectRepoId: string; repoFullName: string; number: number; url: string };
   },
 ) {
@@ -464,6 +475,9 @@ export async function createImportedIssue(
           source: "GITHUB",
           labels: { connect: input.labelIds.map((id) => ({ id })) },
           githubLink: { create: input.link },
+          attachments: {
+            create: (input.images ?? []).map(({ id, image, sourceUrl }) => ({ id, sourceUrl, ...toAttachmentData(image) })),
+          },
         },
         select: { id: true, number: true },
       });

@@ -41,13 +41,21 @@ function Shell({
   const { slug } = useWorkspace();
   const ui = useAppUI();
 
+  // Navigating by shortcut closes any open help/palette so the page is usable.
+  function goTo(href: string) {
+    ui.setShortcutsOpen(false);
+    ui.setPaletteOpen(false);
+    router.push(href);
+  }
+
   useHotkeys({
     "mod+k": () => ui.setPaletteOpen(!ui.paletteOpen),
     "?": () => ui.setShortcutsOpen(true),
-    "g m": () => router.push(`/${slug}/my-work`),
-    "g i": () => router.push(`/${slug}/issues`),
-    "g p": () => router.push(`/${slug}/projects`),
-    "g s": () => router.push(`/${slug}/settings/members`),
+    "mod+?": () => ui.setShortcutsOpen(!ui.shortcutsOpen),
+    "g m": () => goTo(`/${slug}/my-work`),
+    "g i": () => goTo(`/${slug}/issues`),
+    "g p": () => goTo(`/${slug}/projects`),
+    "g s": () => goTo(`/${slug}/settings/members`),
     c: () => ui.newIssue?.(),
   });
 
@@ -72,7 +80,16 @@ function Shell({
         </aside>
       </div>
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background md:my-2 md:mr-2 md:rounded-xl md:border md:shadow-panel">
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background md:my-2 md:mr-2 md:rounded-xl md:border md:shadow-panel">
+        <button
+          type="button"
+          onClick={() => ui.setShortcutsOpen(true)}
+          aria-label="Keyboard shortcuts (⌘⇧?)"
+          title="Keyboard shortcuts (⌘⇧?)"
+          className="absolute right-4 bottom-3 z-10 hidden h-5 items-center rounded-[4px] bg-kbd px-1.5 text-[10.5px] font-medium text-muted-foreground hover:text-foreground md:inline-flex"
+        >
+          ?
+        </button>
         {children}
       </main>
 

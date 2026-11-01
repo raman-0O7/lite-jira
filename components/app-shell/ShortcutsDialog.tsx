@@ -10,6 +10,7 @@ const GROUPS: { title: string; items: { keys: string[]; label: string }[] }[] = 
     items: [
       { keys: ["⌘", "K"], label: "Search or run a command" },
       { keys: ["?"], label: "Show keyboard shortcuts" },
+      { keys: ["⌘", "⇧", "?"], label: "Toggle keyboard shortcuts" },
       { keys: ["Esc"], label: "Close panel or dialog" },
     ],
   },
