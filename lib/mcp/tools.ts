@@ -254,6 +254,9 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
         ]);
         return ok({
           ...issueDetail(issue),
+          ...(issue.attachments.length
+            ? { images: issue.attachments.map((a) => ({ id: a.id, name: a.name, type: a.contentType, bytes: a.size })) }
+            : {}),
           comments: comments.map((c) => ({
             author: c.authorAgent?.name ?? c.author?.name ?? (c.authorAgentId ? "Agent" : "Deleted user"),
             at: c.createdAt.toISOString(),
@@ -280,7 +283,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
     "get_attachment",
     {
       title: "Get attachment",
-      description: "An image attached to a comment (ids are listed under a comment's images in get_issue).",
+      description: "An image attached to an issue or a comment (ids are listed under `images` on the issue or on a comment in get_issue).",
       inputSchema: z.object({ workspace, id: z.string().min(1).describe("Attachment id from get_issue") }),
       annotations: READ,
     },

@@ -3,7 +3,9 @@ import { z } from "zod";
 
 import { onPullRequestLinked } from "@/lib/agents/lifecycle";
 import { db } from "@/lib/db";
+import { toAttachmentData } from "@/lib/attachments";
 import { checkSuites, type GhCheckSuite } from "@/lib/github/client";
+import { copyBodyImages } from "@/lib/github/images";
 import { parseKey } from "@/lib/services/issue-shapes";
 import {
   applyGitHubState,
@@ -178,7 +180,23 @@ async function onIssue(payload: z.infer<typeof issuePayload>) {
     const changed = payload.changes ?? {};
     const patch: { title?: string; description?: string | null } = {};
     if ("title" in changed) patch.title = issue.title.trim().slice(0, 200) || `#${issue.number}`;
-    if ("body" in changed) patch.description = issue.body?.slice(0, 10_000) || null;
+    if ("body" in changed) {
+      // Copy the body's images into Kanso (reusing ones copied before).
+      const known = await db.attachment.findMany({
+        where: { issueId: link.issueId, sourceUrl: { not: null } },
+        select: { id: true, name: true, sourceUrl: true },
+      });
+      const { description, images } = await copyBodyImages(
+        issue.body,
+        new Map(known.map((a) => [a.sourceUrl!, { id: a.id, name: a.name }])),
+      );
+      if (images.length) {
+        await db.attachment.createMany({
+          data: images.map(({ id, image, sourceUrl }) => ({ id, sourceUrl, issueId: link.issueId, ...toAttachmentData(image) })),
+        });
+      }
+      patch.description = description?.slice(0, 10_000) || null;
+    }
     if (Object.keys(patch).length) {
       await updateIssue(ctx, link.issueId, patch);
       await db.gitHubIssueLink.update({ where: { id: link.id }, data: { lastSyncedAt: new Date() } });

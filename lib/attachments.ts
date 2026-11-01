@@ -1,13 +1,13 @@
 import { badRequest } from "@/lib/services/errors";
 
 /**
- * Comment images (docs/features/16-github-sync-and-replies.md "Images"). Only
+ * Issue and comment images (docs/features/16-github-sync-and-replies.md "Images"). Only
  * raster formats browsers render safely, identified by their bytes, never by
  * the name or the type the client claims. SVG is excluded: it can carry script.
  */
 
 export const MAX_ATTACHMENTS = 3;
-/** Total per comment: Vercel caps request bodies at 4.5 MB. */
+/** Total per comment or issue: Vercel caps request bodies at 4.5 MB. */
 export const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
 
 export type ImageType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
@@ -42,6 +42,14 @@ export function cleanName(name: string, type: ImageType) {
     .slice(0, 80);
   return `${base || "image"}.${EXTENSION[type]}`;
 }
+
+/** The Prisma create data for an image. */
+export const toAttachmentData = (image: UploadedImage) => ({
+  name: image.name,
+  contentType: image.contentType,
+  size: image.data.length,
+  data: new Uint8Array(image.data),
+});
 
 /** Validate uploaded files into images, or throw a 400 the user can act on. */
 export async function readImages(files: File[]): Promise<UploadedImage[]> {

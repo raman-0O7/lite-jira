@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
+import { getAttachment } from "@/lib/services/comments";
 import { reorderColumns, updateColumn } from "@/lib/services/columns";
 import type { Ctx } from "@/lib/services/context";
 import {
@@ -310,5 +311,37 @@ describe("columns", () => {
     ]) {
       await expectStatus(reorderColumns(ctx, { projectId: project.id, orderedIds }), 400);
     }
+  });
+});
+
+describe("issue images", () => {
+  const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
+  const image = { name: "shot.png", contentType: "image/png" as const, data: PNG };
+
+  it("attaches images at creation and serves them to members of the project", async () => {
+    const { ctx } = await makeOwner();
+    const { todo } = await makeProject(ctx);
+    const card = await createIssue(ctx, todo.id, { title: "With picture" }, [image]);
+
+    const full = await getIssue(ctx, card.id);
+    expect(full.attachments).toEqual([{ id: expect.any(String), name: "shot.png", contentType: "image/png", size: PNG.length }]);
+    const served = await getAttachment(ctx, full.attachments[0]!.id);
+    expect(Buffer.from(served.data).equals(PNG)).toBe(true);
+    expect(await db.activity.findFirst({ where: { issueId: card.id, action: "issue.created" } })).toMatchObject({
+      data: expect.objectContaining({ images: 1 }),
+    });
+  });
+
+  it("hides them from other workspaces and deletes them with the issue", async () => {
+    const { ctx } = await makeOwner();
+    const { todo } = await makeProject(ctx);
+    const card = await createIssue(ctx, todo.id, { title: "Mine" }, [image]);
+    const id = (await getIssue(ctx, card.id)).attachments[0]!.id;
+
+    const outsider = await makeOwner("Outsider");
+    await expectStatus(getAttachment(outsider.ctx, id), 404);
+
+    await deleteIssue(ctx, card.id);
+    expect(await db.attachment.count({ where: { id } })).toBe(0);
   });
 });

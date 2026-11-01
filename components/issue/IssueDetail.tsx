@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { Avatar } from "@/components/icons/Avatar";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { DueDatePicker } from "@/components/issue/DueDatePicker";
-import { ago, IssueActivity, MARKDOWN_CLASS } from "@/components/issue/IssueActivity";
+import { ago, Attachments, IssueActivity, MARKDOWN_CLASS } from "@/components/issue/IssueActivity";
 import { IssueAgent } from "@/components/issue/IssueAgent";
 import {
   AssigneePicker,
@@ -496,6 +496,13 @@ export function IssueDetail({
               onSave={(description) => commit({ description }, {}, { description })}
             />
           </section>
+
+          {issue.attachments.length ? (
+            <section aria-label="Images">
+              <SectionHeading>Images</SectionHeading>
+              <Attachments attachments={issue.attachments} />
+            </section>
+          ) : null}
 
           {issue.acceptanceCriteria || canEdit ? (
             <section aria-label="Acceptance criteria">

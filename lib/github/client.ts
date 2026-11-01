@@ -18,6 +18,9 @@ export function setGitHubFetch(impl: Fetch | null) {
   tokenCache.clear();
 }
 
+/** The swappable fetch, for downloading GitHub-hosted files (images in issue bodies). */
+export const githubFetch: Fetch = (...args) => fetchImpl(...args);
+
 export class GitHubError extends Error {
   constructor(
     readonly status: number,

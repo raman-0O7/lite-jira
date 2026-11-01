@@ -13,6 +13,7 @@ import { authorize, can } from "@/lib/permissions";
 import { recordActivity } from "@/lib/services/activity";
 import { actingUserId, type Ctx, userCtx } from "@/lib/services/context";
 import { badRequest, forbidden, notFound, ServiceError } from "@/lib/services/errors";
+import { copyBodyImages } from "@/lib/github/images";
 import { createImportedIssue, moveIssue } from "@/lib/services/issues";
 import { projectScope } from "@/lib/services/scope";
 import { isServerOwner } from "@/lib/server-owner";
@@ -623,11 +624,13 @@ export async function importGitHubIssue(
   if (linked) return null;
   const column = await firstColumn(repo.projectId, "TODO");
   if (!column) return null;
+  const { description, images } = await copyBodyImages(issue.body);
   return createImportedIssue(ctx, {
     projectId: repo.projectId,
     columnId: column.id,
     title: issue.title,
-    description: issue.body,
+    description,
+    images,
     assigneeUserId,
     labelIds: await ensureLabels(repo.projectId, issue.labels),
     link: { projectRepoId: repo.id, repoFullName: repo.repoFullName, number: issue.number, url: issue.html_url },
