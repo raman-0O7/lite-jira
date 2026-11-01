@@ -84,7 +84,7 @@ function Shell({
           onClick={() => ui.setShortcutsOpen(true)}
           aria-label="Keyboard shortcuts (⌘⇧?)"
           title="Keyboard shortcuts (⌘⇧?)"
-          className="absolute top-3 right-4 z-10 hidden h-5 items-center rounded-[4px] bg-kbd px-1.5 text-[10.5px] font-medium text-muted-foreground hover:text-foreground md:inline-flex"
+          className="absolute right-4 bottom-3 z-10 hidden h-5 items-center rounded-[4px] bg-kbd px-1.5 text-[10.5px] font-medium text-muted-foreground hover:text-foreground md:inline-flex"
         >
           ?
         </button>
