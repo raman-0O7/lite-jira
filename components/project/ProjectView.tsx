@@ -9,7 +9,7 @@ import { toast } from "sonner";
 
 import { PageHeader, PageTitle } from "@/components/app-shell/PageHeader";
 import { ProjectRepos } from "@/components/project/ProjectRepos";
-import { useRegisterNewIssue } from "@/components/app-shell/app-ui";
+import { useAppUI, useRegisterNewIssue } from "@/components/app-shell/app-ui";
 import { AvatarStack } from "@/components/icons/Avatar";
 import { Kbd } from "@/components/icons/Kbd";
 import { ProjectTile } from "@/components/icons/ProjectTile";
@@ -248,12 +248,19 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
   useRegisterNewIssue(project && canEditIssues && columns.length > 0 ? () => startNewIssue() : null);
 
+  const { setShortcutsOpen } = useAppUI();
   const overlayOpen = newIssue.open || addColumnOpen || openIssue !== null;
   useHotkeys(
     {
       "/": () => searchRef.current?.focus(),
-      "g b": () => setView("board"),
-      "g l": () => setView("list"),
+      "g b": () => {
+        setShortcutsOpen(false);
+        setView("board");
+      },
+      "g l": () => {
+        setShortcutsOpen(false);
+        setView("list");
+      },
     },
     !overlayOpen,
   );
