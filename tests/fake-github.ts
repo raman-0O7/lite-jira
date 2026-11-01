@@ -46,6 +46,8 @@ export function fakeGitHub() {
     issues: {} as Record<string, FakeIssue[]>,
     checkSuites: {} as Record<string, { status: string; conclusion: string | null; latest_check_runs_count?: number }[]>,
     failNextPatch: false,
+    /** Files GitHub hosts (issue images), by full URL. A value starting with "redirect:" is a 302. */
+    files: {} as Record<string, Uint8Array | string>,
   };
   const calls: { method: string; path: string; body?: unknown; auth?: string }[] = [];
 
@@ -60,6 +62,13 @@ export function fakeGitHub() {
     const path = url.pathname;
     calls.push({ method, path: path + url.search, body, auth });
 
+    const hosted = state.files[url.href];
+    if (hosted !== undefined) {
+      if (typeof hosted === "string" && hosted.startsWith("redirect:")) {
+        return new Response(null, { status: 302, headers: { Location: hosted.slice("redirect:".length) } });
+      }
+      return new Response(typeof hosted === "string" ? hosted : new Uint8Array(hosted), { status: 200 });
+    }
     if (url.hostname === "github.com" && path === "/login/oauth/access_token") {
       return body?.code === "good-code" ? json({ access_token: "user-token" }) : json({ error_description: "bad code" });
     }

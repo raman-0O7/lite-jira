@@ -1,16 +1,19 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { ImagePlus } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Kbd } from "@/components/icons/Kbd";
 import { ProjectTile } from "@/components/icons/ProjectTile";
+import { PendingImages } from "@/components/issue/IssueActivity";
 import { AssigneePicker, PriorityPicker, StatusPicker, TypePicker } from "@/components/issue/IssueFields";
 import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useAssigneeShortcuts } from "@/components/workspace/AssigneeShortcuts";
+import { ATTACHMENT_TYPES, MAX_ATTACHMENTS, mergeImages } from "@/lib/api/comments";
 import { createIssue } from "@/lib/api/issues";
 import { fetchMembers, memberKeys } from "@/lib/api/members";
 import {
@@ -21,6 +24,7 @@ import {
   projectKeys,
 } from "@/lib/api/projects";
 import { statusVariants } from "@/lib/status";
+import { cn } from "@/lib/utils";
 
 type Draft = {
   title: string;
@@ -92,16 +96,30 @@ function NewIssueForm({
     queryFn: () => fetchMembers(slug),
   });
   const assigneeShortcuts = useAssigneeShortcuts();
+  const [images, setImages] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  function addImages(files: File[]) {
+    const result = mergeImages(images, files);
+    if (result.warning) toast.error(result.warning);
+    if (result.error) toast.error(result.error);
+    else setImages(result.files);
+  }
 
   const create = useMutation({
     mutationFn: ({ columnId: target, ...fields }: Draft & { columnId: string }) =>
-      createIssue(target, {
-        title: fields.title.trim(),
-        description: fields.description.trim() || null,
-        type: fields.type,
-        priority: fields.priority,
-        assigneeUserId: fields.assigneeUserId,
-      }),
+      createIssue(
+        target,
+        {
+          title: fields.title.trim(),
+          description: fields.description.trim() || null,
+          type: fields.type,
+          priority: fields.priority,
+          assigneeUserId: fields.assigneeUserId,
+        },
+        images,
+      ),
     onSuccess: (issue) => {
       queryClient.setQueryData<ProjectDetail>(projectKeys.detail(project.id), (prev) =>
         prev
@@ -143,7 +161,27 @@ function NewIssueForm({
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit(event);
         }}
-        className="flex flex-col"
+        className={cn("relative flex flex-col", dragging && "rounded-lg ring-2 ring-primary/60 ring-inset")}
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes("Files")) return;
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={(event) => {
+          if (!event.dataTransfer.files.length) return;
+          event.preventDefault();
+          setDragging(false);
+          addImages(Array.from(event.dataTransfer.files));
+        }}
+        onPaste={(event) => {
+          const pasted = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+          if (!pasted.length) return;
+          event.preventDefault();
+          addImages(pasted);
+        }}
       >
         <div className="flex items-center gap-2 px-4 pt-3.5 text-xs text-muted-foreground">
           <ProjectTile projectKey={project.key} name={project.name} />
@@ -174,6 +212,10 @@ function NewIssueForm({
             className="w-full resize-none bg-transparent text-sm leading-relaxed text-soft outline-none placeholder:text-muted-foreground"
           />
         </div>
+        {dragging ? (
+          <p className="px-4 pb-2 text-xs text-primary-text">Drop images to attach them to this issue</p>
+        ) : null}
+        <PendingImages files={images} onRemove={(index) => setImages(images.filter((_, i) => i !== index))} />
         <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
           <StatusPicker
             look="pill"
@@ -194,6 +236,28 @@ function NewIssueForm({
           />
         </div>
         <div className="flex items-center justify-end gap-2 border-t px-4 py-2.5">
+          <input
+            ref={fileInput}
+            type="file"
+            accept={ATTACHMENT_TYPES.join(",")}
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              addImages(Array.from(event.target.files ?? []));
+              event.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Attach images"
+            title="Attach images (or drop or paste them)"
+            disabled={images.length >= MAX_ATTACHMENTS}
+            onClick={() => fileInput.current?.click()}
+          >
+            <ImagePlus />
+          </Button>
           <span className="mr-auto hidden items-center gap-1 text-2xs text-muted-foreground sm:flex">
             <Kbd>⌘</Kbd>
             <Kbd>↵</Kbd>

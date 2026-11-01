@@ -22,7 +22,7 @@ import {
   deleteComment,
   fetchComments,
   type IssueComment,
-  MAX_ATTACHMENT_BYTES,
+  mergeImages,
   MAX_ATTACHMENTS,
 } from "@/lib/api/comments";
 import {
@@ -38,7 +38,7 @@ import { ISSUE_TYPE_LABEL, PRIORITY_LABEL } from "@/lib/task-meta";
 
 /** Markdown for comments and descriptions, styled with the app's tokens. */
 export const MARKDOWN_CLASS =
-  "max-w-none break-words text-sm leading-relaxed text-soft [&_a]:text-primary-text [&_a]:underline [&_code]:rounded [&_code]:bg-chip [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.85em] [&_h1]:mt-3 [&_h1]:mb-1 [&_h1]:font-heading [&_h1]:text-base [&_h1]:font-semibold [&_h1]:text-foreground [&_h2]:mt-3 [&_h2]:mb-1 [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:mt-2 [&_h3]:font-semibold [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-field [&_pre]:p-2 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+  "max-w-none break-words text-sm leading-relaxed text-soft [&_a]:text-primary-text [&_a]:underline [&_code]:rounded [&_code]:bg-chip [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.85em] [&_h1]:mt-3 [&_h1]:mb-1 [&_h1]:font-heading [&_h1]:text-base [&_h1]:font-semibold [&_h1]:text-foreground [&_h2]:mt-3 [&_h2]:mb-1 [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:mt-2 [&_h3]:font-semibold [&_img]:my-2 [&_img]:max-h-80 [&_img]:max-w-full [&_img]:rounded-md [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-field [&_pre]:p-2 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
 
 type Change = { from?: unknown; to?: unknown; added?: string[]; removed?: string[] };
 
@@ -272,7 +272,7 @@ function CommentRow({
   );
 }
 
-function Attachments({ attachments }: { attachments: CommentAttachment[] }) {
+export function Attachments({ attachments }: { attachments: CommentAttachment[] }) {
   return (
     <div className="mt-2 flex flex-wrap gap-2">
       {attachments.map((attachment) => (
@@ -327,7 +327,7 @@ function SessionPrompt({ run, canAnswer }: { run: AgentRun; canAnswer: boolean }
 }
 
 /** Images picked or pasted into the composer, previewed before sending. */
-function PendingImages({ files, onRemove }: { files: File[]; onRemove: (index: number) => void }) {
+export function PendingImages({ files, onRemove }: { files: File[]; onRemove: (index: number) => void }) {
   const urls = useMemo(() => files.map((file) => URL.createObjectURL(file)), [files]);
   useEffect(() => () => urls.forEach((url) => URL.revokeObjectURL(url)), [urls]);
   if (!files.length) return null;
@@ -380,18 +380,10 @@ export function IssueActivity({
   const waiting = canResume && waitingRun?.agent.kind === "MCP" ? waitingRun.agent : null;
 
   function addImages(files: File[]) {
-    const accepted = files.filter((file) => ATTACHMENT_TYPES.includes(file.type));
-    if (accepted.length < files.length) toast.error("Only PNG, JPEG, GIF, and WebP images can be attached.");
-    const next = [...images, ...accepted];
-    if (next.length > MAX_ATTACHMENTS) {
-      toast.error(`Attach at most ${MAX_ATTACHMENTS} images.`);
-      return;
-    }
-    if (next.reduce((sum, file) => sum + file.size, 0) > MAX_ATTACHMENT_BYTES) {
-      toast.error("Images can be at most 4 MB in total.");
-      return;
-    }
-    setImages(next);
+    const result = mergeImages(images, files);
+    if (result.warning) toast.error(result.warning);
+    if (result.error) toast.error(result.error);
+    else setImages(result.files);
   }
 
   const commentsQuery = useQuery({

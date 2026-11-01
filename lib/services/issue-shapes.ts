@@ -72,6 +72,10 @@ export const fullSelect = {
   ...cardSelect,
   description: true,
   acceptanceCriteria: true,
+  attachments: {
+    orderBy: { createdAt: "asc" },
+    select: { id: true, name: true, contentType: true, size: true },
+  },
   projectId: true,
   epicId: true,
   assigneeUserId: true,

@@ -1,4 +1,4 @@
-import type { UploadedImage } from "@/lib/attachments";
+import { toAttachmentData, type UploadedImage } from "@/lib/attachments";
 import { resumeRun } from "@/lib/agents/resume";
 import { db } from "@/lib/db";
 import { defer } from "@/lib/defer";
@@ -86,12 +86,7 @@ export async function addComment(ctx: Ctx, issueId: string, input: unknown, imag
         authorUserId: actingUserId(ctx),
         authorAgentId: ctx.actor.type === "agent" ? ctx.actor.agentId : null,
         attachments: {
-          create: images.map((image) => ({
-            name: image.name,
-            contentType: image.contentType,
-            size: image.data.length,
-            data: new Uint8Array(image.data),
-          })),
+          create: images.map(toAttachmentData),
         },
       },
       select: commentSelect,
@@ -117,11 +112,17 @@ export async function addComment(ctx: Ctx, issueId: string, input: unknown, imag
   return comment;
 }
 
-/** An image attached to a comment the caller can see. */
+/** An image attached to an issue or a comment the caller can see. */
 export async function getAttachment(ctx: Ctx, attachmentId: string) {
   authorize(ctx, "project.read");
   const attachment = await db.attachment.findFirst({
-    where: { id: attachmentId, comment: { issue: { project: projectScope(ctx) } } },
+    where: {
+      id: attachmentId,
+      OR: [
+        { issue: { project: projectScope(ctx) } },
+        { comment: { issue: { project: projectScope(ctx) } } },
+      ],
+    },
     select: { id: true, name: true, contentType: true, size: true, data: true },
   });
   if (!attachment) throw notFound("Attachment not found");

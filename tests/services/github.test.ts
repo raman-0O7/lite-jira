@@ -527,3 +527,66 @@ describe("webhook endpoint", () => {
     expect(await db.gitHubInstallation.count()).toBe(0);
   });
 });
+
+describe("images in GitHub issue bodies", () => {
+  const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
+  const ASSET = "https://github.com/user-attachments/assets/aaaa-bbbb";
+  const SIGNED = "https://private-user-images.githubusercontent.com/1/abc.png?jwt=x";
+
+  it("copies them into the issue and points the description at the copy", async () => {
+    const { ctx, installation } = await installedTeam();
+    const { project } = await makeProject(ctx, "Web", "WEB");
+    gh.state.files[ASSET] = `redirect:${SIGNED}`;
+    gh.state.files[SIGNED] = PNG;
+    gh.state.issues["acme/web"] = [
+      { number: 1, title: "Broken", body: `See ![shot](${ASSET}) and ![evil](http://169.254.169.254/x.png)`, state: "open", assignees: [] },
+    ];
+    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id });
+    await flushDeferred();
+
+    const issue = await db.issue.findFirstOrThrow({ where: { title: "Broken" }, include: { attachments: true } });
+    expect(issue.attachments).toHaveLength(1);
+    const [attachment] = issue.attachments;
+    expect(attachment!.contentType).toBe("image/png");
+    expect(attachment!.commentId).toBeNull();
+    expect(issue.description).toBe(`See ![shot](/api/attachments/${attachment!.id}) and ![evil](http://169.254.169.254/x.png)`);
+    expect(gh.calls.some((c) => c.path.includes("169.254"))).toBe(false);
+    expect((await getIssue(ctx, issue.id)).attachments.map((a) => a.id)).toEqual([attachment!.id]);
+  });
+
+  it("skips non-images and redirects that leave GitHub, keeping the original link", async () => {
+    const { ctx, installation } = await installedTeam();
+    const { project } = await makeProject(ctx, "Web", "WEB");
+    gh.state.files[ASSET] = "redirect:https://evil.example.com/x.png";
+    const body = `![x](${ASSET})`;
+    gh.state.issues["acme/web"] = [{ number: 1, title: "Odd", body, state: "open", assignees: [] }];
+    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id });
+    await flushDeferred();
+    const issue = await db.issue.findFirstOrThrow({ where: { title: "Odd" }, include: { attachments: true } });
+    expect(issue.attachments).toHaveLength(0);
+    expect(issue.description).toBe(body);
+  });
+
+  it("an edited body reuses images it already copied", async () => {
+    const { ctx, installation } = await installedTeam();
+    const { project } = await makeProject(ctx, "Web", "WEB");
+    gh.state.files[ASSET] = PNG;
+    gh.state.issues["acme/web"] = [{ number: 1, title: "Edit me", body: `![a](${ASSET})`, state: "open", assignees: [] }];
+    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id });
+    await flushDeferred();
+    const issue = await db.issue.findFirstOrThrow({ where: { title: "Edit me" } });
+
+    const { response } = await deliver("issues", {
+      action: "edited",
+      installation: { id: 77 },
+      repository: { full_name: "acme/web" },
+      changes: { body: { from: "" } },
+      issue: { number: 1, title: "Edit me", body: `edited ![a](${ASSET})`, html_url: "https://github.com/acme/web/issues/1", state: "open" },
+    });
+    expect(response.status).toBe(200);
+    await flushDeferred();
+    const after = await db.issue.findUniqueOrThrow({ where: { id: issue.id }, include: { attachments: true } });
+    expect(after.attachments).toHaveLength(1);
+    expect(after.description).toBe(`edited ![a](/api/attachments/${after.attachments[0]!.id})`);
+  });
+});

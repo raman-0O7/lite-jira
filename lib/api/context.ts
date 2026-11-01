@@ -64,7 +64,16 @@ export const ctxForAttachment = (attachmentId: string) =>
   ctxFor(
     {
       projects: {
-        some: { issues: { some: { comments: { some: { attachments: { some: { id: attachmentId } } } } } } },
+        some: {
+          issues: {
+            some: {
+              OR: [
+                { attachments: { some: { id: attachmentId } } },
+                { comments: { some: { attachments: { some: { id: attachmentId } } } } },
+              ],
+            },
+          },
+        },
       },
     },
     "Attachment not found",
