@@ -32,6 +32,7 @@ import {
   type IssueActivityEntry,
 } from "@/lib/api/issues";
 import type { IssueType, Priority } from "@/lib/api/projects";
+import { type LinkRelation, RELATION_LABEL } from "@/lib/api/work";
 import { useSession } from "@/lib/auth-client";
 import { variantForCategory, type StatusVariant } from "@/lib/status";
 import { ISSUE_TYPE_LABEL, PRIORITY_LABEL } from "@/lib/task-meta";
@@ -110,6 +111,13 @@ function describe(
         created the issue{data.columnId ? <> in {column(data.columnId)}</> : null}
       </>,
     ];
+  }
+  if (entry.action === "issue.linked" || entry.action === "issue.unlinked") {
+    // `relation` is said from this issue's side ("blocked by WEB-3").
+    const relation = typeof data.relation === "string" ? RELATION_LABEL[data.relation as LinkRelation] : undefined;
+    const key = <Strong>{typeof data.key === "string" ? data.key : "an issue"}</Strong>;
+    if (entry.action === "issue.unlinked") return [<>removed the link to {key}</>];
+    return [relation ? <>marked it as {relation.toLowerCase()} {key}</> : <>linked {key}</>];
   }
   if (entry.action === "issue.moved") {
     if (data.fromColumnId === data.toColumnId) return [];

@@ -58,6 +58,7 @@ type CardLike = {
   subIssueCount: number;
   subIssueDoneCount: number;
   column?: { name: string; category: string };
+  blockedBy?: string[];
 };
 
 /** One issue in a list: enough to pick it, not everything. */
@@ -75,6 +76,7 @@ export function issueLine(issue: CardLike) {
     subIssues: issue.subIssueCount
       ? `${issue.subIssueDoneCount}/${issue.subIssueCount} done`
       : undefined,
+    blockedBy: issue.blockedBy?.length ? issue.blockedBy : undefined,
   };
 }
 

@@ -52,6 +52,8 @@ function Shell({
     "mod+k": () => ui.setPaletteOpen(!ui.paletteOpen),
     "?": () => ui.setShortcutsOpen(true),
     "mod+?": () => ui.setShortcutsOpen(!ui.shortcutsOpen),
+    "g m": () => goTo(`/${slug}/my-work`),
+    "g i": () => goTo(`/${slug}/issues`),
     "g p": () => goTo(`/${slug}/projects`),
     "g s": () => goTo(`/${slug}/settings/members`),
     c: () => ui.newIssue?.(),

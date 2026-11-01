@@ -18,6 +18,8 @@ export type ActivityAction =
   | "issue.updated"
   | "issue.moved"
   | "issue.deleted"
+  | "issue.linked"
+  | "issue.unlinked"
   | "label.created"
   | "label.updated"
   | "label.deleted"
@@ -107,6 +109,8 @@ const ISSUE_TIMELINE_ACTIONS = [
   "issue.created",
   "issue.updated",
   "issue.moved",
+  "issue.linked",
+  "issue.unlinked",
   "agent.assigned",
   "agent.claimed",
   "agent.progress",

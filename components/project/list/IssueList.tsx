@@ -7,6 +7,7 @@ import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { PriorityIcon } from "@/components/icons/PriorityIcon";
 import { StatusIcon } from "@/components/icons/StatusIcon";
 import { AssigneeAvatars, cardRunStatus, RunStatusBadge } from "@/components/issue/AgentBadges";
+import { BlockedChip } from "@/components/issue/BlockedChip";
 import { DueDate } from "@/components/issue/DueDate";
 import { LabelChip } from "@/components/issue/LabelChip";
 import { useCan } from "@/components/providers/workspace-provider";
@@ -123,6 +124,7 @@ export function IssueList({
                       <StatusIcon variant={variants.get(column.id) ?? "started"} label={column.name} />
                       <IssueTypeIcon type={issue.type} />
                       <span className="min-w-0 flex-1 truncate font-medium text-foreground">{issue.title}</span>
+                      <BlockedChip blockedBy={issue.blockedBy} />
                       <span className="hidden max-w-[40%] shrink items-center gap-1 overflow-hidden lg:flex">
                         {issue.labels.map((label) => (
                           <LabelChip key={label.id} label={label} />

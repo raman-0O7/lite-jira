@@ -63,6 +63,8 @@ export type IssueCard = {
   // Agents (Feature 12): the assigned agent and its latest run.
   assigneeAgent?: AgentStub | null;
   agentRuns?: AgentRunStub[];
+  /** Keys of open issues that block this one (Feature 22). */
+  blockedBy?: string[];
 };
 
 export type AgentStub = { id: string; name: string; kind: "CLAUDE_CODE" | "MCP" };

@@ -11,11 +11,12 @@ import { assignAgent, createAgent } from "@/lib/services/agents";
 import { createApiToken, ctxForApiToken } from "@/lib/services/api-tokens";
 import { readImages } from "@/lib/attachments";
 import { addComment, listComments } from "@/lib/services/comments";
+import { createSavedFilter } from "@/lib/services/filters";
 import { getIssueByKey } from "@/lib/services/issues";
 import { createLabel } from "@/lib/services/labels";
 import { createWorkspace } from "@/lib/services/workspaces";
 import { addMember, makeTeam, makeUser, shareProject } from "@/tests/factories";
-import { makeIssue, makeProject } from "@/tests/helpers";
+import { expectStatus, makeIssue, makeProject } from "@/tests/helpers";
 
 /**
  * The MCP server end to end (JSON-RPC over the SDK's HTTP handler), minus the
@@ -115,11 +116,13 @@ describe("MCP server", () => {
       "get_issue",
       "get_attachment",
       "get_my_work",
+      "list_saved_filters",
       "create_issue",
       "update_issue",
       "move_issue",
       "create_subtasks",
       "assign_issue",
+      "link_issues",
       "add_comment",
       "list_agent_queue",
       "claim_issue",
@@ -199,6 +202,30 @@ describe("MCP server", () => {
     expect(bulk.data).toMatchObject({ updated: ["WEB-2", "WEB-3"], failed: [] });
     const mine = await tool(principal, "get_my_work");
     expect(mine.data!.issues.map((i: { key: string }) => i.key).sort()).toEqual(["WEB-2", "WEB-3"]);
+  });
+
+  it("links issues, shows blockers, and lists saved filters", async () => {
+    const { owner } = await setup();
+    const principal = await tokenPrincipal(owner.ctx, { name: "w", access: "WRITE" });
+    await tool(principal, "create_issue", { project: "web", title: "API" });
+    await tool(principal, "create_issue", { project: "web", title: "UI" });
+
+    const linked = await tool(principal, "link_issues", { key: "WEB-2", relation: "blocked_by", target: "web-1" });
+    expect(linked.data).toEqual({ key: "WEB-2", relation: "blocked_by", target: "WEB-1", linked: true });
+    const issue = await tool(principal, "get_issue", { key: "WEB-2" });
+    expect(issue.data).toMatchObject({ blockedBy: ["WEB-1"], links: [{ relation: "blocked_by", key: "WEB-1", title: "API" }] });
+    expect((await tool(principal, "search_issues", { query: "is:blocked" })).data!.issues).toHaveLength(1);
+
+    const removed = await tool(principal, "link_issues", { key: "WEB-2", relation: "blocked_by", target: "WEB-1", remove: true });
+    expect(removed.data).toMatchObject({ linked: false });
+    expect((await tool(principal, "get_issue", { key: "WEB-2" })).data!.links).toBeUndefined();
+
+    await createSavedFilter(owner.ctx, { name: "Open", query: "is:open", shared: true });
+    const filters = await tool(principal, "list_saved_filters");
+    expect(filters.data).toEqual({ filters: [{ name: "Open", query: "is:open", shared: true, owner: "Olivia" }] });
+    // Tokens read filters; people save them.
+    const tokenCtx = { ...owner.ctx, via: "api_token" as const, limits: { write: true, projectIds: null } };
+    await expectStatus(createSavedFilter(tokenCtx, { name: "x", query: "is:open" }), 403);
   });
 
   it("explains unknown names with the valid choices and writes nothing", async () => {

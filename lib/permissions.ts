@@ -29,11 +29,14 @@ export type Action =
   | "agent.dispatch"
   | "workspace.update"
   | "workspace.delete"
-  | "token.manage";
+  | "token.manage"
+  | "filter.write"
+  | "filter.share"
+  | "filter.moderate";
 
 // Guests can read and comment (PLAN-v2 §4); they can't change issues. Everyone
-// manages their own API tokens.
-const READ: Action[] = ["workspace.read", "project.read", "comment.write", "token.manage"];
+// manages their own API tokens and saved filters.
+const READ: Action[] = ["workspace.read", "project.read", "comment.write", "token.manage", "filter.write"];
 const WRITE: Action[] = [
   "project.create",
   "project.update",
@@ -44,6 +47,8 @@ const WRITE: Action[] = [
   // those; agent.manage is for everyone's (docs/features/17-personal-agents.md).
   "agent.create",
   "agent.dispatch",
+  // Sharing a saved filter with the workspace (docs/features/22-my-work.md).
+  "filter.share",
 ];
 const ADMIN: Action[] = [
   "project.delete",
@@ -52,6 +57,8 @@ const ADMIN: Action[] = [
   "integrations.manage",
   "agent.manage",
   "workspace.update",
+  // Removing a teammate's shared filter.
+  "filter.moderate",
 ];
 
 const ROLE_ACTIONS: Record<Role, ReadonlySet<Action>> = {
@@ -78,6 +85,10 @@ const AGENT_NEVER: ReadonlySet<Action> = new Set([
   "workspace.delete",
   // A token can't mint or revoke tokens.
   "token.manage",
+  // Saved filters are a person's; tokens read them.
+  "filter.write",
+  "filter.share",
+  "filter.moderate",
 ]);
 
 /** What a read-only credential can still do. */

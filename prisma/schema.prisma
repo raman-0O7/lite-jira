@@ -34,6 +34,7 @@ model User {
   agentsOwned        Agent[]             @relation("AgentOwner")
   agentRunsRequested AgentRun[]          @relation("AgentRunRequester")
   agentRunsRun       AgentRun[]          @relation("AgentRunRunner")
+  savedFilters       SavedFilter[]
 }
 
 model Session {
@@ -94,6 +95,7 @@ model Workspace {
   githubInstallations GitHubInstallation[]
   agents              Agent[]
   agentRuns           AgentRun[]
+  savedFilters        SavedFilter[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 }
@@ -396,6 +398,25 @@ enum IssueLinkType {
   BLOCKS
   RELATES
   DUPLICATES
+}
+
+// ---------- Saved filters (Feature 22) ----------
+
+// A named issue query (the query language). Results always run as the viewer.
+model SavedFilter {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerUserId String
+  owner       User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  name        String
+  query       String
+  shared      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([workspaceId, ownerUserId, name])
+  @@index([workspaceId, shared])
 }
 
 // ---------- API tokens (Feature 10) ----------

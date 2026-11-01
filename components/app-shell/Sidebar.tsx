@@ -1,9 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LayoutGrid, Plus, Search, Settings, X } from "lucide-react";
+import { Filter, Inbox, LayoutGrid, Plus, Search, Settings, Users, X } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
 import { useAppUI } from "@/components/app-shell/app-ui";
 import { UserMenu } from "@/components/app-shell/user-menu";
@@ -13,6 +14,7 @@ import { SidebarProjectsSkeleton } from "@/components/loading/skeletons";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { WorkspaceSwitcher } from "@/components/workspace/WorkspaceSwitcher";
 import { fetchProjects, projectKeys } from "@/lib/api/projects";
+import { fetchSavedFilters, workKeys } from "@/lib/api/work";
 import type { WorkspaceSummary } from "@/lib/api/workspaces";
 import { cn } from "@/lib/utils";
 
@@ -103,6 +105,14 @@ export function Sidebar({
 
       <nav aria-label="Workspace" className="flex flex-col gap-px">
         <NavItem
+          href={`${base}/my-work`}
+          active={pathname === `${base}/my-work`}
+          icon={<Inbox />}
+          onNavigate={onNavigate}
+        >
+          My work
+        </NavItem>
+        <NavItem
           href={`${base}/projects`}
           active={pathname === `${base}/projects`}
           icon={<LayoutGrid />}
@@ -119,6 +129,10 @@ export function Sidebar({
           Settings
         </NavItem>
       </nav>
+
+      <Suspense fallback={null}>
+        <SavedFilters base={base} userId={user.id} onNavigate={onNavigate} />
+      </Suspense>
 
       <section aria-labelledby="sidebar-projects" className="flex min-h-0 flex-1 flex-col gap-1">
         <div className="flex h-6 items-center justify-between pr-1 pl-2">
@@ -162,5 +176,41 @@ export function Sidebar({
 
       <UserMenu user={user} />
     </div>
+  );
+}
+
+/** Your saved filters, then ones teammates shared; hidden until there's one. */
+function SavedFilters({ base, userId, onNavigate }: { base: string; userId: string; onNavigate?: () => void }) {
+  const { slug } = useWorkspace();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const filters = useQuery({ queryKey: workKeys.filters(slug), queryFn: () => fetchSavedFilters(slug) });
+  if (!filters.data?.length) return null;
+  const current = pathname === `${base}/issues` ? searchParams.get("filter") : null;
+
+  return (
+    <section aria-labelledby="sidebar-filters" className="flex max-h-[30%] shrink-0 flex-col gap-1">
+      <h2 id="sidebar-filters" className="flex h-6 items-center pl-2 text-2xs font-medium text-muted-foreground">
+        Filters
+      </h2>
+      <ul className="-mx-1 flex min-h-0 flex-col gap-px overflow-y-auto px-1">
+        {filters.data.map((filter) => {
+          const theirs = filter.owner.id !== userId;
+          return (
+            <li key={filter.id} title={theirs ? `Shared by ${filter.owner.name}` : filter.shared ? "Shared with the workspace" : undefined}>
+              <NavItem
+                href={`${base}/issues?filter=${filter.id}`}
+                active={current === filter.id}
+                icon={filter.shared ? <Users /> : <Filter />}
+                onNavigate={onNavigate}
+              >
+                {filter.name}
+                {theirs ? <span className="ml-1.5 text-2xs font-normal text-muted-foreground">{filter.owner.name}</span> : null}
+              </NavItem>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
