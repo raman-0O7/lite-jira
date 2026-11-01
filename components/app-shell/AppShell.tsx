@@ -44,6 +44,8 @@ function Shell({
   useHotkeys({
     "mod+k": () => ui.setPaletteOpen(!ui.paletteOpen),
     "?": () => ui.setShortcutsOpen(true),
+    "g m": () => router.push(`/${slug}/my-work`),
+    "g i": () => router.push(`/${slug}/issues`),
     "g p": () => router.push(`/${slug}/projects`),
     "g s": () => router.push(`/${slug}/settings/members`),
     c: () => ui.newIssue?.(),

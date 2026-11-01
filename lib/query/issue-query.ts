@@ -21,7 +21,7 @@ export type IssueQuery = {
   assignee: string[];
   type: IssueType[];
   status: ColumnCategory[];
-  is: ("open" | "done")[];
+  is: ("open" | "done" | "blocked")[];
   priority: Priority[];
   label: string[];
   project: string[];
@@ -70,7 +70,7 @@ const PRIORITIES: Record<string, Priority> = {
   high: "HIGH",
   urgent: "URGENT",
 };
-const IS: Record<string, "open" | "done"> = { open: "open", done: "done" };
+const IS: Record<string, "open" | "done" | "blocked"> = { open: "open", done: "done", blocked: "blocked" };
 const DUE: Record<string, DueValue> = {
   overdue: "overdue",
   today: "today",
@@ -170,6 +170,13 @@ export function parseIssueQuery(input: string): IssueQuery {
   return query;
 }
 
+/** Blocked while any issue that blocks it isn't done (docs/features/22-my-work.md "Issue links"). */
+export const OPEN_BLOCKER = {
+  type: "BLOCKS",
+  fromIssue: { archivedAt: null, column: { category: { not: "DONE" } } },
+} satisfies Prisma.IssueLinkWhereInput;
+const BLOCKED: Prisma.IssueWhereInput = { linksTo: { some: OPEN_BLOCKER } };
+
 const startOfDayUtc = (date: Date) =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 const DAY = 24 * 60 * 60 * 1000;
@@ -205,9 +212,10 @@ export function issueQueryToWhere(
   if (query.type.length) and.push({ type: { in: query.type } });
   if (query.status.length) and.push({ column: { category: { in: query.status } } });
   const is = new Set(query.is);
-  if (is.size === 1) {
+  if (is.has("open") !== is.has("done")) {
     and.push({ column: { category: is.has("done") ? "DONE" : { not: "DONE" } } });
   }
+  if (is.has("blocked")) and.push(BLOCKED);
   if (query.priority.length) and.push({ priority: { in: query.priority } });
   anyOf(
     query.label.map((name) => ({

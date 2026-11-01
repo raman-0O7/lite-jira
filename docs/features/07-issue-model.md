@@ -67,6 +67,7 @@ Space-separated terms, all ANDed; commas OR values within a term.
 | `type:bug,story` | issue type |
 | `status:todo` / `in_progress` / `done` | column category |
 | `is:open` / `is:done` | not done / done |
+| `is:blocked` | an issue that blocks it isn't done (feature 22) |
 | `priority:high,urgent` | priority |
 | `label:auth` | label name (case-insensitive) |
 | `project:WEB` | project key |

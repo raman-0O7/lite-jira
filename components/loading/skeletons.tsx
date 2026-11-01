@@ -116,6 +116,28 @@ export function ProjectSkeleton({ view = "board" }: { view?: "board" | "list" })
   );
 }
 
+/** Sections of issue rows across projects (My Work, the issues page) without the page chrome. */
+export function IssueRowsSkeleton({ label }: { label: string }) {
+  return (
+    <Loading label={label} className="flex min-h-0 flex-1 flex-col">
+      <ListRowsSkeleton />
+    </Loading>
+  );
+}
+
+/** My Work and the issues page: toolbar and issue rows. */
+export function WorkPageSkeleton({ label }: { label: string }) {
+  return (
+    <Loading label={label} className="flex min-h-0 flex-1 flex-col">
+      <PageHeaderSkeleton>
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="ml-1 h-7 w-[160px]" />
+      </PageHeaderSkeleton>
+      <ListRowsSkeleton />
+    </Loading>
+  );
+}
+
 function ListRowsSkeleton() {
   return (
     <div className="min-h-0 flex-1 overflow-hidden">

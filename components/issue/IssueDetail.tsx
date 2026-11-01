@@ -23,6 +23,7 @@ import {
 import { LabelChip } from "@/components/issue/LabelChip";
 import { LabelPicker } from "@/components/issue/LabelPicker";
 import { IssueGitHub } from "@/components/issue/IssueGitHub";
+import { IssueLinks } from "@/components/issue/IssueLinks";
 import { SubIssues } from "@/components/issue/SubIssues";
 import { IssueDetailSkeleton } from "@/components/loading/skeletons";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
@@ -514,6 +515,8 @@ export function IssueDetail({
           {issue.type !== "SUBTASK" && issue.type !== "EPIC" ? (
             <SubIssues issue={issue} onOpen={onNavigate} />
           ) : null}
+
+          <IssueLinks issue={issue} onOpen={onNavigate} />
 
           <div className="border-t pt-5">
             <IssueActivity issueId={issue.id} variants={variants} />

@@ -9,6 +9,7 @@ import { GitHubMark } from "@/components/icons/GitHubMark";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { PriorityIcon } from "@/components/icons/PriorityIcon";
 import { AssigneeAvatars, cardRunStatus, RunStatusBadge } from "@/components/issue/AgentBadges";
+import { BlockedChip } from "@/components/issue/BlockedChip";
 import { DueDate } from "@/components/issue/DueDate";
 import { PullRequestBadge } from "@/components/issue/GitHubBadges";
 import { LabelChip } from "@/components/issue/LabelChip";
@@ -41,6 +42,7 @@ export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.
     issue.assignee !== null ||
     Boolean(issue.assigneeAgent) ||
     Boolean(issue.pullRequests?.length) ||
+    Boolean(issue.blockedBy?.length) ||
     issue.source === "GITHUB";
   const runStatus = cardRunStatus(issue.agentRuns);
   return (
@@ -56,6 +58,7 @@ export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.
       <p className="line-clamp-3 font-medium break-words text-foreground">{issue.title}</p>
       {hasMeta ? (
         <div className="flex min-h-5 flex-wrap items-center gap-1.5">
+          <BlockedChip blockedBy={issue.blockedBy} />
           {issue.labels.map((label) => (
             <LabelChip key={label.id} label={label} />
           ))}

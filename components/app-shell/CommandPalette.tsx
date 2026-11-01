@@ -4,7 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
   FolderPlus,
+  Inbox,
   Keyboard,
+  ListFilter,
   LayoutGrid,
   Moon,
   Plus,
@@ -168,6 +170,24 @@ function PaletteBody({ workspaces, close }: { workspaces: WorkspaceSummary[]; cl
     });
   }
   items.push(
+    {
+      id: "nav-my-work",
+      group: "Navigation",
+      label: "Go to my work",
+      keywords: "assigned me inbox mine",
+      icon: <Inbox />,
+      hint: "G M",
+      run: () => go(`${base}/my-work`),
+    },
+    {
+      id: "nav-issues",
+      group: "Navigation",
+      label: "Search issues",
+      keywords: "filter query all issues saved",
+      icon: <ListFilter />,
+      hint: "G I",
+      run: () => go(trimmed ? `${base}/issues?q=${encodeURIComponent(trimmed)}` : `${base}/issues`),
+    },
     {
       id: "nav-projects",
       group: "Navigation",

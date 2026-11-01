@@ -16,6 +16,8 @@ const GROUPS: { title: string; items: { keys: string[]; label: string }[] }[] = 
   {
     title: "Navigation",
     items: [
+      { keys: ["G", "M"], label: "Go to my work" },
+      { keys: ["G", "I"], label: "Go to issues" },
       { keys: ["G", "P"], label: "Go to projects" },
       { keys: ["G", "S"], label: "Go to settings" },
       { keys: ["G", "B"], label: "Board view" },

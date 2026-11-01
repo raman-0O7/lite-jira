@@ -109,7 +109,11 @@ export async function moveIssue(args: {
 
 export type { LabelStub };
 
-export type IssueSearchResult = IssueCard & { project: { id: string; key: string; name: string } };
+export type IssueSearchResult = IssueCard & {
+  project: { id: string; key: string; name: string };
+  column: { name: string; category: "TODO" | "IN_PROGRESS" | "DONE" };
+  updatedAt: string;
+};
 
 /** Search the workspace's issues with the query language (text, keys, `assignee:me`…). */
 export async function searchIssues(workspaceSlug: string, query: string) {
@@ -131,6 +135,8 @@ export type IssueActivityEntry = {
     | "issue.created"
     | "issue.updated"
     | "issue.moved"
+    | "issue.linked"
+    | "issue.unlinked"
     | "agent.assigned"
     | "agent.claimed"
     | "agent.progress"

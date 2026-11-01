@@ -1,5 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
+import { OPEN_BLOCKER } from "@/lib/query/issue-query";
+
 /**
  * Issue keys and the response shapes shared by every endpoint that returns
  * issues (board payload, search, issue detail), so a card looks the same
@@ -42,6 +44,11 @@ export const cardSelect = {
     select: { id: true, repoFullName: true, number: true, url: true, title: true, state: true, checks: true },
   },
   assigneeAgent: { select: { id: true, name: true, kind: true } },
+  // Open blockers make the card "Blocked".
+  linksTo: {
+    where: OPEN_BLOCKER,
+    select: { fromIssue: { select: { number: true, project: { select: { key: true } } } } },
+  },
   // The latest run drives the card's agent badge.
   agentRuns: {
     orderBy: { createdAt: "desc" },
@@ -52,12 +59,13 @@ export const cardSelect = {
 
 type CardRow = Prisma.IssueGetPayload<{ select: typeof cardSelect }>;
 
-export function toCard(projectKey: string, issue: CardRow) {
-  const { subIssues, number, ...rest } = issue;
+export function toCard<T extends CardRow>(projectKey: string, issue: T) {
+  const { subIssues, number, linksTo, ...rest } = issue;
   return {
     ...rest,
     number,
     key: formatKey(projectKey, number),
+    blockedBy: linksTo.map((link) => formatKey(link.fromIssue.project.key, link.fromIssue.number)),
     subIssueCount: subIssues.length,
     subIssueDoneCount: subIssues.filter((s) => s.column.category === "DONE").length,
   };
@@ -103,10 +111,11 @@ export function toFull(issue: FullRow) {
   const projectKey = issue.project.key;
   const related = (r: { id: string; number: number; title: string; type: string } | null) =>
     r && { ...r, key: formatKey(projectKey, r.number) };
-  const { subIssues, ...rest } = issue;
+  const { subIssues, linksTo, ...rest } = issue;
   return {
     ...rest,
     key: formatKey(projectKey, issue.number),
+    blockedBy: linksTo.map((link) => formatKey(link.fromIssue.project.key, link.fromIssue.number)),
     parent: related(issue.parent),
     epic: related(issue.epic),
     subIssueCount: subIssues.length,

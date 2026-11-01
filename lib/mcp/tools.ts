@@ -30,6 +30,8 @@ import {
   moveIssue,
   updateIssue,
 } from "@/lib/services/issues";
+import { listSavedFilters } from "@/lib/services/filters";
+import { addIssueLink, LINK_RELATIONS, listIssueLinks, removeIssueLink } from "@/lib/services/links";
 import { getProfile, listMembers } from "@/lib/services/members";
 import { getProjectWorkflow, listProjects } from "@/lib/services/projects";
 import { searchIssues } from "@/lib/services/search";
@@ -217,7 +219,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
       description: [
         "Search issues with the Kanso query language. Terms are ANDed; commas OR values.",
         "Terms: assignee:me|none|<email>  type:epic,story,task,bug,subtask  status:todo,in_progress,done",
-        "is:open|done  priority:low,medium,high,urgent  label:<name>  project:<KEY>  epic:<KEY-1>",
+        "is:open|done|blocked  priority:low,medium,high,urgent  label:<name>  project:<KEY>  epic:<KEY-1>",
         'parent:<KEY-1>  due:overdue|today|week|none  an issue key  "quoted text"  plain words.',
         'Example: assignee:me is:open type:bug label:auth "login"',
       ].join("\n"),
@@ -248,12 +250,16 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
       run(async () => {
         const ctx = await ctxForCall(principal, args.workspace);
         const issue = await getIssueByKey(ctx, args.key);
-        const [comments, activity] = await Promise.all([
+        const [comments, activity, links] = await Promise.all([
           listComments(ctx, issue.id),
           listIssueActivity(ctx, issue.id),
+          listIssueLinks(ctx, issue.id),
         ]);
         return ok({
           ...issueDetail(issue),
+          links: links.length
+            ? links.map((l) => ({ relation: l.relation, key: l.issue.key, title: l.issue.title, status: l.issue.column.name }))
+            : undefined,
           comments: comments.map((c) => ({
             author: c.authorAgent?.name ?? c.author?.name ?? (c.authorAgentId ? "Agent" : "Deleted user"),
             at: c.createdAt.toISOString(),
@@ -310,6 +316,22 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
         const ctx = await ctxForCall(principal, args.workspace);
         const issues = await searchIssues(ctx, "assignee:me is:open", { limit: 50 });
         return ok({ count: issues.length, issues: issues.sort(byUrgency).map(issueLine) });
+      }),
+  );
+
+  server.registerTool(
+    "list_saved_filters",
+    {
+      title: "List saved filters",
+      description: "Your saved issue filters and the ones teammates shared. Run one with search_issues and its query.",
+      inputSchema: z.object({ workspace }),
+      annotations: READ,
+    },
+    (args) =>
+      run(async () => {
+        const ctx = await ctxForCall(principal, args.workspace);
+        const filters = await listSavedFilters(ctx);
+        return ok({ filters: filters.map((f) => ({ name: f.name, query: f.query, shared: f.shared, owner: f.owner.name })) });
       }),
   );
 
@@ -532,6 +554,38 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
   );
 
   server.registerTool(
+    "link_issues",
+    {
+      title: "Link issues",
+      description:
+        'Link an issue to another, e.g. WEB-3 "blocked_by" WEB-1. relation reads from `key`. Pass remove: true to remove that link instead.',
+      inputSchema: z.object({
+        workspace,
+        key: issueKey,
+        relation: z.enum(LINK_RELATIONS),
+        target: z.string().min(1).describe('The other issue\'s key, e.g. "WEB-1"'),
+        remove: z.boolean().optional(),
+      }),
+      annotations: OVERWRITE,
+      scopeChallenge: challenge,
+    },
+    (args) =>
+      run(async () => {
+        const ctx = await writeCtx(principal, args.workspace);
+        const issue = await getIssueByKey(ctx, args.key);
+        if (!args.remove) {
+          const link = await addIssueLink(ctx, issue.id, { relation: args.relation, target: args.target });
+          return ok({ key: issue.key, relation: link.relation, target: link.issue.key, linked: true });
+        }
+        const target = args.target.trim().toUpperCase();
+        const link = (await listIssueLinks(ctx, issue.id)).find((l) => l.relation === args.relation && l.issue.key === target);
+        if (!link) throw badRequest(`${issue.key} has no "${args.relation}" link to ${target}`);
+        await removeIssueLink(ctx, issue.id, link.id);
+        return ok({ key: issue.key, relation: args.relation, target, linked: false });
+      }),
+  );
+
+  server.registerTool(
     "add_comment",
     {
       title: "Add comment",
@@ -603,6 +657,9 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
             "Use report_progress for updates. If you're blocked, push your work, call it with status needs_input, then wait: the answer comes in your session (Claude Code) or as an issue comment. Call it with status working when you continue.",
             "Comments from your teammates on the issue are instructions for this work; read their images with get_attachment.",
             "If you can't finish, call release_issue with the reason.",
+            ...(claimed.issue.blockedBy.length
+              ? [`Blocked by ${claimed.issue.blockedBy.join(", ")} (not done yet): read them with get_issue first, and ask with report_progress (status needs_input) if they stop you.`]
+              : []),
           ],
         });
       }),
