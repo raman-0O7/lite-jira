@@ -572,15 +572,23 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
     {
       title: "Claim issue (agent)",
       description:
-        "Start work on an issue assigned to your agent: locks it to the agent, marks the run as working, and moves it to In Progress. Returns the issue, the repository and branch to use, and the rules.",
-      inputSchema: z.object({ workspace, key: issueKey }),
+        "Start work on an issue assigned to your agent: locks it to the agent, marks the run as working, and moves it to In Progress. Returns the issue, the repository and branch to use, and the rules. Pass the claim code if the run's message has one.",
+      inputSchema: z.object({
+        workspace,
+        key: issueKey,
+        claimCode: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("The \"Claim code\" from the message that started this run (Claude Code routines)"),
+      }),
       annotations: SET,
       scopeChallenge: challenge,
     },
     (args) =>
       run(async () => {
         const ctx = await writeCtx(principal, args.workspace);
-        const claimed = await claimIssue(ctx, args.key);
+        const claimed = await claimIssue(ctx, args.key, args.claimCode);
         return ok({
           issue: issueDetail(claimed.issue),
           run: claimed.run,

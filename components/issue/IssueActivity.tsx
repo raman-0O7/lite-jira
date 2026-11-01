@@ -301,18 +301,20 @@ function Attachments({ attachments }: { attachments: CommentAttachment[] }) {
  * A Claude Code run waiting for input: its session stays open (and idle, so
  * it costs nothing) until the agent's owner answers there.
  */
-function SessionPrompt({ run, isOwner }: { run: AgentRun; isOwner: boolean }) {
+function SessionPrompt({ run, canAnswer }: { run: AgentRun; canAnswer: boolean }) {
   const { agent } = run;
+  // The session lives in the Claude account that claimed the run: the runner's, else the owner's.
+  const answerer = run.runner ?? agent.owner;
   return (
     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-foreground">
       <MessageCircleQuestion className="size-3.5 shrink-0 text-warning" />
       <p className="min-w-0 flex-1">
         {agent.name} needs input.{" "}
-        {isOwner
+        {canAnswer
           ? "Answer in its Claude session (you can paste images there); it picks up where it left off."
-          : `Only ${agent.owner.name} can answer: the session is in their Claude account. Comments here don’t reach it.`}
+          : `Only ${answerer.name} can answer: the session is in their Claude account. Comments here don’t reach it.`}
       </p>
-      {run.sessionUrl && isOwner ? (
+      {run.sessionUrl && canAnswer ? (
         <Button asChild size="xs" variant="outline">
           <a href={run.sessionUrl} target="_blank" rel="noreferrer">
             Open session
@@ -483,7 +485,7 @@ export function IssueActivity({
         </ol>
       )}
       {waitingRun?.agent.kind === "CLAUDE_CODE" ? (
-        <SessionPrompt run={waitingRun} isOwner={waitingRun.agent.owner.id === myId} />
+        <SessionPrompt run={waitingRun} canAnswer={(waitingRun.runner ?? waitingRun.agent.owner).id === myId} />
       ) : null}
       {canComment && waiting ? (
         <p className="mt-1 flex items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-foreground">

@@ -33,6 +33,7 @@ model User {
   githubLink         GitHubUserLink?
   agentsOwned        Agent[]             @relation("AgentOwner")
   agentRunsRequested AgentRun[]          @relation("AgentRunRequester")
+  agentRunsRun       AgentRun[]          @relation("AgentRunRunner")
 }
 
 model Session {
@@ -758,6 +759,11 @@ model AgentRun {
   agent             Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
   requestedByUserId String?
   requestedBy       User?          @relation("AgentRunRequester", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  /// sha256 of the one-time code sent with the routine fire; cleared once claimed.
+  claimCodeHash     String?        @unique
+  /// The Kanso user whose connection claimed the run with its code (may differ from the agent's owner).
+  runnerUserId      String?
+  runner            User?          @relation("AgentRunRunner", fields: [runnerUserId], references: [id], onDelete: SetNull)
   status            AgentRunStatus @default(QUEUED)
   externalSessionId String?
   sessionUrl        String?

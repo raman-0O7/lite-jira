@@ -72,6 +72,7 @@ export async function getGitHubSettings(ctx: Ctx) {
             accountType: true,
             suspendedAt: true,
             createdAt: true,
+            createdById: true,
             repos: {
               orderBy: { repoFullName: "asc" },
               select: {
@@ -86,6 +87,11 @@ export async function getGitHubSettings(ctx: Ctx) {
             },
           },
         });
+  // Who connected each account: it's workspace setup, so members see it was an admin's doing.
+  const creatorIds = [...new Set(installations.flatMap((i) => (i.createdById ? [i.createdById] : [])))];
+  const creators = creatorIds.length
+    ? await db.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, name: true } })
+    : [];
   const configured = githubConfigured();
   const canManage = can(ctx, "integrations.manage");
   return {
@@ -97,7 +103,10 @@ export async function getGitHubSettings(ctx: Ctx) {
         ? { defaultName: defaultAppName(appUrl()), local: isLocalOrigin(appUrl()) }
         : null,
     link,
-    installations,
+    installations: installations.map(({ createdById, ...installation }) => ({
+      ...installation,
+      connectedBy: creators.find((user) => user.id === createdById) ?? null,
+    })),
   };
 }
 

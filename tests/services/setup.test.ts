@@ -34,6 +34,7 @@ describe("setup status", () => {
       assistant: false,
       claudeConnected: false,
       repositories: [],
+      claudeNameTaken: false,
     });
   });
 
@@ -64,7 +65,7 @@ describe("setup status", () => {
     await createInvite(ctx, { email: "new@example.test", role: "MEMBER" });
     await createAgent(ctx, { kind: "CLAUDE_CODE", name: "Claude", fireUrl: FIRE_URL, token: "sk-ant-routine-token-0123456789" });
     const status = await getSetupStatus(ctx);
-    expect(status).toMatchObject({ projects: true, teammates: true, agents: true });
+    expect(status).toMatchObject({ projects: true, teammates: true, agents: true, claudeNameTaken: true });
   });
 
   it("counts a teammate who joined, not only a pending invite", async () => {

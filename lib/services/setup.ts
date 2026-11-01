@@ -24,7 +24,7 @@ export async function getSetupStatus(ctx: Ctx) {
   authorize(ctx, "workspace.read");
   const userId = actingUserId(ctx) ?? "";
   const now = new Date();
-  const [projects, members, invites, github, agents, tokens, consents, repos] = await Promise.all([
+  const [projects, members, invites, github, agents, tokens, consents, repos, claudeName] = await Promise.all([
     db.project.count({ where: projectScope(ctx) }),
     db.membership.count({ where: { workspaceId: ctx.workspaceId } }),
     db.invite.count({
@@ -51,6 +51,8 @@ export async function getSetupStatus(ctx: Ctx) {
       orderBy: { repoFullName: "asc" },
       select: { repoFullName: true },
     }),
+    // Agent names are unique in a workspace, and members only list their own agents.
+    db.agent.count({ where: { workspaceId: ctx.workspaceId, name: { equals: "Claude", mode: "insensitive" } } }),
   ]);
 
   return {
@@ -66,6 +68,8 @@ export async function getSetupStatus(ctx: Ctx) {
     ),
     // Repos connected to projects the caller sees: what a Claude Code task should clone.
     repositories: repos.map((repo) => repo.repoFullName),
+    // So the setup dialog suggests "Bob’s Claude" instead of a name that's taken.
+    claudeNameTaken: claudeName > 0,
   };
 }
 

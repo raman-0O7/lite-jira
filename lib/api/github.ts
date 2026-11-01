@@ -18,6 +18,8 @@ export type GitHubInstallation = {
   accountType: string;
   suspendedAt: string | null;
   createdAt: string;
+  /** The member who connected the account, if still known. */
+  connectedBy: { id: string; name: string } | null;
   repos: ConnectedRepo[];
 };
 

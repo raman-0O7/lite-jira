@@ -85,7 +85,7 @@ app, starting again is refused (409).
 
 Used by:
 - **Dispatch.** Claude Code fire text:
-  `Kanso issue WEB-42 in workspace "acme". Repository: acme/web`. MCP webhooks
+  `Kanso issue WEB-42 in workspace "acme". Repository: acme/web. Claim code: kcc_…`. MCP webhooks
   get `repository: {fullName, url}` (or null).
 - **claim_issue** returns `repository` and, as its first rule, "Work only in
   acme/web. If you don't have that repository, call release_issue saying so."
