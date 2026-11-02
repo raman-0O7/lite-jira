@@ -85,7 +85,7 @@ routines run on the owner's claude.ai account.
   agents) that aren't done.
 - `claim_issue {key}` locks the issue to the agent and sets the run to
   RUNNING. It moves the issue to In Progress if it was in a To Do column.
-  It returns the issue, a branch name, and the rules. A claim by another
+  It returns the issue, a branch name, the repository (with its `baseBranch`, if one is set in Integrations; the rules then tell the agent to open the PR into it, and the dispatch message adds `Base branch: …`), and the rules. A claim by another
   agent is a 409.
 - `report_progress {key, message, status?: "working"|"needs_input"}` adds a
   comment authored by the agent and updates the run. A `needs_input` Claude

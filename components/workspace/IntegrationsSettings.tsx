@@ -11,6 +11,7 @@ import { GitHubMark } from "@/components/icons/GitHubMark";
 import { CardSkeleton, InlineLoading } from "@/components/loading/skeletons";
 import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GitHubAppSetup } from "@/components/workspace/GitHubAppSetup";
@@ -345,6 +346,24 @@ function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean 
               <span className="text-foreground">{toggle.label}</span>
             </label>
           ))}
+          <label className="flex items-center gap-2 text-xs text-muted-foreground" title="Agents open PRs into this branch; merging into it moves the issue to Done">
+            <span className="text-foreground">Base branch</span>
+            <Input
+              key={repo.baseBranch ?? ""}
+              className="h-7 w-36 text-xs"
+              placeholder="Default branch"
+              defaultValue={repo.baseBranch ?? ""}
+              disabled={update.isPending}
+              aria-label={`Base branch for ${repo.repoFullName}`}
+              onBlur={(event) => {
+                const value = event.target.value.trim();
+                if (value !== (repo.baseBranch ?? "")) update.mutate({ baseBranch: value || null });
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+            />
+          </label>
           </>
         ) : (
           // Members see how the repo is set up; admins change it.
@@ -352,6 +371,7 @@ function RepoRow({ repo, canManage }: { repo: ConnectedRepo; canManage: boolean 
             {[
               IMPORT_MODES.find((mode) => mode.value === repo.importIssues)?.label,
               ...TOGGLES.filter((toggle) => repo[toggle.key]).map((toggle) => toggle.label),
+              repo.baseBranch ? `PRs into ${repo.baseBranch}` : "",
             ]
               .filter(Boolean)
               .join(" · ")}

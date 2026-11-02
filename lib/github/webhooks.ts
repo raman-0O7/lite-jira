@@ -66,6 +66,7 @@ const pullRequestPayload = z.object({
     merged: z.boolean().nullish(),
     merged_at: z.string().nullish(),
     head: z.object({ ref: z.string(), sha: z.string() }),
+    base: z.object({ ref: z.string() }).optional(),
   }),
 });
 
@@ -229,11 +230,13 @@ async function onPullRequest(payload: z.infer<typeof pullRequestPayload>) {
   // Only repositories connected to a project in this workspace.
   const repo = await db.projectRepo.findUnique({
     where: { installationId_repoFullName: { installationId: installation.id, repoFullName } },
-    select: { moveOnMerge: true },
+    select: { moveOnMerge: true, baseBranch: true },
   });
   if (!repo) return;
 
   const pr = payload.pull_request;
+  // With a base branch set, only a merge into it counts as "merged".
+  const intoBase = !repo.baseBranch || pr.base?.ref === repo.baseBranch;
   const state: PullRequestState = pr.merged ? "MERGED" : pr.state === "closed" ? "CLOSED" : "OPEN";
   const ctx = githubCtx(installation);
 
@@ -265,7 +268,7 @@ async function onPullRequest(payload: z.infer<typeof pullRequestPayload>) {
 
     await onPullRequestLinked(ctx, issue.id, link);
 
-    if (state === "MERGED" && repo.moveOnMerge) {
+    if (state === "MERGED" && repo.moveOnMerge && intoBase) {
       await moveToCategory(ctx, issue.id, "DONE");
     }
   }

@@ -1,6 +1,7 @@
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { db } from "@/lib/db";
 import { flushDeferred } from "@/lib/defer";
 import { MCP_SCOPES } from "@/lib/mcp/config";
 import type { McpPrincipal } from "@/lib/mcp/principal";
@@ -346,6 +347,31 @@ describe("agent tools", () => {
     // Still assigned, so the agent can pick it up again (a new run).
     const again = await tool(principal, "claim_issue", { key: "WEB-1" });
     expect(again.data).toMatchObject({ run: { status: "RUNNING" } });
+  });
+
+  it("claim_issue rules name the base branch only when one is set", async () => {
+    const { owner, web } = await setup();
+    const { agent, secrets } = await createAgent(owner.ctx, { kind: "MCP", name: "Bot", webhookUrl: null });
+    const installation = await db.gitHubInstallation.create({
+      data: { workspaceId: owner.ctx.workspaceId, installationId: 77, accountLogin: "acme", accountType: "Organization" },
+    });
+    const repo = await db.projectRepo.create({
+      data: { projectId: web.project.id, installationId: installation.id, repoFullName: "acme/web" },
+    });
+    const issue = await makeIssue(owner.ctx, web.todo.id, "Fix login");
+    await assignAgent(owner.ctx, issue.id, { agentId: agent.id });
+    await flushDeferred();
+    const principal: McpPrincipal = { kind: "api_token", ctx: (await ctxForApiToken(secrets.token!))! };
+
+    const plain = await tool(principal, "claim_issue", { key: "WEB-1" });
+    expect(plain.text).toContain("open a pull request that mentions WEB-1");
+    expect(plain.text).not.toContain("into `");
+
+    await tool(principal, "release_issue", { key: "WEB-1", reason: "again" });
+    await db.projectRepo.update({ where: { id: repo.id }, data: { baseBranch: "development" } });
+    const based = await tool(principal, "claim_issue", { key: "WEB-1" });
+    expect(based.text).toContain("open a pull request into `development`");
+    expect(based.data).toMatchObject({ repository: { baseBranch: "development" } });
   });
 
   it("an OAuth user can't claim an issue assigned to someone else's agent", async () => {

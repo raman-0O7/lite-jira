@@ -2,7 +2,7 @@ import { request } from "@/lib/api/http";
 
 export type ImportMode = "ALL" | "ASSIGNED" | "OFF";
 
-export type RepoToggles = { importIssues: ImportMode; statusSync: boolean; moveOnMerge: boolean };
+export type RepoToggles = { importIssues: ImportMode; statusSync: boolean; moveOnMerge: boolean; baseBranch: string | null };
 
 export type ConnectedRepo = RepoToggles & {
   id: string;
