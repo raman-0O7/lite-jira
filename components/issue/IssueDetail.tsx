@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronDown, IterationCcw, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
@@ -25,6 +25,7 @@ import { LabelPicker } from "@/components/issue/LabelPicker";
 import { IssueGitHub } from "@/components/issue/IssueGitHub";
 import { IssueLinks } from "@/components/issue/IssueLinks";
 import { SubIssues } from "@/components/issue/SubIssues";
+import { MoveToSprintMenu } from "@/components/sprints/sprint-ui";
 import { IssueDetailSkeleton } from "@/components/loading/skeletons";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
@@ -622,6 +623,34 @@ export function IssueDetail({
               disabled={!canEdit}
             />
           </PropertyRow>
+          {issue.project.mode === "SCRUM" && issue.type !== "EPIC" && issue.type !== "SUBTASK" ? (
+            <PropertyRow label="Sprint">
+              <MoveToSprintMenu
+                projectId={issue.projectId}
+                issueId={issue.id}
+                currentSprintId={issue.sprint?.id ?? null}
+                disabled={!canEdit}
+                trigger={
+                  <button
+                    type="button"
+                    aria-label="Sprint"
+                    className="group/picker flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:hover:bg-transparent data-[state=open]:bg-accent [&_svg]:shrink-0"
+                  >
+                    <IterationCcw className="size-3.5 text-muted-foreground" />
+                    {issue.sprint ? (
+                      <span className="truncate">
+                        {issue.sprint.name}
+                        {issue.sprint.state === "ACTIVE" ? <span className="text-muted-foreground"> · active</span> : null}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Backlog</span>
+                    )}
+                    <ChevronDown className="ml-auto size-3.5 text-muted-foreground opacity-0 group-hover/picker:opacity-100 group-disabled/picker:hidden" />
+                  </button>
+                }
+              />
+            </PropertyRow>
+          ) : null}
           {issue.type !== "EPIC" && issue.type !== "SUBTASK" ? (
             <PropertyRow label="Epic">
               <EpicPicker

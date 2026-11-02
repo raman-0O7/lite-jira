@@ -13,6 +13,8 @@ import type {
   LabelStub,
   PersonStub,
   Priority,
+  ProjectMode,
+  SprintState,
 } from "@/lib/api/projects";
 
 type Related = { id: string; key: string; number: number; title: string; type: IssueType };
@@ -28,8 +30,9 @@ export type IssueFull = IssueCard & {
   source: "NATIVE" | "GITHUB";
   createdAt: string;
   updatedAt: string;
-  project: { key: string; name: string };
+  project: { key: string; name: string; mode?: ProjectMode };
   column: { id: string; name: string; category: "TODO" | "IN_PROGRESS" | "DONE" };
+  sprint?: { id: string; name: string; state: SprintState } | null;
   reporter: PersonStub | null;
   parent: Related | null;
   epic: Related | null;
@@ -54,6 +57,7 @@ export type UpdateIssuePayload = {
   labelIds?: string[];
   assigneeUserId?: string | null;
   epicId?: string | null;
+  sprintId?: string | null;
 };
 
 export type CreateIssuePayload = {
@@ -62,6 +66,7 @@ export type CreateIssuePayload = {
   priority?: Priority;
   description?: string | null;
   assigneeUserId?: string | null;
+  sprintId?: string | null;
 };
 
 /** Append an issue to a column: a title, or the new-issue dialog's fields. */
@@ -69,7 +74,7 @@ export async function createIssue(columnId: string, input: string | CreateIssueP
   if (images.length && typeof input !== "string") {
     const form = new FormData();
     form.set("title", input.title);
-    for (const key of ["type", "priority", "description", "assigneeUserId"] as const) {
+    for (const key of ["type", "priority", "description", "assigneeUserId", "sprintId"] as const) {
       const value = input[key];
       if (value) form.set(key, value);
     }
@@ -175,6 +180,7 @@ export type IssueActivity = {
     labels: Record<string, LabelStub>;
     issues: Record<string, { id: string; key: string; title: string }>;
     agents: Record<string, AgentStub>;
+    sprints?: Record<string, { id: string; name: string }>;
   };
 };
 

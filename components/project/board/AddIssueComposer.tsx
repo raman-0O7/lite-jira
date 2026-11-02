@@ -13,13 +13,22 @@ import { type ColumnWithIssues, type ProjectDetail, projectKeys } from "@/lib/ap
  * Quick add at the bottom of a column: a ghost "Add issue" that expands into
  * a title field. Enter adds and keeps it open for the next one; Esc closes.
  */
-export function AddIssueComposer({ columnId, projectId }: { columnId: string; projectId: string }) {
+export function AddIssueComposer({
+  columnId,
+  projectId,
+  sprintId = null,
+}: {
+  columnId: string;
+  projectId: string;
+  /** Scrum boards add to the active sprint. */
+  sprintId?: string | null;
+}) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
 
   const create = useMutation({
-    mutationFn: (value: string) => createIssue(columnId, value),
+    mutationFn: (value: string) => createIssue(columnId, sprintId ? { title: value, sprintId } : value),
     onSuccess: (issue) => {
       queryClient.setQueryData<ProjectDetail>(projectKeys.detail(projectId), (prev) =>
         prev

@@ -42,6 +42,7 @@ type Draft = {
 export function NewIssueDialog({
   project,
   columnId,
+  sprintId = null,
   open,
   onOpenChange,
   onCreated,
@@ -49,6 +50,8 @@ export function NewIssueDialog({
   project: ProjectDetail;
   /** The status to start in; defaults to the first column. */
   columnId: string | null;
+  /** Scrum projects: the sprint it starts in (null → the backlog). */
+  sprintId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: (issue: IssueCard) => void;
@@ -60,6 +63,7 @@ export function NewIssueDialog({
           <NewIssueForm
             project={project}
             columnId={columnId}
+            sprintId={sprintId}
             close={() => onOpenChange(false)}
             onCreated={onCreated}
           />
@@ -72,11 +76,13 @@ export function NewIssueDialog({
 function NewIssueForm({
   project,
   columnId,
+  sprintId,
   close,
   onCreated,
 }: {
   project: ProjectDetail;
   columnId: string | null;
+  sprintId: string | null;
   close: () => void;
   onCreated?: (issue: IssueCard) => void;
 }) {
@@ -117,6 +123,7 @@ function NewIssueForm({
           type: fields.type,
           priority: fields.priority,
           assigneeUserId: fields.assigneeUserId,
+          ...(sprintId ? { sprintId } : {}),
         },
         images,
       ),
@@ -131,6 +138,7 @@ function NewIssueForm({
             }
           : prev,
       );
+      if (project.mode === "SCRUM") queryClient.invalidateQueries({ queryKey: ["sprints", project.id] });
       close();
       toast.success(`${issue.key} created`, {
         action: onCreated ? { label: "Open", onClick: () => onCreated(issue) } : undefined,

@@ -173,6 +173,13 @@ function describe(
         parts.push(value.to ? <>added it to epic <Strong>{epic?.key ?? "a deleted epic"}</Strong></> : <>removed it from its epic</>);
         break;
       }
+      case "sprintId": {
+        const sprint = typeof value.to === "string" ? refs.sprints?.[value.to] : undefined;
+        parts.push(
+          value.to ? <>moved it to <Strong>{sprint?.name ?? "a deleted sprint"}</Strong></> : <>moved it to the backlog</>,
+        );
+        break;
+      }
       case "description":
         parts.push(<>updated the description</>);
         break;

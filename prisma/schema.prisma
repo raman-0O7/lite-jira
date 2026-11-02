@@ -357,21 +357,30 @@ model Attachment {
   @@index([issueId])
 }
 
-// Scrum projects only. Schema lands in 07; UI in Feature 15.
+// Scrum projects only (docs/features/21-sprints.md).
 model Sprint {
-  id        String      @id @default(cuid())
-  projectId String
-  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  name      String
-  goal      String?
-  startDate DateTime?
-  endDate   DateTime?
-  state     SprintState @default(PLANNED)
-  issues    Issue[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  projectId       String
+  project         Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // Per project, for the default name ("WEB Sprint 3").
+  number          Int         @default(0)
+  name            String
+  goal            String?
+  startDate       DateTime?
+  endDate         DateTime?
+  state           SprintState @default(PLANNED)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  // Frozen when the sprint starts and completes (velocity).
+  committedIssues Int?
+  committedPoints Int?
+  completedIssues Int?
+  completedPoints Int?
+  issues          Issue[]
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
-  @@index([projectId])
+  @@index([projectId, state])
 }
 
 enum SprintState {

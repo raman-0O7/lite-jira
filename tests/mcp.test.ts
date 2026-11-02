@@ -15,6 +15,8 @@ import { addComment, listComments } from "@/lib/services/comments";
 import { createSavedFilter } from "@/lib/services/filters";
 import { getIssueByKey } from "@/lib/services/issues";
 import { createLabel } from "@/lib/services/labels";
+import { updateProject } from "@/lib/services/projects";
+import { createSprint } from "@/lib/services/sprints";
 import { createWorkspace } from "@/lib/services/workspaces";
 import { addMember, makeTeam, makeUser, shareProject } from "@/tests/factories";
 import { expectStatus, makeIssue, makeProject } from "@/tests/helpers";
@@ -227,6 +229,30 @@ describe("MCP server", () => {
     // Tokens read filters; people save them.
     const tokenCtx = { ...owner.ctx, via: "api_token" as const, limits: { write: true, projectIds: null } };
     await expectStatus(createSavedFilter(tokenCtx, { name: "x", query: "is:open" }), 403);
+  });
+
+  it("puts issues in sprints by name and lists them in get_project", async () => {
+    const { owner, web } = await setup();
+    const principal = await tokenPrincipal(owner.ctx, { name: "w", access: "WRITE" });
+    const kanban = await tool(principal, "create_issue", { project: "WEB", title: "x", sprint: "active" });
+    expect(kanban.text).toContain("doesn't use sprints");
+
+    await updateProject(owner.ctx, web.project.id, { mode: "SCRUM" });
+    const sprint = await createSprint(owner.ctx, web.project.id, { name: "Launch" });
+    await tool(principal, "create_issue", { project: "WEB", title: "Login", sprint: "launch" });
+    await tool(principal, "create_issue", { project: "WEB", title: "Docs" });
+    expect((await tool(principal, "get_project", { project: "WEB" })).data).toMatchObject({
+      sprints: [{ name: "Launch", state: "PLANNED" }],
+    });
+    expect((await tool(principal, "search_issues", { query: 'sprint:"Launch"' })).data!.count).toBe(1);
+
+    const moved = await tool(principal, "update_issue", { key: "WEB-2", sprint: "Launch" });
+    expect(moved.data!.issue).toMatchObject({ sprint: "Launch" });
+    const unknown = await tool(principal, "update_issue", { key: "WEB-2", sprint: "Nope" });
+    expect(unknown.text).toContain('Open sprints: "Launch"');
+    await tool(principal, "update_issue", { key: "WEB-2", sprint: null });
+    expect((await tool(principal, "search_issues", { query: "sprint:none" })).data!.count).toBe(1);
+    expect((await getIssueByKey(owner.ctx, "WEB-1")).sprintId).toBe(sprint.id);
   });
 
   it("explains unknown names with the valid choices and writes nothing", async () => {

@@ -27,6 +27,8 @@ export type IssueQuery = {
   project: string[];
   epic: { projectKey: string; number: number }[];
   parent: { projectKey: string; number: number }[];
+  /** "active", "none" (the backlog), or a sprint name (docs/features/21-sprints.md). */
+  sprint: string[];
   due: DueValue[];
   keys: { projectKey: string; number: number }[];
   text: string[];
@@ -88,6 +90,7 @@ const TERMS = [
   "project",
   "epic",
   "parent",
+  "sprint",
   "due",
 ] as const;
 
@@ -102,6 +105,7 @@ export function parseIssueQuery(input: string): IssueQuery {
     project: [],
     epic: [],
     parent: [],
+    sprint: [],
     due: [],
     keys: [],
     text: [],
@@ -148,6 +152,9 @@ export function parseIssueQuery(input: string): IssueQuery {
             break;
           case "due":
             query.due.push(oneOf(term, value, DUE));
+            break;
+          case "sprint":
+            query.sprint.push(value);
             break;
           case "epic":
           case "parent": {
@@ -225,6 +232,14 @@ export function issueQueryToWhere(
   if (query.project.length) and.push({ project: { key: { in: query.project } } });
   anyOf(query.epic.map((k) => ({ epic: byKey(k) })));
   anyOf(query.parent.map((k) => ({ parent: byKey(k) })));
+  anyOf(
+    query.sprint.map((value): Prisma.IssueWhereInput => {
+      const lower = value.toLowerCase();
+      if (lower === "active" || lower === "current") return { sprint: { state: "ACTIVE" } };
+      if (lower === "none" || lower === "backlog") return { sprintId: null };
+      return { sprint: { name: { equals: value, mode: "insensitive" } } };
+    }),
+  );
 
   const today = startOfDayUtc(now);
   anyOf(

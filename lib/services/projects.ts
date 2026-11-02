@@ -106,6 +106,11 @@ export async function getProjectWorkflow(ctx: Ctx, key: string) {
         select: { id: true, name: true, category: true, _count: { select: { issues: true } } },
       },
       labels: { orderBy: { createdAt: "asc" }, select: { id: true, name: true, color: true } },
+      sprints: {
+        where: { state: { in: ["ACTIVE", "PLANNED"] } },
+        orderBy: [{ state: "desc" }, { number: "asc" }],
+        select: { id: true, name: true, state: true, goal: true, startDate: true, endDate: true },
+      },
     },
   });
   if (!project) throw notFound("Project not found");
@@ -130,6 +135,11 @@ export async function getProjectDetail(ctx: Ctx, projectId: string) {
       mode: true,
       createdAt: true,
       updatedAt: true,
+      sprints: {
+        where: { state: "ACTIVE" },
+        take: 1,
+        select: { id: true, name: true, goal: true, startDate: true, endDate: true },
+      },
       repos: {
         where: { installation: { suspendedAt: null } },
         orderBy: { createdAt: "asc" },
@@ -148,8 +158,10 @@ export async function getProjectDetail(ctx: Ctx, projectId: string) {
     },
   });
   if (!project) throw notFound("Project not found");
+  const { sprints, ...rest } = project;
   return {
-    ...project,
+    ...rest,
+    activeSprint: sprints[0] ?? null,
     columns: project.columns.map((column) => ({
       ...column,
       issues: column.issues.map((issue) => toCard(project.key, issue)),
@@ -168,6 +180,7 @@ export async function createProject(ctx: Ctx, input: unknown) {
         data: {
           name: parsed.name,
           key,
+          mode: parsed.mode,
           workspaceId: ctx.workspaceId,
           columns: {
             create: DEFAULT_COLUMNS.map((column, position) => ({
@@ -210,6 +223,10 @@ export async function updateProject(ctx: Ctx, projectId: string, input: unknown)
       select: { name: true, mode: true },
     });
     if (!before) throw notFound("Project not found");
+    if (mode === "KANBAN" && before.mode === "SCRUM") {
+      const active = await tx.sprint.findFirst({ where: { projectId, state: "ACTIVE" }, select: { id: true } });
+      if (active) throw badRequest("Complete the active sprint first");
+    }
     const project = await tx.project.update({
       where: { id: projectId },
       data: { name, mode },

@@ -15,6 +15,7 @@ import {
   resolveAssignee,
   resolveEpic,
   resolveLabels,
+  resolveSprint,
   resolveStatus,
   type Workflow,
 } from "@/lib/mcp/resolve";
@@ -63,6 +64,10 @@ const assignee = z
   .string()
   .nullable()
   .describe('"me", a member\'s email or exact name, or null to unassign');
+const sprint = z
+  .string()
+  .nullable()
+  .describe('Scrum projects: "active", a sprint name from get_project, or null for the backlog');
 const labelNames = z.array(z.string().min(1)).max(20);
 const dueDate = z
   .string()
@@ -186,7 +191,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
     {
       title: "Get project",
       description:
-        "A project's workflow — its columns in order with their category (TODO, IN_PROGRESS, DONE) — plus its labels and the workspace members you can assign.",
+        "A project's workflow — its columns in order with their category (TODO, IN_PROGRESS, DONE) — plus its labels, the workspace members you can assign, and (Scrum projects) its active and planned sprints.",
       inputSchema: z.object({ workspace, project: projectKey }),
       annotations: READ,
     },
@@ -205,6 +210,17 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
             issueCount: c.issueCount,
           })),
           labels: workflow.labels.map((l) => l.name),
+          ...(workflow.mode === "SCRUM"
+            ? {
+                sprints: workflow.sprints.map((s) => ({
+                  name: s.name,
+                  state: s.state,
+                  goal: s.goal,
+                  startDate: s.startDate?.toISOString().slice(0, 10) ?? null,
+                  endDate: s.endDate?.toISOString().slice(0, 10) ?? null,
+                })),
+              }
+            : {}),
           members: members
             .filter((m) => m.role !== "GUEST")
             .map((m) => ({ name: m.name, email: m.email, role: m.role })),
@@ -220,7 +236,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
         "Search issues with the Kanso query language. Terms are ANDed; commas OR values.",
         "Terms: assignee:me|none|<email>  type:epic,story,task,bug,subtask  status:todo,in_progress,done",
         "is:open|done|blocked  priority:low,medium,high,urgent  label:<name>  project:<KEY>  epic:<KEY-1>",
-        'parent:<KEY-1>  due:overdue|today|week|none  an issue key  "quoted text"  plain words.',
+        'parent:<KEY-1>  due:overdue|today|week|none  sprint:active|none|"<name>"  an issue key  "quoted text"  plain words.',
         'Example: assignee:me is:open type:bug label:auth "login"',
       ].join("\n"),
       inputSchema: z.object({
@@ -361,6 +377,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
         parent: issueKey.optional().describe("Create a sub-issue of this issue"),
         estimate: z.number().int().min(0).max(100).optional().describe("Story points"),
         dueDate: dueDate.optional(),
+        sprint: sprint.optional().describe('Scrum projects: "active" or a sprint name. Default: the backlog'),
       }),
       annotations: ADD,
       scopeChallenge: challenge,
@@ -374,6 +391,10 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
           args.assignee === undefined ? undefined : await resolveAssignee(ctx, args.assignee);
         const labelIds = args.labels ? resolveLabels(workflow, args.labels) : undefined;
         const epicId = args.epic ? await resolveEpic(ctx, args.epic, workflow.key) : undefined;
+        const sprintId = args.sprint === undefined ? undefined : resolveSprint(workflow, args.sprint);
+        if (args.parent && sprintId !== undefined) {
+          throw badRequest("Sub-issues follow their parent's sprint; leave out `sprint`");
+        }
         const column = args.status
           ? resolveStatus(workflow, args.status)
           : (workflow.columns.find((c) => c.category === "TODO") ?? workflow.columns[0]);
@@ -412,6 +433,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
             priority: args.priority,
             description: args.description,
             assigneeUserId,
+            sprintId,
           });
           key = card.key;
         }
@@ -447,6 +469,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
         epic: issueKey.nullable().optional().describe("Epic key, or null to remove"),
         estimate: z.number().int().min(0).max(100).nullable().optional(),
         dueDate: dueDate.optional(),
+        sprint: sprint.optional(),
       }),
       annotations: OVERWRITE,
       scopeChallenge: challenge,
@@ -479,6 +502,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
             assigneeUserId:
               args.assignee === undefined ? undefined : await resolveAssignee(ctx, args.assignee),
             epicId: args.epic === undefined ? undefined : await resolveEpic(ctx, args.epic, workflow.key),
+            sprintId: args.sprint === undefined ? undefined : resolveSprint(workflow, args.sprint),
           }).filter(([, v]) => v !== undefined),
         );
         if (Object.keys(patch).length === 0 && !args.status) {

@@ -122,11 +122,14 @@ export function registerPrompts(server: McpServer) {
     },
     ({ project, capacity }) =>
       user(
-        `Look at the open issues in ${project} (search_issues with "project:${project} is:open") and its ` +
-          `workflow (get_project). Suggest a focused set of issues for the next sprint` +
+        `Look at ${project}'s workflow and sprints (get_project), the backlog (search_issues with ` +
+          `"project:${project} sprint:none is:open"), and what's already planned for each open sprint ` +
+          `("project:${project} sprint:\"<name>\""). Suggest a focused set of backlog issues for the next ` +
+          `planned sprint` +
           (capacity ? ` within ${capacity}` : "") +
-          `: prioritize urgent and overdue work, respect parent/epic order, and flag issues that need ` +
-          `more detail or an estimate. Don't change anything until I confirm.`,
+          `: prioritize urgent and overdue work, respect parent/epic order and blockers (is:blocked), and ` +
+          `flag issues that need more detail or an estimate. Don't change anything until I confirm; then ` +
+          `put the approved issues in the sprint with update_issue (sprint). Starting the sprint is done in Kanso.`,
       ),
   );
 

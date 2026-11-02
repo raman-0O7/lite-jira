@@ -47,6 +47,9 @@ export const ctxForColumn = (columnId: string) =>
 export const ctxForIssue = (issueId: string) =>
   ctxFor({ projects: { some: { issues: { some: { id: issueId } } } } }, "Issue not found");
 
+export const ctxForSprint = (sprintId: string) =>
+  ctxFor({ projects: { some: { sprints: { some: { id: sprintId } } } } }, "Sprint not found");
+
 export const ctxForLabel = (labelId: string) =>
   ctxFor({ projects: { some: { labels: { some: { id: labelId } } } } }, "Label not found");
 

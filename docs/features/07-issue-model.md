@@ -73,6 +73,7 @@ Space-separated terms, all ANDed; commas OR values within a term.
 | `project:WEB` | project key |
 | `epic:WEB-12`, `parent:WEB-40` | epic / parent by key |
 | `due:overdue` / `today` / `week` / `none` | due date |
+| `sprint:active` / `none` / `"WEB Sprint 3"` | the active sprint, the backlog, or a sprint by name (feature 21) |
 | `WEB-42` | that issue |
 | anything else (bare or `"quoted"`) | title or description contains |
 

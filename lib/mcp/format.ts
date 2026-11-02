@@ -94,6 +94,7 @@ type FullLike = CardLike & {
   reporter: Person;
   parent: { key: string; title: string } | null;
   epic: { key: string; title: string } | null;
+  sprint?: { name: string; state: string } | null;
   subIssues: { key: string; title: string; done: boolean; assignee: Person }[];
 };
 
@@ -123,6 +124,7 @@ export function issueDetail(issue: FullLike) {
     reporter: issue.reporter?.name ?? null,
     parent: issue.parent && { key: issue.parent.key, title: issue.parent.title },
     epic: issue.epic && { key: issue.epic.key, title: issue.epic.title },
+    sprint: issue.sprint ? `${issue.sprint.name}${issue.sprint.state === "ACTIVE" ? " (active)" : ""}` : undefined,
     subIssues: issue.subIssues.map((s) => ({
       key: s.key,
       title: s.title,

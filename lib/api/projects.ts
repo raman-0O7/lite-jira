@@ -12,6 +12,16 @@ export type Priority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 export type IssueType = "EPIC" | "STORY" | "TASK" | "BUG" | "SUBTASK";
 export type ColumnCategory = "TODO" | "IN_PROGRESS" | "DONE";
 export type ProjectMode = "KANBAN" | "SCRUM";
+export type SprintState = "PLANNED" | "ACTIVE" | "CLOSED";
+
+/** The sprint a Scrum project's board shows (docs/features/21-sprints.md). */
+export type ActiveSprint = {
+  id: string;
+  name: string;
+  goal: string | null;
+  startDate: string | null;
+  endDate: string | null;
+};
 
 export type LabelStub = { id: string; name: string; color: string };
 export type PersonStub = { id: string; name: string; image: string | null };
@@ -52,6 +62,8 @@ export type IssueCard = {
   estimate: number | null;
   columnId: string;
   parentId: string | null;
+  /** Optional: optimistic cards don't have it yet. */
+  sprintId?: string | null;
   labels: LabelStub[];
   assignee: PersonStub | null;
   subIssueCount: number;
@@ -94,6 +106,7 @@ export type ProjectDetail = {
   updatedAt: string;
   /** Connected GitHub repositories (docs/features/16-github-sync-and-replies.md). */
   repos: { id: string; repoFullName: string }[];
+  activeSprint?: ActiveSprint | null;
   columns: ColumnWithIssues[];
 };
 
@@ -126,7 +139,7 @@ export async function fetchProject(id: string) {
 
 export async function createProject(
   workspaceSlug: string,
-  input: { name: string; key?: string },
+  input: { name: string; key?: string; mode?: ProjectMode },
 ) {
   const data = await request<{ project: ProjectSummary }>(
     `/api/workspaces/${workspaceSlug}/projects`,

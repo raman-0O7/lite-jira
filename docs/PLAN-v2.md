@@ -195,7 +195,7 @@ DONE, rest = IN_PROGRESS).
 | 10 | **18 — Workspace agent on the Claude API**: one agent for the whole workspace on the organization's Claude API key (billed per token), any member hands it work, comments in Kanso reach its running session | 12, 17 |
 | 10 | **19 — Codex adapter (beta)**: dispatch via `@codex` mention posted as the user on the linked GitHub issue; status from GitHub events | 11, 12 |
 | 11 | **20 — In-app AI**: provider abstraction (platform key / BYOK / Sign in with ChatGPT), natural-language quick add, break-down-into-subtasks, GitHub import triage, summaries, "ask your board" | 07 |
-| 11 | **21 — Sprints UI**: backlog, sprint planning, start/complete, burndown, velocity (Scrum projects) | 09 |
+| 11 | **21 — Sprints** (done): Kanban or Scrum per project; backlog with sprint sections, sprint planning, start/complete with carry-over, the board scoped to the active sprint, burndown rebuilt from history, velocity; `sprint:` queries and MCP | 09 |
 | 11 | **22 — My Work & saved filters** (done): cross-project home, issues page with saved filters (personal or shared), issue links (blocks/blocked by, relates, duplicates) with a Blocked chip and `is:blocked` | 09 |
 | later | Automation rules, WebMCP adapter, notifications, file attachments, recurring issues, templates, calendar view, billing | — |
 
