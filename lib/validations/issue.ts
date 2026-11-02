@@ -13,6 +13,8 @@ export const createIssueSchema = z.object({
   priority: priorityEnum.optional(),
   description: z.string().max(10_000).nullish(),
   assigneeUserId: id.nullish(),
+  // Scrum projects: the sprint it starts in; absent or null → the backlog.
+  sprintId: id.nullish(),
 });
 
 export const createSubIssueSchema = z.object({ title });
@@ -28,6 +30,7 @@ export const updateIssueSchema = z.object({
   labelIds: z.array(id).optional(),
   assigneeUserId: id.nullish(),
   epicId: id.nullish(),
+  sprintId: id.nullish(),
 });
 
 export const moveIssueSchema = z.object({

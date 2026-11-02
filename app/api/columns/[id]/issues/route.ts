@@ -33,6 +33,7 @@ export const POST = apiRoute(async (request: Request, { params }: RouteContext) 
       priority: text("priority"),
       description: text("description"),
       assigneeUserId: text("assigneeUserId"),
+      sprintId: text("sprintId"),
     },
     images,
   );

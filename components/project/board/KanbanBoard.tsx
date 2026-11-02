@@ -72,6 +72,8 @@ export function KanbanBoard({
   columns,
   columnsBusy,
   filters = EMPTY_FILTERS,
+  include,
+  sprintId = null,
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
@@ -92,6 +94,10 @@ export function KanbanBoard({
    * board/task state and never breaks moves.
    */
   filters?: FilterState;
+  /** Scrum: only the active sprint's issues are shown (same rule as filters: display only). */
+  include?: (issue: IssueCard) => boolean;
+  /** Scrum: where issues added from a column go. */
+  sprintId?: string | null;
   onAddColumn: () => void;
   onRenameColumn: (id: string, name: string) => void;
   onDeleteColumn: (id: string) => void;
@@ -331,8 +337,9 @@ export function KanbanBoard({
   // filter passes everything (and skips the work entirely).
   const filtersActive = !isFiltersEmpty(filters);
   function visibleTasks(column: ColumnWithIssues): IssueCard[] {
-    if (!filtersActive) return column.issues;
-    return column.issues.filter((task) => matchesFilters(task, filters));
+    const scoped = include ? column.issues.filter(include) : column.issues;
+    if (!filtersActive) return scoped;
+    return scoped.filter((task) => matchesFilters(task, filters));
   }
 
   const overlayColumn = activeColumnId
@@ -370,11 +377,11 @@ export function KanbanBoard({
                 columnId={column.id}
                 issues={visibleTasks(column)}
                 // "Genuinely empty" vs "hidden by a filter", for the empty state.
-                filtered={filtersActive && column.issues.length > 0}
+                filtered={filtersActive && (include ? column.issues.some(include) : column.issues.length > 0)}
                 busy={deleting}
                 onDeleteIssue={onDeleteIssue}
                 onOpenIssue={onOpenIssue}
-                footer={canEdit ? <AddIssueComposer columnId={column.id} projectId={projectId} /> : null}
+                footer={canEdit ? <AddIssueComposer columnId={column.id} projectId={projectId} sprintId={sprintId} /> : null}
               />
             </BoardColumn>
           ))}

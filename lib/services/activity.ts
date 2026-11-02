@@ -20,6 +20,11 @@ export type ActivityAction =
   | "issue.deleted"
   | "issue.linked"
   | "issue.unlinked"
+  | "sprint.created"
+  | "sprint.updated"
+  | "sprint.started"
+  | "sprint.completed"
+  | "sprint.deleted"
   | "label.created"
   | "label.updated"
   | "label.deleted"
@@ -129,6 +134,7 @@ export type IssueActivityRefs = {
   labels: Record<string, { id: string; name: string; color: string }>;
   issues: Record<string, { id: string; key: string; title: string }>;
   agents: Record<string, { id: string; name: string; kind: string }>;
+  sprints: Record<string, { id: string; name: string }>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -172,6 +178,7 @@ export async function listIssueActivity(ctx: Ctx, issueId: string) {
   const labels = new Set<string>();
   const issues = new Set<string>();
   const agents = new Set<string>();
+  const sprints = new Set<string>();
   for (const row of rows) {
     if (row.actorUserId) people.add(row.actorUserId);
     if (row.actorAgentId) agents.add(row.actorAgentId);
@@ -180,6 +187,7 @@ export async function listIssueActivity(ctx: Ctx, issueId: string) {
     strings(data.assigneeUserId).forEach((id) => people.add(id));
     strings(data.columnId, data.fromColumnId, data.toColumnId).forEach((id) => columns.add(id));
     strings(data.parentId).forEach((id) => issues.add(id));
+    strings(data.sprintId).forEach((id) => sprints.add(id));
     const changes = isRecord(data.changes) ? data.changes : {};
     for (const [field, value] of Object.entries(changes)) {
       if (!isRecord(value)) continue;
@@ -187,10 +195,11 @@ export async function listIssueActivity(ctx: Ctx, issueId: string) {
       if (field === "epicId") strings(value.from, value.to).forEach((id) => issues.add(id));
       if (field === "assigneeAgentId") strings(value.from, value.to).forEach((id) => agents.add(id));
       if (field === "labels") strings(value.added, value.removed).forEach((id) => labels.add(id));
+      if (field === "sprintId") strings(value.from, value.to).forEach((id) => sprints.add(id));
     }
   }
 
-  const [personRows, columnRows, labelRows, issueRows, agentRows] = await Promise.all([
+  const [personRows, columnRows, labelRows, issueRows, agentRows, sprintRows] = await Promise.all([
     people.size
       ? db.user.findMany({ where: { id: { in: [...people] } }, select: { id: true, name: true, image: true } })
       : [],
@@ -218,6 +227,12 @@ export async function listIssueActivity(ctx: Ctx, issueId: string) {
           select: { id: true, name: true, kind: true },
         })
       : [],
+    sprints.size
+      ? db.sprint.findMany({
+          where: { id: { in: [...sprints] }, projectId: issue.projectId },
+          select: { id: true, name: true },
+        })
+      : [],
   ]);
 
   const refs: IssueActivityRefs = {
@@ -228,6 +243,7 @@ export async function listIssueActivity(ctx: Ctx, issueId: string) {
       issueRows.map((i) => [i.id, { id: i.id, key: `${issue.project.key}-${i.number}`, title: i.title }]),
     ),
     agents: Object.fromEntries(agentRows.map((a) => [a.id, a])),
+    sprints: Object.fromEntries(sprintRows.map((s) => [s.id, s])),
   };
 
   const entries = rows.map((row) => ({

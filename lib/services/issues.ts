@@ -47,6 +47,7 @@ async function findIssueInWorkspace(
       projectId: true,
       parentId: true,
       epicId: true,
+      sprintId: true,
       assigneeUserId: true,
       assigneeAgentId: true,
       labels: { select: { id: true } },
@@ -112,11 +113,12 @@ export async function getIssueByKey(ctx: Ctx, key: string) {
 /** Append an issue to a column. Sub-issues go through createSubIssue. */
 export async function createIssue(ctx: Ctx, columnId: string, input: unknown, images: UploadedImage[] = []) {
   authorize(ctx, "issue.write");
-  const { title, type, priority, description, assigneeUserId } = createIssueSchema.parse(input);
+  const { title, type, priority, description, assigneeUserId, sprintId } = createIssueSchema.parse(input);
 
   return db.$transaction(async (tx) => {
     const column = await findColumnInWorkspace(tx, ctx, columnId);
     if (assigneeUserId) await assertAssignable(tx, ctx, assigneeUserId);
+    if (sprintId) await assertSprintFor(tx, column.projectId, sprintId, type);
     const project = await tx.project.findUniqueOrThrow({
       where: { id: column.projectId },
       select: { key: true },
@@ -128,6 +130,7 @@ export async function createIssue(ctx: Ctx, columnId: string, input: unknown, im
         priority,
         description: description || null,
         assigneeUserId: assigneeUserId ?? null,
+        sprintId: sprintId ?? null,
         columnId,
         projectId: column.projectId,
         number: await nextNumber(tx, column.projectId),
@@ -148,6 +151,7 @@ export async function createIssue(ctx: Ctx, columnId: string, input: unknown, im
         type,
         columnId,
         ...(assigneeUserId ? { assigneeUserId } : {}),
+        ...(sprintId ? { sprintId } : {}),
         ...(images.length ? { images: images.length } : {}),
       },
     });
@@ -188,6 +192,8 @@ export async function createSubIssue(ctx: Ctx, parentId: string, input: unknown)
         title,
         type: "SUBTASK",
         parentId,
+        // Sub-issues travel with their parent's sprint.
+        sprintId: parent.sprintId,
         columnId: column.id,
         projectId: parent.projectId,
         number: await nextNumber(tx, parent.projectId),
@@ -205,6 +211,18 @@ export async function createSubIssue(ctx: Ctx, parentId: string, input: unknown)
     });
     return card;
   });
+}
+
+/**
+ * A sprint an issue can join: in the issue's project and not completed.
+ * Epics stay out of sprints; sub-issues follow their parent.
+ */
+async function assertSprintFor(tx: Prisma.TransactionClient, projectId: string, sprintId: string, type: IssueType) {
+  if (type === "EPIC") throw badRequest("Epics don't go in sprints; their issues do");
+  if (type === "SUBTASK") throw badRequest("Sub-issues follow their parent's sprint");
+  const sprint = await tx.sprint.findFirst({ where: { id: sprintId, projectId }, select: { state: true } });
+  if (!sprint) throw badRequest("Sprint not found in this project");
+  if (sprint.state === "CLOSED") throw badRequest("That sprint is completed");
 }
 
 /** Issues can be assigned to the workspace's members, never to guests. */
@@ -269,6 +287,17 @@ export async function updateIssue(ctx: Ctx, issueId: string, input: unknown) {
       }
       data.epicId = nextEpicId;
       change(changes, "epicId", before.epicId, nextEpicId);
+    }
+
+    // ---- sprint (sub-issues follow their parent) ----
+    const nextSprintId =
+      patch.sprintId !== undefined ? (patch.sprintId ?? null) : nextType === "EPIC" ? null : before.sprintId;
+    if (nextSprintId !== before.sprintId) {
+      if (nextType === "SUBTASK") throw badRequest("Sub-issues follow their parent's sprint");
+      if (nextSprintId) await assertSprintFor(tx, before.projectId, nextSprintId, nextType);
+      data.sprintId = nextSprintId;
+      change(changes, "sprintId", before.sprintId, nextSprintId);
+      await tx.issue.updateMany({ where: { parentId: issueId }, data: { sprintId: nextSprintId } });
     }
 
     // ---- assignee ----

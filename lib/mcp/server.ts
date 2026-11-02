@@ -6,7 +6,7 @@ import { registerTools } from "@/lib/mcp/tools";
 
 const INSTRUCTIONS = `Kanso is an issue tracker. Issues have keys like WEB-42 (project key + number).
 Start with list_workspaces / list_projects, and get_project to learn a project's columns (statuses), labels, and members.
-search_issues takes the Kanso query language (e.g. "assignee:me is:open type:bug", "is:blocked"); list_saved_filters has queries people saved.
+search_issues takes the Kanso query language (e.g. "assignee:me is:open type:bug", "is:blocked"); "sprint:active" / "sprint:none" scope to the active sprint or the backlog in Scrum projects; list_saved_filters has queries people saved.
 Issues can block, relate to, or duplicate each other: get_issue shows links, link_issues adds or removes them.
 Status, labels, and assignees are passed by name. Everything you do is recorded in the issue's history as the connected user.
 Agents: list_agent_queue shows issues assigned to your agent; claim_issue before working, report_progress while working, release_issue to give up. Push branches and open PRs; never merge.

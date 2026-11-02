@@ -16,6 +16,7 @@ export const createProjectSchema = z.object({
   name,
   // Omitted → suggested from the name.
   key: projectKeySchema.optional(),
+  mode: z.enum(["KANBAN", "SCRUM"]).default("KANBAN"),
 });
 
 export const updateProjectSchema = z

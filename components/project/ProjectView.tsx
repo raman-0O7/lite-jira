@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChevronRight, Columns3, List, Plus } from "lucide-react";
+import { ArrowLeft, ChartLine, ChevronRight, Columns3, IterationCcw, List, ListTodo, MoreHorizontal, Plus } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
@@ -20,6 +20,15 @@ import { KanbanBoard } from "@/components/project/board/KanbanBoard";
 import { type AssigneeOption, FilterBar } from "@/components/project/filters/FilterBar";
 import { IssueList } from "@/components/project/list/IssueList";
 import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
+import { BacklogView } from "@/components/sprints/BacklogView";
+import { SprintReports } from "@/components/sprints/SprintReports";
+import { CompleteSprintDialog, sprintDates, useRefreshSprints } from "@/components/sprints/sprint-ui";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,11 +60,13 @@ import {
   type PersonStub,
   type ProjectDetail,
 } from "@/lib/api/projects";
+import { setProjectMode } from "@/lib/api/sprints";
 import { isFiltersEmpty, matchesFilters } from "@/lib/board-filters";
 import { statusVariants } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
-type View = "board" | "list";
+type View = "board" | "list" | "backlog" | "reports";
+const SCRUM_VIEWS: View[] = ["backlog", "reports"];
 
 /** The labels in use on the project's issues (deduped, by name): the label filter's options. */
 function deriveLabels(columns: ColumnWithIssues[]): LabelStub[] {
@@ -117,6 +128,8 @@ function replaceParam(pathname: string, name: string, value: string | null) {
 export function ProjectView({ projectId }: { projectId: string }) {
   const { slug } = useWorkspace();
   const canEditIssues = useCan("issue.write");
+  const canUpdateProject = useCan("project.update");
+  const canPlan = useCan("sprint.manage");
   const queryClient = useQueryClient();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -125,12 +138,16 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
   const [addColumnOpen, setAddColumnOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
-  const [newIssue, setNewIssue] = useState<{ open: boolean; columnId: string | null }>({
+  const [newIssue, setNewIssue] = useState<{ open: boolean; columnId: string | null; sprintId: string | null }>({
     open: false,
     columnId: null,
+    sprintId: null,
   });
+  const [completing, setCompleting] = useState<{ id: string; name: string } | null>(null);
 
-  const view: View = searchParams.get("view") === "list" ? "list" : "board";
+  const viewParam = searchParams.get("view");
+  const requestedView: View =
+    viewParam === "list" || viewParam === "backlog" || viewParam === "reports" ? viewParam : "board";
   const issueParam = searchParams.get("issue")?.toUpperCase() ?? null;
 
   const projectQuery = useQuery({
@@ -224,8 +241,26 @@ export function ProjectView({ projectId }: { projectId: string }) {
     },
   });
 
+  const refreshSprints = useRefreshSprints(projectId);
+  const switchMode = useMutation({
+    mutationFn: (mode: "KANBAN" | "SCRUM") => setProjectMode(projectId, mode),
+    onSuccess: (updated) => {
+      refreshSprints();
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists(slug) });
+      replaceParam(pathname, "view", updated.mode === "SCRUM" ? "backlog" : null);
+      toast.success(updated.mode === "SCRUM" ? "Sprints are on. Plan the first one in the backlog." : "Sprints are off.");
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const project = projectQuery.data;
+  const scrum = project?.mode === "SCRUM";
+  const view: View = !scrum && SCRUM_VIEWS.includes(requestedView) ? "board" : requestedView;
+  const activeSprint = scrum ? (project?.activeSprint ?? null) : null;
+  // Scrum boards show the active sprint (display only; moves still see whole columns).
+  const include = scrum ? (issue: IssueCard) => issue.sprintId === activeSprint?.id : undefined;
   const columns = project?.columns ?? [];
+  const scopedColumns = include ? columns.map((c) => ({ ...c, issues: c.issues.filter(include) })) : columns;
   const allIssues = columns.flatMap((c) => c.issues);
   const openIssue = issueParam ? (allIssues.find((i) => i.key === issueParam) ?? null) : null;
 
@@ -239,11 +274,11 @@ export function ProjectView({ projectId }: { projectId: string }) {
   }
 
   function setView(next: View) {
-    replaceParam(pathname, "view", next === "list" ? "list" : null);
+    replaceParam(pathname, "view", next === "board" ? null : next);
   }
 
-  function startNewIssue(columnId: string | null = null) {
-    setNewIssue({ open: true, columnId });
+  function startNewIssue(columnId: string | null = null, sprintId: string | null = activeSprint?.id ?? null) {
+    setNewIssue({ open: true, columnId, sprintId });
   }
 
   useRegisterNewIssue(project && canEditIssues && columns.length > 0 ? () => startNewIssue() : null);
@@ -266,7 +301,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
   );
 
   if (projectQuery.isPending) {
-    return <ProjectSkeleton view={view} />;
+    return <ProjectSkeleton view={view === "list" ? "list" : "board"} />;
   }
 
   if (projectQuery.isError || !project) {
@@ -287,16 +322,32 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
   const filtersActive = !isFiltersEmpty(filters.filters);
   function visibleIssues(column: ColumnWithIssues): IssueCard[] {
-    if (!filtersActive) return column.issues;
-    return column.issues.filter((issue) => matchesFilters(issue, filters.filters));
+    const scoped = include ? column.issues.filter(include) : column.issues;
+    if (!filtersActive) return scoped;
+    return scoped.filter((issue) => matchesFilters(issue, filters.filters));
   }
   const variants = statusVariants(columns);
   const doneColumnIds = new Set(columns.filter((c) => c.category === "DONE").map((c) => c.id));
+  const scopedIssues = scopedColumns.flatMap((c) => c.issues);
   const progress = {
-    total: allIssues.length,
-    done: allIssues.filter((i) => doneColumnIds.has(i.columnId)).length,
+    total: scopedIssues.length,
+    done: scopedIssues.filter((i) => doneColumnIds.has(i.columnId)).length,
   };
-  const assignees = deriveAssignees(columns);
+  const assignees = deriveAssignees(scopedColumns);
+  const boardLike = view === "board" || view === "list";
+  const tabs = (
+    scrum
+      ? [
+          { id: "backlog", label: "Backlog", icon: ListTodo },
+          { id: "board", label: "Board", icon: Columns3 },
+          { id: "list", label: "List", icon: List },
+          { id: "reports", label: "Reports", icon: ChartLine },
+        ]
+      : [
+          { id: "board", label: "Board", icon: Columns3 },
+          { id: "list", label: "List", icon: List },
+        ]
+  ) satisfies { id: View; label: string; icon: typeof List }[];
 
   function handleAddColumn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -320,6 +371,24 @@ export function ProjectView({ projectId }: { projectId: string }) {
             ) : null}
             <ProjectRepos project={project} />
             <ThemeToggle />
+            {canUpdateProject ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" aria-label="Project options">
+                    <MoreHorizontal />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem
+                    disabled={switchMode.isPending}
+                    onSelect={() => switchMode.mutate(scrum ? "KANBAN" : "SCRUM")}
+                  >
+                    <IterationCcw />
+                    {scrum ? "Stop using sprints" : "Use sprints (Scrum)"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             {canEditIssues && columns.length > 0 ? (
               <Button size="sm" onClick={() => startNewIssue()} className="gap-1.5">
                 <Plus />
@@ -339,18 +408,13 @@ export function ProjectView({ projectId }: { projectId: string }) {
         </Link>
         <ProjectTile projectKey={project.key} name={project.name} size="md" className="sm:hidden" />
         <ChevronRight className="hidden size-3.5 shrink-0 text-muted-foreground sm:block" aria-hidden="true" />
-        <PageTitle className="sr-only sm:not-sr-only">{view === "list" ? "List" : "Board"}</PageTitle>
+        <PageTitle className="sr-only sm:not-sr-only">{tabs.find((t) => t.id === view)?.label ?? "Board"}</PageTitle>
         <div
           role="tablist"
           aria-label="View"
           className="ml-1 flex h-7 shrink-0 items-center rounded-md bg-chip p-0.5"
         >
-          {(
-            [
-              { id: "board", label: "Board", icon: Columns3 },
-              { id: "list", label: "List", icon: List },
-            ] as const
-          ).map(({ id, label, icon: Icon }) => (
+          {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               type="button"
@@ -363,28 +427,60 @@ export function ProjectView({ projectId }: { projectId: string }) {
               )}
             >
               <Icon className="size-3.5" />
-              {label}
+              <span className={cn(scrum && "hidden sm:inline")}>{label}</span>
             </button>
           ))}
         </div>
       </PageHeader>
 
-      <FilterBar
-        labels={deriveLabels(columns)}
-        assignees={deriveAssigneeOptions(columns, assignees)}
-        filters={filters}
-        progress={progress}
-        searchRef={searchRef}
-      />
+      {scrum && boardLike && activeSprint ? (
+        <SprintStrip
+          sprint={activeSprint}
+          done={progress.done}
+          total={progress.total}
+          onComplete={canPlan ? () => setCompleting(activeSprint) : undefined}
+        />
+      ) : null}
+
+      {boardLike && (!scrum || activeSprint) ? (
+        <FilterBar
+          labels={deriveLabels(scopedColumns)}
+          assignees={deriveAssigneeOptions(scopedColumns, assignees)}
+          filters={filters}
+          progress={progress}
+          searchRef={searchRef}
+        />
+      ) : null}
 
       <div className="min-h-0 flex-1">
-        {view === "board" ? (
+        {view === "backlog" ? (
+          <BacklogView
+            projectId={projectId}
+            onOpenIssue={(key) => openIssueByKey(key)}
+            onNewIssue={(sprintId) => startNewIssue(null, sprintId)}
+          />
+        ) : view === "reports" ? (
+          <SprintReports projectId={projectId} />
+        ) : scrum && !activeSprint ? (
+          <div className="mx-auto flex h-full max-w-sm flex-col items-center justify-center gap-3 p-8 text-center">
+            <IterationCcw className="size-6 text-icon" />
+            <h2 className="font-heading text-base font-semibold text-foreground">No active sprint</h2>
+            <p className="text-sm text-muted-foreground">
+              The board shows the active sprint’s issues. Plan a sprint in the backlog and start it.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => setView("backlog")}>
+              Go to the backlog
+            </Button>
+          </div>
+        ) : view === "board" ? (
           <div className="h-full overflow-x-auto overflow-y-hidden px-4 pt-3 md:px-5">
             <KanbanBoard
               projectId={projectId}
               columns={columns}
               columnsBusy={rename.isPending || removeColumn.isPending}
               filters={filters.filters}
+              include={include}
+              sprintId={activeSprint?.id ?? null}
               onAddColumn={() => setAddColumnOpen(true)}
               onRenameColumn={(id, name) => rename.mutate({ id, name })}
               onDeleteColumn={(id) => removeColumn.mutate(id)}
@@ -424,10 +520,13 @@ export function ProjectView({ projectId }: { projectId: string }) {
       <NewIssueDialog
         project={project}
         columnId={newIssue.columnId}
+        sprintId={scrum ? newIssue.sprintId : null}
         open={newIssue.open}
         onOpenChange={(open) => setNewIssue((prev) => ({ ...prev, open }))}
         onCreated={(issue) => openIssueByKey(issue.key)}
       />
+
+      <CompleteSprintDialog projectId={projectId} sprint={completing} onOpenChange={(open) => !open && setCompleting(null)} />
 
       <Dialog open={addColumnOpen} onOpenChange={setAddColumnOpen}>
         <DialogContent>
@@ -466,6 +565,48 @@ export function ProjectView({ projectId }: { projectId: string }) {
           </form>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Above a Scrum board: the active sprint, its dates and progress, and Complete. */
+function SprintStrip({
+  sprint,
+  done,
+  total,
+  onComplete,
+}: {
+  sprint: NonNullable<ProjectDetail["activeSprint"]>;
+  done: number;
+  total: number;
+  onComplete?: () => void;
+}) {
+  const dates = sprintDates({ ...sprint, state: "ACTIVE" });
+  return (
+    <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-1.5 text-xs md:px-5">
+      <span className="flex items-center gap-1.5 font-semibold text-foreground">
+        <IterationCcw className="size-3.5 text-icon" />
+        {sprint.name}
+      </span>
+      {dates ? <span className="text-muted-foreground">{dates}</span> : null}
+      <span className="flex items-center gap-1.5 text-muted-foreground tabular">
+        <span className="h-1 w-16 overflow-hidden rounded-full bg-track">
+          <span className="block h-1 rounded-full bg-success" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+        </span>
+        {done}/{total} done
+      </span>
+      {sprint.goal ? (
+        <span className="hidden min-w-0 flex-1 truncate text-soft md:inline" title={sprint.goal}>
+          {sprint.goal}
+        </span>
+      ) : (
+        <span className="flex-1" />
+      )}
+      {onComplete ? (
+        <Button size="xs" variant="outline" className="ml-auto" onClick={onComplete}>
+          Complete sprint
+        </Button>
+      ) : null}
     </div>
   );
 }

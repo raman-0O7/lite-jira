@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createProject, projectKeys, suggestProjectKey } from "@/lib/api/projects";
+import { createProject, type ProjectMode, projectKeys, suggestProjectKey } from "@/lib/api/projects";
+import { cn } from "@/lib/utils";
 
 /** Create a project, then open its board. */
 export function CreateProjectDialog({
@@ -35,6 +36,7 @@ export function CreateProjectDialog({
   // The key follows the name until the user edits it themselves.
   const [key, setKey] = useState("");
   const [keyEdited, setKeyEdited] = useState(false);
+  const [mode, setMode] = useState<ProjectMode>("KANBAN");
   const effectiveKey = keyEdited ? key : name.trim() ? suggestProjectKey(name) : "";
   // Admins can connect a GitHub repository right away (docs/features/16-github-sync-and-replies.md).
   const canConnect = useCan("integrations.manage");
@@ -47,11 +49,12 @@ export function CreateProjectDialog({
     setName("");
     setKey("");
     setKeyEdited(false);
+    setMode("KANBAN");
     setRepo(null);
   }
 
   const create = useMutation({
-    mutationFn: async (input: { name: string; key: string }) => {
+    mutationFn: async (input: { name: string; key: string; mode: ProjectMode }) => {
       const project = await createProject(slug, input);
       if (!repo) return { project, repoError: null };
       // The project exists either way; a failed connect is reported, not fatal.
@@ -83,7 +86,7 @@ export function CreateProjectDialog({
       toast.error("Key must be 2–10 letters or digits and start with a letter.");
       return;
     }
-    create.mutate({ name: trimmed, key: effectiveKey });
+    create.mutate({ name: trimmed, key: effectiveKey, mode });
   }
 
   return (
@@ -124,6 +127,36 @@ export function CreateProjectDialog({
               className="font-mono uppercase"
             />
           </div>
+          <fieldset className="flex flex-col gap-2" disabled={create.isPending}>
+            <legend className="mb-2 text-sm font-medium">Workflow</legend>
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  { value: "KANBAN", title: "Kanban", hint: "Continuous flow on a board" },
+                  { value: "SCRUM", title: "Scrum", hint: "A backlog and time-boxed sprints" },
+                ] as const
+              ).map((option) => (
+                <label
+                  key={option.value}
+                  className={cn(
+                    "flex cursor-pointer flex-col gap-0.5 rounded-lg border px-3 py-2 text-sm has-focus-visible:ring-2 has-focus-visible:ring-ring/50",
+                    mode === option.value ? "border-primary bg-primary-soft" : "hover:bg-accent/60",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="project-mode"
+                    value={option.value}
+                    checked={mode === option.value}
+                    onChange={() => setMode(option.value)}
+                    className="sr-only"
+                  />
+                  <span className="font-medium text-foreground">{option.title}</span>
+                  <span className="text-xs text-muted-foreground">{option.hint}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
           {showRepo ? (
             <div className="flex flex-col gap-2">
               <Label htmlFor="new-project-repo">GitHub repository (optional)</Label>

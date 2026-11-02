@@ -43,6 +43,27 @@ export function resolveStatus(workflow: Workflow, status: string) {
   );
 }
 
+/**
+ * A sprint id from "active", a sprint's name, or null (the backlog). Only open
+ * sprints (active or planned) can take issues.
+ */
+export function resolveSprint(workflow: Workflow, wanted: string | null) {
+  if (wanted === null) return null;
+  if (workflow.mode !== "SCRUM") throw badRequest(`${workflow.key} doesn't use sprints`);
+  const name = norm(wanted);
+  const sprint =
+    name === "active" || name === "current"
+      ? workflow.sprints.find((s) => s.state === "ACTIVE")
+      : workflow.sprints.find((s) => norm(s.name) === name);
+  if (sprint) return sprint.id;
+  const choices = workflow.sprints.map((s) => `"${s.name}"${s.state === "ACTIVE" ? " (active)" : ""}`);
+  throw badRequest(
+    choices.length
+      ? `Unknown sprint "${wanted}" in ${workflow.key}. Open sprints: ${choices.join(", ")}; or null for the backlog.`
+      : `${workflow.key} has no open sprints; create one in Kanso first, or pass null for the backlog.`,
+  );
+}
+
 /** Label ids for label names (case-insensitive). Labels must already exist in the project. */
 export function resolveLabels(workflow: Workflow, names: string[]) {
   return [...new Set(names.map(norm))].map((wanted) => {
