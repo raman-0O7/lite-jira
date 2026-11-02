@@ -678,6 +678,8 @@ model ProjectRepo {
   importIssues   GitHubImport       @default(ALL)
   statusSync     Boolean            @default(true)
   moveOnMerge    Boolean            @default(true)
+  // Branch agents open PRs into, and the one whose merge means "done". Null = the repo's default branch.
+  baseBranch     String?
   issueLinks     GitHubIssueLink[]
   // Last reconcile with GitHub (Sync, the cron); null until the first import.
   lastSyncedAt   DateTime?

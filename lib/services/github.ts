@@ -351,6 +351,19 @@ const repoToggles = {
   importIssues: z.enum(["ALL", "ASSIGNED", "OFF"]).optional(),
   statusSync: z.boolean().optional(),
   moveOnMerge: z.boolean().optional(),
+  // A git branch name; null or "" clears it (back to the repo's default branch).
+  baseBranch: z
+    .union([
+      z
+        .string()
+        .trim()
+        .max(100)
+        .regex(/^[\w./-]+$/, "Not a valid branch name")
+        .refine((v) => !v.startsWith("/") && !v.endsWith("/") && !v.includes("..") && !v.endsWith(".lock"), "Not a valid branch name"),
+      z.literal("").transform(() => null),
+      z.null(),
+    ])
+    .optional(),
 };
 
 const connectRepoSchema = z.object({
@@ -369,6 +382,7 @@ const repoSelect = {
   importIssues: true,
   statusSync: true,
   moveOnMerge: true,
+  baseBranch: true,
   lastSyncedAt: true,
   project: { select: { id: true, name: true, key: true } },
 } satisfies Prisma.ProjectRepoSelect;

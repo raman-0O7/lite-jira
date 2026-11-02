@@ -156,6 +156,12 @@ describe("repositories & import", () => {
     expect(repos[0]).toMatchObject({ fullName: "acme/web", connected: { key: "WEB" } });
     await expectStatus(listInstallationRepos(member, installation.id), 403);
 
+    await expectStatus(updateProjectRepo(member, repo.id, { baseBranch: "development" }), 403);
+    expect(await updateProjectRepo(ctx, repo.id, { baseBranch: " development " })).toMatchObject({ baseBranch: "development" });
+    for (const bad of ["bad branch", "a..b", "/x", "x/", "x.lock", "a".repeat(101)]) {
+      await expect(updateProjectRepo(ctx, repo.id, { baseBranch: bad })).rejects.toThrow();
+    }
+    expect(await updateProjectRepo(ctx, repo.id, { baseBranch: "" })).toMatchObject({ baseBranch: null });
     await expectStatus(updateProjectRepo(member, repo.id, { statusSync: false }), 403);
     expect(await updateProjectRepo(ctx, repo.id, { statusSync: false })).toMatchObject({ statusSync: false });
     await disconnectRepo(ctx, repo.id);
@@ -466,6 +472,19 @@ describe("pull requests & checks", () => {
     const issue = await makeIssue(ctx, todo.id, "Login");
     await deliver("pull_request", pr({ state: "closed", merged: true, merged_at: new Date().toISOString() }));
     expect((await getIssue(ctx, issue.id)).column.id).toBe(todo.id);
+  });
+
+  it("with a base branch set, only a merge into it moves the issue", async () => {
+    const { ctx } = await installedTeam();
+    const { project, todo, done } = await makeProject(ctx, "Web", "WEB");
+    const installation = await db.gitHubInstallation.findFirstOrThrow();
+    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id, importIssues: "OFF", baseBranch: "development" });
+    const issue = await makeIssue(ctx, todo.id, "Login");
+    const merged = { state: "closed", merged: true, merged_at: new Date().toISOString() };
+    await deliver("pull_request", pr({ ...merged, base: { ref: "main" } }));
+    expect((await getIssue(ctx, issue.id)).column.id).toBe(todo.id);
+    await deliver("pull_request", pr({ ...merged, base: { ref: "development" } }));
+    expect((await getIssue(ctx, issue.id)).column.id).toBe(done.id);
   });
 
   it("extracts keys and combines checks", () => {
