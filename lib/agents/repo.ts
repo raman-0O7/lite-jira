@@ -3,11 +3,15 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { GITHUB_WEB } from "@/lib/github/config";
 
-export type IssueRepository = { fullName: string; url: string };
+export type IssueRepository = { fullName: string; url: string; baseBranch: string | null };
 
 type Client = Prisma.TransactionClient | typeof db;
 
-const toRepository = (fullName: string): IssueRepository => ({ fullName, url: `${GITHUB_WEB}/${fullName}` });
+const toRepository = (fullName: string, baseBranch: string | null = null): IssueRepository => ({
+  fullName,
+  url: `${GITHUB_WEB}/${fullName}`,
+  baseBranch,
+});
 
 /**
  * The GitHub repository an agent works in for an issue: the repo the issue
@@ -20,7 +24,13 @@ export async function issueRepository(issueId: string, client: Client = db): Pro
     select: { projectId: true, githubLink: { select: { repoFullName: true } } },
   });
   if (!issue) return null;
-  if (issue.githubLink) return toRepository(issue.githubLink.repoFullName);
+  if (issue.githubLink) {
+    const repo = await client.projectRepo.findFirst({
+      where: { repoFullName: issue.githubLink.repoFullName, projectId: issue.projectId },
+      select: { baseBranch: true },
+    });
+    return toRepository(issue.githubLink.repoFullName, repo?.baseBranch ?? null);
+  }
   return projectRepository(issue.projectId, client);
 }
 
@@ -29,7 +39,7 @@ export async function projectRepository(projectId: string, client: Client = db):
   const repo = await client.projectRepo.findFirst({
     where: { projectId, installation: { suspendedAt: null } },
     orderBy: { createdAt: "asc" },
-    select: { repoFullName: true },
+    select: { repoFullName: true, baseBranch: true },
   });
-  return repo ? toRepository(repo.repoFullName) : null;
+  return repo ? toRepository(repo.repoFullName, repo.baseBranch) : null;
 }

@@ -43,7 +43,7 @@ export async function dispatchRun(runId: string) {
       await db.agentRun.updateMany({ where: { id: run.id, status: "QUEUED" }, data: { claimCodeHash: claim.hash } });
       const session = await fireRoutine(
         config,
-        `Kanso issue ${key} in workspace "${workspace}". Repository: ${repository.fullName}. Claim code: ${claim.code}`,
+        `Kanso issue ${key} in workspace "${workspace}". Repository: ${repository.fullName}.${repository.baseBranch ? ` Base branch: ${repository.baseBranch}.` : ""} Claim code: ${claim.code}`,
       );
       await db.agentRun.updateMany({
         where: { id: run.id, status: "QUEUED" },

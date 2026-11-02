@@ -73,7 +73,11 @@ app's user OAuth flow back to the same callback. It records `githubUserId` and
 project. There are three toggles: import assigned issues, status sync, and
 move on merge, all on by default. (Feature 16 replaced the import toggle with
 a mode: all open issues, assigned to linked members, or none; see
-docs/features/16-github-sync-and-replies.md.) Admins can change the toggles, disconnect a
+docs/features/16-github-sync-and-replies.md.) Each repository also has an optional *base branch* (`ProjectRepo.baseBranch`,
+null = the repo's default branch): agents open their PRs into it, and with it
+set, *move on merge* only fires for PRs merged into that branch (the
+`pull_request` payload's `base.ref`). Admins edit it in Settings → Integrations
+(`integrations.manage`); it must be a valid git ref name (max 100 chars). Admins can change the toggles, disconnect a
 repository, or remove an installation from Kanso.
 
 **Import.** These issues come in:

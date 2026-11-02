@@ -290,7 +290,7 @@ describe("assigning & dispatch", () => {
     expect(JSON.parse(body)).toMatchObject({
       event: "issue.assigned",
       issue: { key: "WEB-1", title: "Webhook me" },
-      repository: { fullName: "acme/web", url: "https://github.com/acme/web" },
+      repository: { fullName: "acme/web", url: "https://github.com/acme/web", baseBranch: null },
       run: { id: first.runId },
     });
     expect((await db.agentRun.findUniqueOrThrow({ where: { id: first.runId! } })).status).toBe("DISPATCHED");
@@ -383,11 +383,18 @@ describe("assigning & dispatch", () => {
       labelIds: [],
       link: { projectRepoId: api.id, repoFullName: "acme/api", number: 9, url: "https://github.com/acme/api/issues/9" },
     }))!;
-    expect(await issueRepository(plain.id)).toEqual({ fullName: "acme/web", url: "https://github.com/acme/web" });
+    expect(await issueRepository(plain.id)).toEqual({ fullName: "acme/web", url: "https://github.com/acme/web", baseBranch: null });
     expect((await issueRepository(imported.id))?.fullName).toBe("acme/api");
 
     await db.gitHubInstallation.update({ where: { id: installation.id }, data: { suspendedAt: new Date() } });
     expect(await issueRepository(plain.id)).toBeNull();
+  });
+
+  it("carries the repo's base branch, for imported and plain issues", async () => {
+    const { ctx, web, repo } = await setup();
+    await db.projectRepo.update({ where: { id: repo.id }, data: { baseBranch: "development" } });
+    const issue = await makeIssue(ctx, web.todo.id);
+    expect(await issueRepository(issue.id)).toMatchObject({ fullName: "acme/web", baseBranch: "development" });
   });
 
   it("disabled agents can't be assigned", async () => {
@@ -413,7 +420,7 @@ describe("claim, progress, release", () => {
 
     const claimed = await claimIssue(agentCtx, "WEB-1");
     expect(claimed.branch).toBe("web-1-fix-login-redirect");
-    expect(claimed.repository).toEqual({ fullName: "acme/web", url: "https://github.com/acme/web" });
+    expect(claimed.repository).toEqual({ fullName: "acme/web", url: "https://github.com/acme/web", baseBranch: null });
     expect(claimed.run.status).toBe("RUNNING");
     expect(claimed.issue.column.category).toBe("IN_PROGRESS");
     expect(await claimedBy(issue.id)).toBe(agent.id);
