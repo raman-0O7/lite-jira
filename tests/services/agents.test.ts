@@ -536,7 +536,7 @@ describe("lifecycle", () => {
         new Request("http://localhost/api/cron/agent-watchdog", { headers: { authorization: "Bearer cron-secret-value" } }),
       );
       expect(ok.status).toBe(200);
-      expect(await ok.json()).toEqual({ failed: 0 });
+      expect(await ok.json()).toEqual({ failed: 0, synced: 0 });
     } finally {
       process.env.CRON_SECRET = previous;
     }

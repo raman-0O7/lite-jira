@@ -9,7 +9,14 @@ import { RunStatusBadge } from "@/components/issue/AgentBadges";
 import { ago } from "@/components/issue/IssueActivity";
 import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
-import { ACTIVE_RUN_STATUSES, agentKeys, fetchAgentRuns, retryAgentRun, RUN_STATUS_LABEL } from "@/lib/api/agents";
+import {
+  ACTIVE_RUN_STATUSES,
+  agentKeys,
+  fetchAgentRuns,
+  formatCents,
+  retryAgentRun,
+  RUN_STATUS_LABEL,
+} from "@/lib/api/agents";
 import { type IssueFull, issueKeys } from "@/lib/api/issues";
 import { projectKeys } from "@/lib/api/projects";
 
@@ -49,6 +56,9 @@ export function IssueAgent({ issue, projectId }: { issue: IssueFull; projectId: 
   const runs = runsQuery.data ?? [];
   const latest = runs[0] ?? issue.agentRuns?.[0];
   const ended = !latest || latest.status === "FAILED" || latest.status === "CANCELLED";
+  const latestRun = runs[0];
+  // The workspace agent runs in the Claude Console and is answered by commenting here.
+  const workspaceAgent = (latestRun?.agent.kind ?? issue.assigneeAgent?.kind) === "CLAUDE_API";
 
   return (
     <div className="mt-3 flex flex-col gap-1.5 border-t px-1 pt-3" aria-label="Agent">
@@ -63,7 +73,9 @@ export function IssueAgent({ issue, projectId }: { issue: IssueFull; projectId: 
       {latest?.sessionUrl ? (
         <a href={latest.sessionUrl} target="_blank" rel="noreferrer" className={LINK}>
           <Play className="size-3.5 shrink-0 text-icon" />
-          <span className="truncate">{latest.status === "NEEDS_INPUT" ? "Answer in session" : "Watch session"}</span>
+          <span className="truncate">
+            {workspaceAgent ? "Watch in Console" : latest.status === "NEEDS_INPUT" ? "Answer in session" : "Watch session"}
+          </span>
           <ExternalLink className="ml-auto size-3 shrink-0 text-muted-foreground" />
         </a>
       ) : null}
@@ -73,6 +85,12 @@ export function IssueAgent({ issue, projectId }: { issue: IssueFull; projectId: 
           <span className="truncate">Pull request</span>
           <ExternalLink className="ml-auto size-3 shrink-0 text-muted-foreground" />
         </a>
+      ) : null}
+      {latestRun && (latestRun.costCents !== null || latestRun.budgetCents !== null) ? (
+        <p className="px-1 text-xs text-muted-foreground">
+          Cost {formatCents(latestRun.costCents ?? 0)}
+          {latestRun.budgetCents !== null ? ` of ${formatCents(latestRun.budgetCents)} run limit` : null}
+        </p>
       ) : null}
       {latest?.error && latest.status === "FAILED" ? (
         <p className="rounded-md bg-danger/10 px-2 py-1.5 text-xs break-words text-danger">{latest.error}</p>
@@ -97,6 +115,7 @@ export function IssueAgent({ issue, projectId }: { issue: IssueFull; projectId: 
               <li key={run.id} className="flex items-center gap-2" title={run.error ?? undefined}>
                 <span className="min-w-0 flex-1 truncate">
                   {run.agent.name} · {RUN_STATUS_LABEL[run.status]}
+                  {run.costCents ? ` · ${formatCents(run.costCents)}` : null}
                 </span>
                 <span className="shrink-0">{ago(run.createdAt)}</span>
               </li>

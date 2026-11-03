@@ -79,7 +79,7 @@ export type IssueCard = {
   blockedBy?: string[];
 };
 
-export type AgentStub = { id: string; name: string; kind: "CLAUDE_CODE" | "MCP" };
+export type AgentStub = { id: string; name: string; kind: "CLAUDE_CODE" | "MCP" | "CLAUDE_API" };
 
 export type AgentRunStub = {
   id: string;

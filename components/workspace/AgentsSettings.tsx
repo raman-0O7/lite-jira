@@ -8,7 +8,10 @@ import { toast } from "sonner";
 import { AgentIcon } from "@/components/icons/AgentIcon";
 import { ago } from "@/components/issue/IssueActivity";
 import { InlineLoading, RowListSkeleton } from "@/components/loading/skeletons";
-import { useCan, useWorkspace } from "@/components/providers/workspace-provider";
+import {
+  useCan,
+  useWorkspace,
+} from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,8 +21,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AgentSetupDialog, OneTimeSecret } from "@/components/workspace/AgentSetupDialog";
+import {
+  AgentSetupDialog,
+  OneTimeSecret,
+} from "@/components/workspace/AgentSetupDialog";
 import { Snippet } from "@/components/workspace/ApiSettings";
+import { WorkspaceAgentSection } from "@/components/workspace/WorkspaceAgentCard";
 import {
   type Agent,
   type AgentKind,
@@ -33,7 +40,11 @@ import {
 } from "@/lib/api/agents";
 import { useSession } from "@/lib/auth-client";
 
-const KIND_LABEL: Record<AgentKind, string> = { CLAUDE_CODE: "Claude Code routine", MCP: "MCP agent" };
+const KIND_LABEL: Record<AgentKind, string> = {
+  CLAUDE_CODE: "Claude Code routine",
+  MCP: "MCP agent",
+  CLAUDE_API: "Workspace agent",
+};
 
 /** Settings → Agents (docs/features/12-agents.md "UI", 13-guided-setup.md "Agent setup"). */
 export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
@@ -43,22 +54,35 @@ export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
   const canManageAll = useCan("agent.manage");
   const myId = useSession().data?.user.id;
   const [settingUp, setSettingUp] = useState(false);
-  const agents = useQuery({ queryKey: agentKeys.list(slug), queryFn: () => fetchAgents(slug) });
+  const agents = useQuery({
+    queryKey: agentKeys.list(slug),
+    queryFn: () => fetchAgents(slug),
+  });
+  // The workspace agent has its own section; the lists are personal and MCP agents.
+  const workspaceAgent = agents.data?.find(
+    (agent) => agent.kind === "CLAUDE_API",
+  );
+  const others =
+    agents.data?.filter((agent) => agent.kind !== "CLAUDE_API") ?? [];
 
   return (
     <div className="flex flex-col gap-8">
       <section className="flex flex-col gap-3">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="font-heading text-sm font-semibold text-foreground">Agents</h2>
+            <h2 className="font-heading text-sm font-semibold text-foreground">
+              Agents
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Hand issues to an AI agent and stay the assignee. Each member connects their own:
-              a Claude Code agent runs on its owner’s Claude account, so only they can start it.
-              An agent claims the issue, reports progress, and opens a pull request; a person
-              always merges.
+              Hand issues to an AI agent and stay the assignee. Each member
+              connects their own: a Claude Code agent runs on its owner’s Claude
+              account, so only they can start it. An admin can also connect one
+              workspace agent that everyone shares. An agent claims the issue,
+              reports progress, and opens a pull request; a person always
+              merges.
             </p>
           </div>
-          {canAdd && agents.data?.length ? (
+          {canAdd && others.length ? (
             <Button size="sm" onClick={() => setSettingUp(true)}>
               <Plus />
               Add an agent
@@ -69,32 +93,46 @@ export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
         {agents.isPending ? (
           <RowListSkeleton label="Loading agents" rows={2} />
         ) : agents.isError ? (
-          <p className="text-sm text-muted-foreground">{agents.error.message}</p>
-        ) : agents.data.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed bg-surface px-6 py-8 text-center">
-            <span className="flex size-10 items-center justify-center rounded-full bg-primary-soft">
-              <Bot className="size-5 text-primary-text" />
-            </span>
-            <div className="flex max-w-sm flex-col gap-1">
-              <p className="text-sm font-medium">No agents yet</p>
-              <p className="text-sm text-muted-foreground">
-                {canAdd
-                  ? "Connect Claude Code or your own agent in a few guided steps. You’ll be told exactly what to click."
-                  : "Members connect their own agents here. Guests can’t."}
-              </p>
+          <p className="text-sm text-muted-foreground">
+            {agents.error.message}
+          </p>
+        ) : others.length === 0 ? (
+          <>
+            <WorkspaceAgentSection
+              agent={workspaceAgent}
+              isAdmin={canManageAll}
+            />
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed bg-surface px-6 py-8 text-center">
+              <span className="flex size-10 items-center justify-center rounded-full bg-primary-soft">
+                <Bot className="size-5 text-primary-text" />
+              </span>
+              <div className="flex max-w-sm flex-col gap-1">
+                <p className="text-sm font-medium">
+                  {workspaceAgent ? "No personal agents yet" : "No agents yet"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {canAdd
+                    ? "Connect Claude Code or your own agent in a few guided steps. You’ll be told exactly what to click."
+                    : "Members connect their own agents here. Guests can’t."}
+                </p>
+              </div>
+              {canAdd ? (
+                <Button onClick={() => setSettingUp(true)}>
+                  <Plus />
+                  Add an agent
+                </Button>
+              ) : null}
             </div>
-            {canAdd ? (
-              <Button onClick={() => setSettingUp(true)}>
-                <Plus />
-                Add an agent
-              </Button>
-            ) : null}
-          </div>
+          </>
         ) : (
           <>
+            <WorkspaceAgentSection
+              agent={workspaceAgent}
+              isAdmin={canManageAll}
+            />
             <AgentList
               title="Your agents"
-              agents={agents.data.filter((agent) => agent.owner.id === myId)}
+              agents={others.filter((agent) => agent.owner.id === myId)}
               canManage={canManageAll || canAdd}
               myId={myId}
               mcpUrl={mcpUrl}
@@ -103,8 +141,12 @@ export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
             <AgentList
               // Members see only teammates' shared MCP agents; admins see everyone's.
               title={canManageAll ? "Other members’ agents" : "Shared agents"}
-              hint={canManageAll ? null : "Self-hosted agents anyone in the workspace can hand work to."}
-              agents={agents.data.filter((agent) => agent.owner.id !== myId)}
+              hint={
+                canManageAll
+                  ? null
+                  : "Self-hosted agents anyone in the workspace can hand work to."
+              }
+              agents={others.filter((agent) => agent.owner.id !== myId)}
               canManage={canManageAll}
               myId={myId}
               mcpUrl={mcpUrl}
@@ -113,7 +155,9 @@ export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
         )}
       </section>
 
-      {canAdd ? <AgentSetupDialog open={settingUp} onOpenChange={setSettingUp} /> : null}
+      {canAdd ? (
+        <AgentSetupDialog open={settingUp} onOpenChange={setSettingUp} />
+      ) : null}
     </div>
   );
 }
@@ -145,11 +189,19 @@ function AgentList({
       {agents.length ? (
         <ul className="divide-y rounded-lg border bg-surface shadow-card">
           {agents.map((agent) => (
-            <AgentRow key={agent.id} agent={agent} canManage={canManage} mine={agent.owner.id === myId} mcpUrl={mcpUrl} />
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              canManage={canManage}
+              mine={agent.owner.id === myId}
+              mcpUrl={mcpUrl}
+            />
           ))}
         </ul>
       ) : (
-        <p className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground">{empty}</p>
+        <p className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground">
+          {empty}
+        </p>
       )}
     </div>
   );
@@ -170,13 +222,18 @@ function AgentRow({
   const queryClient = useQueryClient();
   const [showTokens, setShowTokens] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: agentKeys.list(slug) });
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: agentKeys.list(slug) });
 
   const toggle = useMutation({
     mutationFn: () => updateAgent(slug, agent.id, { enabled: !agent.enabled }),
     onSuccess: (updated) => {
       refresh();
-      toast.success(updated.enabled ? `${updated.name} enabled.` : `${updated.name} disabled. Its tokens stop working.`);
+      toast.success(
+        updated.enabled
+          ? `${updated.name} enabled.`
+          : `${updated.name} disabled. Its tokens stop working.`,
+      );
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -206,7 +263,8 @@ function AgentRow({
             ) : null}
           </p>
           <p className="truncate text-xs text-muted-foreground">
-            {KIND_LABEL[agent.kind]} · {mine ? "yours" : `${agent.owner.name}’s`} ·{" "}
+            {KIND_LABEL[agent.kind]} ·{" "}
+            {mine ? "yours" : `${agent.owner.name}’s`} ·{" "}
             {agent.kind === "CLAUDE_CODE" ? (
               <span className="font-mono">{agent.fireUrl}</span>
             ) : agent.webhookUrl ? (
@@ -214,41 +272,65 @@ function AgentRow({
             ) : (
               "polls its queue"
             )}
-            {agent.tokenCount ? ` · ${agent.tokenCount} token${agent.tokenCount === 1 ? "" : "s"}` : null}
+            {agent.tokenCount
+              ? ` · ${agent.tokenCount} token${agent.tokenCount === 1 ? "" : "s"}`
+              : null}
           </p>
         </div>
         {canManage ? (
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={() => setShowTokens((v) => !v)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowTokens((v) => !v)}
+            >
               <KeyRound />
               Tokens
             </Button>
-            <Button variant="outline" size="sm" onClick={() => toggle.mutate()} disabled={toggle.isPending}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => toggle.mutate()}
+              disabled={toggle.isPending}
+            >
               {agent.enabled ? "Disable" : "Enable"}
             </Button>
-            <Button variant="ghost" size="icon-sm" aria-label={`Delete ${agent.name}`} onClick={() => setConfirmDelete(true)}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Delete ${agent.name}`}
+              onClick={() => setConfirmDelete(true)}
+            >
               <Trash2 />
             </Button>
           </div>
         ) : null}
       </div>
 
-      {showTokens && canManage ? <AgentTokens agent={agent} mcpUrl={mcpUrl} /> : null}
+      {showTokens && canManage ? (
+        <AgentTokens agent={agent} mcpUrl={mcpUrl} />
+      ) : null}
 
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete “{agent.name}”?</DialogTitle>
             <DialogDescription>
-              Its tokens stop working and its runs are removed. Issues it was working on stay with
-              their assignee. Comments it wrote stay. This can’t be undone.
+              Its tokens stop working and its runs are removed. Issues it was
+              working on stay with their assignee. Comments it wrote stay. This
+              can’t be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDelete(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" loading={remove.isPending} loadingText="Deleting…" onClick={() => remove.mutate()}>
+            <Button
+              variant="destructive"
+              loading={remove.isPending}
+              loadingText="Deleting…"
+              onClick={() => remove.mutate()}
+            >
               Delete
             </Button>
           </DialogFooter>
@@ -262,9 +344,14 @@ function AgentTokens({ agent, mcpUrl }: { agent: Agent; mcpUrl: string }) {
   const { slug } = useWorkspace();
   const queryClient = useQueryClient();
   const [secret, setSecret] = useState<string | null>(null);
-  const tokens = useQuery({ queryKey: agentKeys.tokens(slug, agent.id), queryFn: () => fetchAgentTokens(slug, agent.id) });
+  const tokens = useQuery({
+    queryKey: agentKeys.tokens(slug, agent.id),
+    queryFn: () => fetchAgentTokens(slug, agent.id),
+  });
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: agentKeys.tokens(slug, agent.id) });
+    queryClient.invalidateQueries({
+      queryKey: agentKeys.tokens(slug, agent.id),
+    });
     queryClient.invalidateQueries({ queryKey: agentKeys.list(slug) });
   };
 
@@ -289,14 +376,26 @@ function AgentTokens({ agent, mcpUrl }: { agent: Agent; mcpUrl: string }) {
     <div className="ml-11 flex flex-col gap-2 rounded-md border bg-muted/30 p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          Tokens let a self-hosted agent call Kanso’s MCP server as {agent.name}.
+          Tokens let a self-hosted agent call Kanso’s MCP server as {agent.name}
+          .
         </p>
-        <Button size="sm" variant="outline" loading={create.isPending} onClick={() => create.mutate()}>
+        <Button
+          size="sm"
+          variant="outline"
+          loading={create.isPending}
+          onClick={() => create.mutate()}
+        >
           <Plus />
           New token
         </Button>
       </div>
-      {secret ? <OneTimeSecret label="Agent token" value={secret} onDismiss={() => setSecret(null)} /> : null}
+      {secret ? (
+        <OneTimeSecret
+          label="Agent token"
+          value={secret}
+          onDismiss={() => setSecret(null)}
+        />
+      ) : null}
       {secret ? (
         <Snippet
           label="Claude Code"
@@ -309,7 +408,9 @@ function AgentTokens({ agent, mcpUrl }: { agent: Agent; mcpUrl: string }) {
             <li key={token.id} className="flex items-center gap-2 text-xs">
               <span className="font-mono">{token.prefix}…</span>
               <span className="flex-1 text-muted-foreground">
-                {token.lastUsedAt ? `Used ${ago(token.lastUsedAt)}` : "Never used"}
+                {token.lastUsedAt
+                  ? `Used ${ago(token.lastUsedAt)}`
+                  : "Never used"}
               </span>
               <Button
                 variant="ghost"

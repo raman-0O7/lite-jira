@@ -390,9 +390,14 @@ export function IssueActivity({
   const runsQuery = useQuery({ queryKey: agentKeys.runs(issueId), queryFn: () => fetchAgentRuns(issueId), enabled: false });
   const latestRun = runsQuery.data?.[0];
   const waitingRun = latestRun?.status === "NEEDS_INPUT" ? latestRun : null;
-  // MCP agents get teammates' comments; Claude Code is answered in its session.
+  // MCP agents and the workspace agent get teammates' comments; Claude Code is answered in its session.
   const canResume = useCan("agent.dispatch");
-  const waiting = canResume && waitingRun?.agent.kind === "MCP" ? waitingRun.agent : null;
+  const waiting = canResume && waitingRun && waitingRun.agent.kind !== "CLAUDE_CODE" ? waitingRun.agent : null;
+  // The workspace agent hears every teammate's comment while it works.
+  const listening =
+    canResume && latestRun?.agent.kind === "CLAUDE_API" && (latestRun.status === "RUNNING" || latestRun.status === "PR_OPEN")
+      ? latestRun.agent
+      : null;
 
   function addImages(files: File[]) {
     const result = mergeImages(images, files);
@@ -498,6 +503,12 @@ export function IssueActivity({
         <p className="mt-1 flex items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-foreground">
           <MessageCircleQuestion className="size-3.5 shrink-0 text-warning" />
           {waiting.name} needs your input. Reply below (text or images) and it picks the work back up.
+        </p>
+      ) : null}
+      {canComment && listening ? (
+        <p className="mt-1 flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          <MessageCircleQuestion className="size-3.5 shrink-0 text-icon" />
+          {listening.name} is working on this. Your comments are sent to it.
         </p>
       ) : null}
       {canComment ? (

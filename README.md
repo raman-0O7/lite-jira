@@ -100,7 +100,7 @@ app/
   api/                              # thin route handlers over lib/services
   api/mcp                           # remote MCP server (OAuth or `kanso_` API token)
   api/github/webhooks, callback     # GitHub App webhooks and install/link redirect
-  api/cron/agent-watchdog           # fails agent runs nobody claimed (Bearer CRON_SECRET)
+  api/cron/agent-watchdog           # fails agent runs nobody claimed, syncs workspace-agent sessions (Bearer CRON_SECRET)
   .well-known/                      # OAuth discovery, forwarded to Better Auth
 lib/
   services/      # all business logic: authorize → validate → write + Activity
@@ -161,6 +161,15 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   can start a Claude Code agent (it runs on their Claude account). Handing an
   issue to an agent keeps the person as assignee ("Bob · Claude"). Spec:
   [`docs/features/17-personal-agents.md`](docs/features/17-personal-agents.md).
+- **Workspace agent**: an admin connects the organization's Claude API key and
+  a GitHub token once (stored encrypted, shown only as their last 4
+  characters); any member can then hand it issues. Each run is a Claude
+  Managed Agents session with a per-run spend ceiling under a monthly limit;
+  Kanso opens its pull request (`open_pull_request`), forwards teammates'
+  comments into the session, and syncs state by polling (the watchdog cron
+  too). Kanso must be reachable at a public `BETTER_AUTH_URL` for the agent to call
+  its MCP server. Spec:
+  [`docs/features/18-workspace-agent.md`](docs/features/18-workspace-agent.md).
 - **Guided setup**: the Projects page's Get started card, the assignee menu's
   "Invite people…" / "Add your AI agent…" rows, and a step-by-step agent setup
   dialog that detects when Kanso is connected to Claude. Spec:

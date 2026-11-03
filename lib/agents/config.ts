@@ -6,7 +6,26 @@ import { badRequest } from "@/lib/services/errors";
 /** An agent's secret configuration, stored encrypted (docs/features/12-agents.md "Model"). */
 export type ClaudeCodeConfig = { fireUrl: string; token: string };
 export type McpAgentConfig = { webhookUrl: string | null; webhookSecret: string };
-export type AgentConfig = ClaudeCodeConfig | McpAgentConfig;
+/** The workspace agent (docs/features/18-workspace-agent.md "Model"). */
+export const WORKSPACE_AGENT_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5"] as const;
+export type WorkspaceAgentModel = (typeof WORKSPACE_AGENT_MODELS)[number];
+export type ClaudeApiConfig = {
+  apiKey: string;
+  githubToken: string;
+  model: WorkspaceAgentModel;
+  monthlyLimitCents: number;
+  runLimitCents: number;
+  consoleWorkspaceId: string | null;
+  // Provisioned on the organization's Anthropic account.
+  environmentId: string;
+  anthropicAgentId: string;
+  anthropicAgentVersion: number;
+  vaultId: string;
+  /** The Kanso agent token stored in the vault for Kanso's MCP server. */
+  vaultTokenId: string;
+  definitionVersion: number;
+};
+export type AgentConfig = ClaudeCodeConfig | McpAgentConfig | ClaudeApiConfig;
 
 export const FIRE_URL_PATTERN = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
 

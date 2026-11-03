@@ -131,6 +131,7 @@ describe("MCP server", () => {
       "claim_issue",
       "report_progress",
       "release_issue",
+      "open_pull_request",
       "bulk_update_issues",
     ]);
     expect(tools.find((t) => t.name === "get_issue")!.annotations.readOnlyHint).toBe(true);

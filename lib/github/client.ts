@@ -246,3 +246,20 @@ export async function userCanSeeInstallation(userToken: string, installationId: 
   }
   return false;
 }
+
+// ---------- personal access token (workspace agent, docs/features/18-workspace-agent.md) ----------
+
+export type GhRepoAccess = { default_branch: string; permissions?: { push?: boolean } };
+export type GhPullRequest = { number: number; html_url: string; title: string; state: string; head: { ref: string; sha: string } };
+
+/** The account a token belongs to (validates the token). */
+export const tokenUser = (token: string) => call<GhUser>("/user", { token });
+
+/** A repository as the token sees it: default branch and whether it can push. */
+export const tokenRepo = (token: string, repo: string) => call<GhRepoAccess>(`/repos/${repo}`, { token });
+
+export const createPullRequest = (
+  token: string,
+  repo: string,
+  pr: { head: string; base: string; title: string; body: string },
+) => call<GhPullRequest>(`/repos/${repo}/pulls`, { token, method: "POST", body: pr });

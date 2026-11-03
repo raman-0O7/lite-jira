@@ -7,7 +7,7 @@
  */
 export class ServiceError extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409 | 503,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 502 | 503,
     message: string,
     options?: ErrorOptions,
   ) {
