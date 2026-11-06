@@ -104,7 +104,11 @@ export type GhIssue = {
   labels?: (GhLabel | string)[];
   pull_request?: unknown;
 };
-export type GhInstallation = { id: number; account: { login: string; type: string } | null };
+export type GhInstallation = {
+  id: number;
+  account: { login: string; type: string } | null;
+  permissions?: GhPermissions;
+};
 export type GhRepo = { full_name: string; private: boolean };
 export type GhCheckSuite = { status: string | null; conclusion: string | null; latest_check_runs_count?: number };
 
@@ -247,16 +251,31 @@ export async function userCanSeeInstallation(userToken: string, installationId: 
   return false;
 }
 
-// ---------- personal access token (workspace agent, docs/features/18-workspace-agent.md) ----------
+// ---------- code access (workspace agent, docs/features/18-workspace-agent.md "GitHub access") ----------
 
-export type GhRepoAccess = { default_branch: string; permissions?: { push?: boolean } };
+export type GhPermissions = Partial<Record<string, "read" | "write">>;
+export type GhApp = { slug: string; owner: { login: string; type: string } | null; permissions: GhPermissions };
 export type GhPullRequest = { number: number; html_url: string; title: string; state: string; head: { ref: string; sha: string } };
 
-/** The account a token belongs to (validates the token). */
-export const tokenUser = (token: string) => call<GhUser>("/user", { token });
+/** The app itself: the permissions it asks installations for. */
+export const getApp = () => call<GhApp>("/app", { token: appJwt() });
 
-/** A repository as the token sees it: default branch and whether it can push. */
-export const tokenRepo = (token: string, repo: string) => call<GhRepoAccess>(`/repos/${repo}`, { token });
+/**
+ * A fresh installation token for one repository, with only `permissions`
+ * (never cached: it's handed on, and permissions an owner just accepted apply
+ * at once). GitHub answers 422 when the installation hasn't granted them or
+ * can't see the repository.
+ */
+export async function repoToken(installationId: number, repo: string, permissions: GhPermissions) {
+  const data = await call<{ token: string; expires_at: string }>(`/app/installations/${installationId}/access_tokens`, {
+    token: appJwt(),
+    method: "POST",
+    body: { repositories: [repo.split("/")[1]], permissions },
+  });
+  return { token: data.token, expiresAt: new Date(data.expires_at) };
+}
+
+export const getRepo = (token: string, repo: string) => call<{ default_branch: string }>(`/repos/${repo}`, { token });
 
 export const createPullRequest = (
   token: string,

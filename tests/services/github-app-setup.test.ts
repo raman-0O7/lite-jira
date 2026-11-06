@@ -75,7 +75,7 @@ describe("guided GitHub App setup", () => {
       request_oauth_on_install: true,
       hook_attributes: { url: "http://localhost:3000/api/github/webhooks", active: true },
       public: true,
-      default_permissions: { issues: "write", pull_requests: "read", checks: "read", metadata: "read" },
+      default_permissions: { issues: "write", contents: "write", pull_requests: "write", checks: "read", metadata: "read" },
       default_events: ["issues", "pull_request", "check_suite"],
     });
 

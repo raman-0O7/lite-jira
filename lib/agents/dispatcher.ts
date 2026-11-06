@@ -1,7 +1,8 @@
 import { newClaimCode } from "@/lib/agents/claim-code";
 import { reconcileActiveRuns, startWorkspaceSession } from "@/lib/agents/claude-api";
 import { fireRoutine } from "@/lib/agents/claude-code";
-import { type ClaudeApiConfig, type ClaudeCodeConfig, decryptConfig, type McpAgentConfig } from "@/lib/agents/config";
+import { type ClaudeCodeConfig, decryptConfig, type McpAgentConfig } from "@/lib/agents/config";
+import { PUSH_PERMISSIONS, repoAccessToken } from "@/lib/agents/github-access";
 import { DispatchError } from "@/lib/agents/http";
 import { interruptRunSessions } from "@/lib/agents/claude-api-client";
 import { failRun } from "@/lib/agents/lifecycle";
@@ -9,7 +10,6 @@ import { issueRepository } from "@/lib/agents/repo";
 import { postAgentWebhook } from "@/lib/agents/webhook";
 import { appUrl } from "@/lib/app-url";
 import { db } from "@/lib/db";
-import { GitHubError, tokenRepo } from "@/lib/github/client";
 import { formatKey } from "@/lib/services/issue-shapes";
 
 /**
@@ -22,6 +22,7 @@ export async function dispatchRun(runId: string) {
     where: { id: runId },
     select: {
       id: true,
+      workspaceId: true,
       status: true,
       agent: { select: { id: true, name: true, kind: true, enabled: true, configEnc: true } },
       issue: { select: { id: true, number: true, title: true, project: { select: { key: true, workspace: { select: { slug: true } } } } } },
@@ -59,7 +60,8 @@ export async function dispatchRun(runId: string) {
       });
     } else if (run.agent.kind === "CLAUDE_API") {
       if (!repository) throw new DispatchError("The project has no connected GitHub repository");
-      await assertCanPush(decryptConfig<ClaudeApiConfig>(run.agent.configEnc).githubToken, repository.fullName);
+      // Kanso's GitHub App: a token that can only push to this repository.
+      const github = await repoAccessToken(run.workspaceId, repository.fullName, PUSH_PERMISSIONS, "push to");
       // Up-to-date costs for the monthly limit.
       await reconcileActiveRuns({ agentId: run.agent.id });
       const session = await startWorkspaceSession({
@@ -71,6 +73,7 @@ export async function dispatchRun(runId: string) {
         title: run.issue.title,
         workspace,
         repository,
+        githubToken: github.token,
       });
       const { count } = await db.agentRun.updateMany({
         where: { id: run.id, status: "QUEUED" },
@@ -80,6 +83,8 @@ export async function dispatchRun(runId: string) {
           externalSessionId: session.sessionId,
           sessionUrl: session.sessionUrl,
           budgetCents: session.budgetCents,
+          githubResourceId: session.githubResourceId,
+          githubTokenAt: new Date(),
           syncedAt: new Date(),
         },
       });
@@ -105,22 +110,5 @@ export async function dispatchRun(runId: string) {
   } catch (error) {
     if (!(error instanceof DispatchError)) console.error("[agents.dispatch]", run.id, error instanceof Error ? error.name : "error");
     await failRun(run.id, error instanceof DispatchError ? error.message : "Dispatch failed", ["QUEUED"]);
-  }
-}
-
-/** The workspace agent's GitHub token must be able to push to the repository. */
-async function assertCanPush(token: string, repo: string) {
-  try {
-    const access = await tokenRepo(token, repo);
-    if (!access.permissions?.push) throw new DispatchError(`The workspace agent's GitHub token can't push to ${repo}`);
-  } catch (error) {
-    if (!(error instanceof GitHubError)) throw error;
-    throw new DispatchError(
-      error.status === 401
-        ? "GitHub rejected the workspace agent's token. An admin can replace it in Settings → Agents."
-        : error.status === 404
-          ? `The workspace agent's GitHub token can't see ${repo}`
-          : "Couldn't check the workspace agent's access on GitHub",
-    );
   }
 }

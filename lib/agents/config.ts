@@ -11,7 +11,6 @@ export const WORKSPACE_AGENT_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5"] a
 export type WorkspaceAgentModel = (typeof WORKSPACE_AGENT_MODELS)[number];
 export type ClaudeApiConfig = {
   apiKey: string;
-  githubToken: string;
   model: WorkspaceAgentModel;
   monthlyLimitCents: number;
   runLimitCents: number;

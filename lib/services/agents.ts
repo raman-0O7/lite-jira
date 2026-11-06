@@ -24,13 +24,16 @@ import {
 } from "@/lib/agents/claude-api";
 import { describeAnthropicError, interruptRunSessions } from "@/lib/agents/claude-api-client";
 import { dispatchRun } from "@/lib/agents/dispatcher";
+import { PULL_REQUEST_PERMISSIONS, repoAccessToken, workspaceAgentGitHub } from "@/lib/agents/github-access";
+import { DispatchError } from "@/lib/agents/http";
 import { ACTIVE_RUN, failStaleRuns, onPullRequestLinked, recordRunActivity } from "@/lib/agents/lifecycle";
 import { issueRepository } from "@/lib/agents/repo";
 import { db } from "@/lib/db";
 import { defer } from "@/lib/defer";
 import { branchName } from "@/lib/github/branch";
-import { createPullRequest, GitHubError, tokenRepo, tokenUser } from "@/lib/github/client";
+import { createPullRequest, getRepo, GitHubError } from "@/lib/github/client";
 import { authorize, can } from "@/lib/permissions";
+import { isServerOwner } from "@/lib/server-owner";
 import { recordActivity } from "@/lib/services/activity";
 import { mintAgentToken } from "@/lib/services/api-tokens";
 import { addComment } from "@/lib/services/comments";
@@ -68,7 +71,6 @@ const hint = (secret: string) => `…${secret.slice(-4)}`;
 function workspaceAgentSettings(config: ClaudeApiConfig) {
   return {
     apiKeyHint: hint(config.apiKey),
-    githubTokenHint: hint(config.githubToken),
     model: config.model,
     monthlyLimitCents: config.monthlyLimitCents,
     runLimitCents: config.runLimitCents,
@@ -125,6 +127,18 @@ export async function listAgents(ctx: Ctx) {
   );
 }
 
+/**
+ * Whether Kanso's GitHub App can push and open pull requests for the
+ * workspace agent, and who can fix it if not (admins, Settings → Agents).
+ */
+export async function getWorkspaceAgentGitHub(ctx: Ctx) {
+  authorize(ctx, "agent.manage");
+  const github = await workspaceAgentGitHub(ctx.workspaceId);
+  if (github.status !== "app_needs_access") return github;
+  // Only whoever runs Kanso can change the app's own settings.
+  return (await isServerOwner(actingUserId(ctx))) ? github : { status: github.status, settingsUrl: null };
+}
+
 const name = z.string().trim().min(1, "Name is required").max(40);
 const webhookUrl = z.string().trim().max(500).nullish();
 
@@ -134,11 +148,6 @@ const apiKey = z
   .trim()
   .max(300)
   .regex(/^sk-ant-[A-Za-z0-9_-]{20,}$/, "Paste a Claude API key (sk-ant-…) from the Claude Console");
-const githubToken = z
-  .string()
-  .trim()
-  .max(300)
-  .regex(/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/, "Paste a GitHub personal access token (github_pat_…)");
 const limit = z.coerce.number().min(1, "Limits start at $1").max(100_000);
 const consoleWorkspaceId = z
   .string()
@@ -155,7 +164,6 @@ const createAgentSchema = z.discriminatedUnion("kind", [
     kind: z.literal("CLAUDE_API"),
     name,
     apiKey,
-    githubToken,
     model: workspaceAgentModel.default("claude-opus-5-5"),
     monthlyLimit: limit.default(100),
     runLimit: limit.default(25),
@@ -167,16 +175,6 @@ const createAgentSchema = z.discriminatedUnion("kind", [
 type AgentSecrets = { token?: string; webhookSecret?: string };
 
 const toCents = (value: number) => Math.round(value * 100);
-
-/** GitHub must accept the workspace agent's token. */
-async function assertGitHubToken(token: string) {
-  try {
-    await tokenUser(token);
-  } catch (error) {
-    if (error instanceof GitHubError && error.status === 401) throw badRequest("GitHub rejected that token");
-    throw new ServiceError(502, "Couldn't check the token with GitHub; try again");
-  }
-}
 
 /** An Anthropic failure while provisioning, as a safe message. */
 function provisioningError(error: unknown) {
@@ -247,12 +245,10 @@ async function createWorkspaceAgent(ctx: Ctx, data: Extract<z.infer<typeof creat
   }
   if (data.runLimit > data.monthlyLimit) throw badRequest("The per-run limit can't be more than the monthly limit");
   await assertNameFree(ctx.workspaceId, data.name);
-  await assertGitHubToken(data.githubToken);
   const workspace = await db.workspace.findUniqueOrThrow({ where: { id: ctx.workspaceId }, select: { slug: true } });
 
   const base: ClaudeApiConfig = {
     apiKey: data.apiKey,
-    githubToken: data.githubToken,
     model: data.model,
     monthlyLimitCents: toCents(data.monthlyLimit),
     runLimitCents: toCents(data.runLimit),
@@ -304,7 +300,6 @@ const updateWorkspaceAgentSchema = z.object({
   name: name.optional(),
   enabled: z.boolean().optional(),
   apiKey: apiKey.optional(),
-  githubToken: githubToken.optional(),
   model: workspaceAgentModel.optional(),
   monthlyLimit: limit.optional(),
   runLimit: limit.optional(),
@@ -330,10 +325,6 @@ async function updateWorkspaceAgent(ctx: Ctx, agent: { id: string; name: string;
     ...(patch.consoleWorkspaceId !== undefined ? { consoleWorkspaceId: patch.consoleWorkspaceId || null } : {}),
   };
   if (config.runLimitCents > config.monthlyLimitCents) throw badRequest("The per-run limit can't be more than the monthly limit");
-  if (patch.githubToken && patch.githubToken !== current.githubToken) {
-    await assertGitHubToken(patch.githubToken);
-    config.githubToken = patch.githubToken;
-  }
 
   let oldTokenId: string | null = null;
   if (patch.apiKey && patch.apiKey !== current.apiKey) {
@@ -878,7 +869,7 @@ const pullRequestSchema = z.object({
 /**
  * The workspace agent's pushed branch becomes a pull request
  * (docs/features/18-workspace-agent.md "open_pull_request"). Kanso opens it
- * with the workspace's GitHub token: only for the agent that claimed the
+ * as its GitHub App: only for the agent that claimed the
  * issue, only in the issue's repository, never from the base branch. Never
  * merges.
  */
@@ -889,7 +880,7 @@ export async function openPullRequest(ctx: Ctx, key: string, input: unknown) {
   const agentCtx = await agentCtxFor(ctx, issue);
   const agentId = issue.assigneeAgent!.id;
   const issueKey = formatKey(issue.project.key, issue.number);
-  const agent = await db.agent.findUniqueOrThrow({ where: { id: agentId }, select: { kind: true, configEnc: true } });
+  const agent = await db.agent.findUniqueOrThrow({ where: { id: agentId }, select: { kind: true } });
   if (agent.kind !== "CLAUDE_API") {
     throw badRequest("open_pull_request is for the workspace agent. Push your branch and open the pull request yourself.");
   }
@@ -897,17 +888,17 @@ export async function openPullRequest(ctx: Ctx, key: string, input: unknown) {
   const repository = await issueRepository(issue.id);
   if (!repository) throw new ServiceError(409, "The project has no connected GitHub repository");
 
-  const config = decryptConfig<ClaudeApiConfig>(agent.configEnc);
   const body = data.body.toUpperCase().includes(issueKey) ? data.body : `${data.body}\n\nKanso issue: ${issueKey}`.trim();
   let pr;
   try {
-    const base = repository.baseBranch ?? (await tokenRepo(config.githubToken, repository.fullName)).default_branch;
+    const { token } = await repoAccessToken(ctx.workspaceId, repository.fullName, PULL_REQUEST_PERMISSIONS, "open pull requests in");
+    const base = repository.baseBranch ?? (await getRepo(token, repository.fullName)).default_branch;
     if (data.branch === base) throw badRequest(`Push your work to its own branch, not ${base}`);
-    pr = await createPullRequest(config.githubToken, repository.fullName, { head: data.branch, base, title: data.title, body });
+    pr = await createPullRequest(token, repository.fullName, { head: data.branch, base, title: data.title, body });
   } catch (error) {
+    if (error instanceof DispatchError) throw new ServiceError(409, error.message);
     if (!(error instanceof GitHubError)) throw error;
-    if (error.status === 401) throw new ServiceError(502, "GitHub rejected the workspace agent's token");
-    if (error.status === 404) throw new ServiceError(502, `The workspace agent's GitHub token can't see ${repository.fullName}`);
+    if (error.status === 404) throw new ServiceError(502, `Kanso's GitHub App can't see ${repository.fullName}`);
     // GitHub's own explanation, e.g. no commits between the branches, or a PR already exists.
     if (error.status === 422) throw badRequest(error.message.slice(0, 300));
     throw new ServiceError(502, "GitHub couldn't open the pull request; try again");

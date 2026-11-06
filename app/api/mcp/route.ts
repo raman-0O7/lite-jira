@@ -1,6 +1,7 @@
 import { requireMcpAuth } from "@better-auth/mcp";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 
+import { renewGitHubAccess } from "@/lib/agents/claude-api";
 import { appUrl } from "@/lib/app-url";
 import { auth } from "@/lib/auth";
 import { MCP_PATH, MCP_RESOURCE, MCP_SCOPES } from "@/lib/mcp/config";
@@ -77,6 +78,8 @@ async function handle(request: Request) {
     if (retryAfter) return tooManyRequests(retryAfter);
     const ctx = await ctxForApiToken(bearer);
     if (!ctx) return unauthorized("Invalid, expired, or revoked API token");
+    // The workspace agent pushes with GitHub App tokens that last an hour: renew them as it works.
+    if (ctx.actor.type === "agent") await renewGitHubAccess({ agentId: ctx.actor.agentId });
     const scopes = ctx.limits?.write ? [MCP_SCOPES.read, MCP_SCOPES.write] : [MCP_SCOPES.read];
     return serve(request, bearer, "api_token", scopes, { kind: "api_token", ctx });
   }

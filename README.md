@@ -161,9 +161,12 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   can start a Claude Code agent (it runs on their Claude account). Handing an
   issue to an agent keeps the person as assignee ("Bob · Claude"). Spec:
   [`docs/features/17-personal-agents.md`](docs/features/17-personal-agents.md).
-- **Workspace agent**: an admin connects the organization's Claude API key and
-  a GitHub token once (stored encrypted, shown only as their last 4
-  characters); any member can then hand it issues. Each run is a Claude
+- **Workspace agent**: an admin connects the organization's Claude API key
+  once (stored encrypted, shown only as its last 4 characters); any member can
+  then hand it issues. It works in repositories through Kanso's GitHub App
+  (which needs Contents and Pull requests read & write; see
+  [`docs/github-app.md`](docs/github-app.md)), with a token per session that
+  can only push to that repository. Each run is a Claude
   Managed Agents session with a per-run spend ceiling under a monthly limit;
   Kanso opens its pull request (`open_pull_request`), forwards teammates'
   comments into the session, and syncs state by polling (the watchdog cron

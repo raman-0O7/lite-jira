@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { reconcileRun } from "@/lib/agents/claude-api";
+import { reconcileRun, renewGitHubAccess } from "@/lib/agents/claude-api";
 import { setAnthropicClientFactory } from "@/lib/agents/claude-api-client";
 import { db } from "@/lib/db";
 import { flushDeferred } from "@/lib/defer";
@@ -11,6 +11,7 @@ import {
   claimIssue,
   createAgent,
   deleteAgent,
+  getWorkspaceAgentGitHub,
   listAgentRuns,
   listAgents,
   openPullRequest,
@@ -22,10 +23,10 @@ import { addComment } from "@/lib/services/comments";
 import type { Ctx } from "@/lib/services/context";
 
 import { addMember, makeTeam, makeUser } from "../factories";
+import { configureGitHubEnv } from "../fake-github";
 import { expectStatus, makeIssue, makeProject } from "../helpers";
 
 const API_KEY = "sk-ant-api03-test-key-0123456789abcdefWXYZ";
-const GH_TOKEN = "github_pat_0123456789abcdefghijklmnop";
 
 // ---------- a fake Anthropic ----------
 
@@ -39,6 +40,7 @@ let anthropic: {
   updates: { id: string; params: Record<string, unknown> }[];
   credentials: { vaultId: string; params: { auth: { token: string; mcp_server_url: string; type: string } } }[];
   sessions: Record<string, unknown>[];
+  tokenUpdates: { resourceId: string; session_id: string; authorization_token: string }[];
   sent: Sent[];
   retrieves: number;
   status: string;
@@ -55,6 +57,7 @@ function resetAnthropic() {
     updates: [],
     credentials: [],
     sessions: [],
+    tokenUpdates: [],
     sent: [],
     retrieves: 0,
     status: "running",
@@ -107,7 +110,15 @@ function fakeClient(apiKey: string) {
         create: async (params: Record<string, unknown>) => {
           guard();
           anthropic.sessions.push(params);
-          return { id: `sesn_${anthropic.sessions.length}` };
+          const n = anthropic.sessions.length;
+          return { id: `sesn_${n}`, resources: [{ id: `sesrsc_${n}`, type: "github_repository" }] };
+        },
+        resources: {
+          update: async (resourceId: string, params: { session_id: string; authorization_token: string }) => {
+            guard();
+            anthropic.tokenUpdates.push({ resourceId, ...params });
+            return { id: resourceId, type: "github_repository" };
+          },
         },
         retrieve: async () => {
           anthropic.retrieves++;
@@ -128,26 +139,57 @@ function fakeClient(apiKey: string) {
   } as unknown as Anthropic;
 }
 
-// ---------- a fake GitHub ----------
+// ---------- a fake GitHub (Kanso's GitHub App) ----------
 
-let github: { canPush: boolean; tokenValid: boolean; pulls: { url: string; body: Record<string, string> }[] };
+type Permissions = Record<string, string>;
+let github: {
+  /** What the app asks installations for, and what installation 91 (acme) has accepted. */
+  app: Permissions;
+  installation: Permissions;
+  tokens: { token: string; repositories: string[]; permissions: Permissions }[];
+  pulls: { auth: string | null; body: Record<string, string> }[];
+};
+
+const CODE_ACCESS = { issues: "write", contents: "write", pull_requests: "write", checks: "read", metadata: "read" };
+const OLD_ACCESS = { issues: "write", pull_requests: "read", checks: "read", metadata: "read" };
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
+const tokenAllows = (auth: string | null, permission: string) =>
+  github.tokens.some((t) => auth === `Bearer ${t.token}` && t.permissions[permission] === "write");
+
 beforeAll(() => {
+  configureGitHubEnv();
   setAnthropicClientFactory(fakeClient);
   setGitHubFetch(async (input, init) => {
-    const url = String(input);
+    const path = new URL(String(input)).pathname;
+    const method = init?.method ?? "GET";
     const auth = new Headers(init?.headers).get("authorization");
-    if (!github.tokenValid || auth !== `Bearer ${GH_TOKEN}`) return json(401, { message: "Bad credentials" });
-    if (url.endsWith("/user")) return json(200, { id: 1, login: "kanso-bot" });
-    if (url.endsWith("/repos/acme/web/pulls") && init?.method === "POST") {
-      const body = JSON.parse(String(init.body)) as Record<string, string>;
-      github.pulls.push({ url, body });
+    if (path === "/app") return json(200, { slug: "kanso-test", owner: { login: "kanso-dev", type: "User" }, permissions: github.app });
+    if (path === "/app/installations/91") {
+      return json(200, { id: 91, account: { login: "acme", type: "Organization" }, permissions: github.installation });
+    }
+    if (path === "/app/installations/91/access_tokens" && method === "POST") {
+      const body = JSON.parse(String(init!.body)) as { repositories: string[]; permissions: Permissions };
+      const granted = Object.entries(body.permissions).every(
+        ([name, level]) => github.installation[name] === "write" || (level === "read" && github.installation[name]),
+      );
+      if (!granted) return json(422, { message: "The permissions requested are not granted to this installation." });
+      if (!body.repositories.every((r) => r === "web")) {
+        return json(422, { message: "There is at least one repository that does not exist or is not accessible to the parent installation." });
+      }
+      const token = `ghs_${github.tokens.length + 1}`;
+      github.tokens.push({ token, ...body });
+      return json(201, { token, expires_at: new Date(Date.now() + 3_600_000).toISOString() });
+    }
+    if (path === "/repos/acme/web/pulls" && method === "POST") {
+      if (!tokenAllows(auth, "pull_requests")) return json(403, { message: "Resource not accessible by integration" });
+      const body = JSON.parse(String(init!.body)) as Record<string, string>;
+      github.pulls.push({ auth, body });
       return json(201, { number: 7, html_url: "https://github.com/acme/web/pull/7", title: body.title, state: "open", head: { ref: body.head, sha: "abc123" } });
     }
-    if (url.endsWith("/repos/acme/web")) return json(200, { default_branch: "main", permissions: { push: github.canPush } });
+    if (path === "/repos/acme/web") return json(200, { default_branch: "main" });
     return json(404, { message: "Not Found" });
   });
 });
@@ -157,13 +199,13 @@ afterAll(() => {
 });
 beforeEach(() => {
   resetAnthropic();
-  github = { canPush: true, tokenValid: true, pulls: [] };
+  github = { app: { ...CODE_ACCESS }, installation: { ...CODE_ACCESS }, tokens: [], pulls: [] };
 });
 
 // ---------- setup ----------
 
 const connect = (ctx: Ctx, extra: Record<string, unknown> = {}) =>
-  createAgent(ctx, { kind: "CLAUDE_API", name: "Workspace agent", apiKey: API_KEY, githubToken: GH_TOKEN, ...extra });
+  createAgent(ctx, { kind: "CLAUDE_API", name: "Workspace agent", apiKey: API_KEY, ...extra });
 
 async function setup(extra: Record<string, unknown> = {}) {
   const team = await makeTeam();
@@ -211,10 +253,14 @@ describe("connecting the workspace agent", () => {
 
     expect(agent.enabled).toBe(true);
     const listed = (await listAgents(ctx)).find((a) => a.id === agent.id)!;
-    expect(listed.workspaceAgent).toMatchObject({ apiKeyHint: "…WXYZ", githubTokenHint: "…mnop", monthlyLimitCents: 10_000, runLimitCents: 2_500 });
-    const text = JSON.stringify(await listAgents(ctx));
-    expect(text).not.toContain(API_KEY);
-    expect(text).not.toContain(GH_TOKEN);
+    expect(listed.workspaceAgent).toEqual({
+      apiKeyHint: "…WXYZ",
+      model: "claude-opus-5-5",
+      monthlyLimitCents: 10_000,
+      runLimitCents: 2_500,
+      consoleWorkspaceId: null,
+    });
+    expect(JSON.stringify(await listAgents(ctx))).not.toContain(API_KEY);
 
     // Members see it (to assign it) but not its settings or spend.
     const seen = (await listAgents(member)).find((a) => a.id === agent.id)!;
@@ -222,7 +268,7 @@ describe("connecting the workspace agent", () => {
     expect("spend" in seen).toBe(false);
   });
 
-  it("admins only, one per workspace, bad keys and tokens refused", async () => {
+  it("admins only, one per workspace, bad keys refused", async () => {
     const { ctx, member } = await setup();
     await expectStatus(connect(member, { name: "Mine" }), 403);
     await expectStatus(connect(ctx, { name: "Another" }), 409);
@@ -234,10 +280,34 @@ describe("connecting the workspace agent", () => {
     expect(refused).toMatchObject({ status: 400, message: "Claude rejected that API key" });
     // Nothing half set up is left behind.
     expect(await db.agent.count({ where: { workspaceId: other.workspace.id } })).toBe(0);
+  });
 
-    anthropic.failWith = null;
-    github.tokenValid = false;
-    await expect(connect(other.ctx)).rejects.toMatchObject({ status: 400, message: "GitHub rejected that token" });
+  it("shows admins whether Kanso's GitHub App can push, and who can fix it", async () => {
+    const { ctx, member, workspace } = await setup();
+    await expectStatus(getWorkspaceAgentGitHub(member), 403);
+    expect(await getWorkspaceAgentGitHub(ctx)).toEqual({
+      status: "ready",
+      accounts: [{ login: "acme", ready: true, settingsUrl: "https://github.com/organizations/acme/settings/installations/91" }],
+    });
+
+    // The app asks for code access, but acme's owner hasn't accepted it yet.
+    github.installation = { ...OLD_ACCESS };
+    expect(await getWorkspaceAgentGitHub(ctx)).toMatchObject({ status: "needs_approval", accounts: [{ login: "acme", ready: false }] });
+
+    // The app itself doesn't ask for it: only whoever runs Kanso gets the settings link.
+    github.app = { ...OLD_ACCESS };
+    process.env.OWNER_EMAILS = "someone-else@example.test";
+    expect(await getWorkspaceAgentGitHub(ctx)).toEqual({ status: "app_needs_access", settingsUrl: null });
+    const owner = await db.user.findUniqueOrThrow({ where: { id: ctx.actor.type === "user" ? ctx.actor.userId : "" } });
+    process.env.OWNER_EMAILS = owner.email;
+    expect(await getWorkspaceAgentGitHub(ctx)).toEqual({
+      status: "app_needs_access",
+      settingsUrl: "https://github.com/settings/apps/kanso-test/permissions",
+    });
+    delete process.env.OWNER_EMAILS;
+
+    await db.gitHubInstallation.deleteMany({ where: { workspaceId: workspace.id } });
+    expect(await getWorkspaceAgentGitHub(ctx)).toEqual({ status: "not_connected" });
   });
 
   it("a new model publishes a new version; a new key provisions afresh and revokes the old token", async () => {
@@ -266,13 +336,16 @@ describe("runs", () => {
       environment_id: "env_1",
       vault_ids: ["vlt_1"],
       budget: { type: "limit", max_list_cost: { amount: "2500", currency: "USD" } },
-      resources: [{ type: "github_repository", url: "https://github.com/acme/web", authorization_token: GH_TOKEN }],
+      resources: [{ type: "github_repository", url: "https://github.com/acme/web", authorization_token: "ghs_1" }],
     });
+    // A GitHub App token for this one repository that can only push.
+    expect(github.tokens[0]).toEqual({ token: "ghs_1", repositories: ["web"], permissions: { contents: "write", metadata: "read" } });
     expect(JSON.stringify(params.initial_events)).toContain("WEB-1");
     expect(JSON.stringify(params.initial_events)).toContain(s.workspace.slug);
 
     const run = await runOf(runId);
-    expect(run).toMatchObject({ status: "DISPATCHED", externalSessionId: "sesn_1", budgetCents: 2500 });
+    expect(run).toMatchObject({ status: "DISPATCHED", externalSessionId: "sesn_1", budgetCents: 2500, githubResourceId: "sesrsc_1" });
+    expect(run.githubTokenAt).not.toBeNull();
     expect(run.sessionUrl).toBe("https://platform.claude.com/workspaces/default/sessions/sesn_1");
     // The person stays the assignee.
     const after = await db.issue.findUniqueOrThrow({ where: { id: issue.id } });
@@ -290,12 +363,45 @@ describe("runs", () => {
     expect(anthropic.sessions).toHaveLength(2);
   });
 
-  it("fails the run when the GitHub token can't push", async () => {
+  it("fails the run, saying who can fix it, when Kanso's GitHub App can't push", async () => {
     const s = await setup();
-    github.canPush = false;
+    github.installation = { ...OLD_ACCESS };
     const { runId } = await dispatched(s);
-    expect(await runOf(runId)).toMatchObject({ status: "FAILED", error: "The workspace agent's GitHub token can't push to acme/web" });
+    expect(await runOf(runId)).toMatchObject({
+      status: "FAILED",
+      error: "Kanso's GitHub App can't push to acme/web yet. An owner of acme needs to accept the app's updated permissions on GitHub.",
+    });
+
+    github.app = { ...OLD_ACCESS };
+    const second = await dispatched(s, "Two");
+    expect((await runOf(second.runId)).error).toBe(
+      "Kanso's GitHub App doesn't have access to code yet. Whoever runs Kanso needs to give it Contents and Pull requests (read and write) access on GitHub.",
+    );
     expect(anthropic.sessions).toHaveLength(0);
+  });
+
+  it("renews the session's GitHub token once it's half an hour old", async () => {
+    const s = await setup();
+    const { runId } = await dispatched(s);
+    // Fresh: nothing to do.
+    await renewGitHubAccess({ agentId: s.agent.id });
+    expect(anthropic.tokenUpdates).toHaveLength(0);
+
+    await db.agentRun.update({ where: { id: runId }, data: { githubTokenAt: new Date(Date.now() - 31 * 60_000) } });
+    await renewGitHubAccess({ agentId: s.agent.id });
+    await renewGitHubAccess({ agentId: s.agent.id });
+    expect(anthropic.tokenUpdates).toEqual([{ resourceId: "sesrsc_1", session_id: "sesn_1", authorization_token: "ghs_2" }]);
+    expect(github.tokens[1]).toMatchObject({ repositories: ["web"], permissions: { contents: "write", metadata: "read" } });
+
+    // A reconcile renews too; a failure is retried a minute later, not on every call.
+    await db.agentRun.update({ where: { id: runId }, data: { githubTokenAt: new Date(Date.now() - 31 * 60_000) } });
+    github.installation = { ...OLD_ACCESS };
+    await sync(runId);
+    await renewGitHubAccess({ agentId: s.agent.id });
+    expect(anthropic.tokenUpdates).toHaveLength(1);
+    const retryAt = (await runOf(runId)).githubTokenAt!.getTime();
+    expect(Date.now() - retryAt).toBeGreaterThan(28 * 60_000);
+    expect(Date.now() - retryAt).toBeLessThan(30 * 60_000);
   });
 });
 
@@ -381,7 +487,7 @@ describe("keeping runs in sync", () => {
 });
 
 describe("open_pull_request", () => {
-  it("opens the PR with the GitHub token, links it, and moves the run to PR_OPEN", async () => {
+  it("opens the PR as Kanso's GitHub App, links it, and moves the run to PR_OPEN", async () => {
     const s = await setup();
     const { issue, runId } = await dispatched(s);
     const pr = { branch: "web-1-fix-login-redirect", title: "Fix login redirect", body: "Done." };
@@ -393,6 +499,9 @@ describe("open_pull_request", () => {
     const opened = await openPullRequest(s.agentCtx, "WEB-1", pr);
     expect(opened).toEqual({ url: "https://github.com/acme/web/pull/7", number: 7 });
     expect(github.pulls[0]!.body).toMatchObject({ head: pr.branch, base: "main", title: pr.title });
+    // With its own token, which can open pull requests and nothing else.
+    const used = github.tokens.find((t) => github.pulls[0]!.auth === `Bearer ${t.token}`)!;
+    expect(used).toMatchObject({ repositories: ["web"], permissions: { pull_requests: "write", metadata: "read" } });
     expect(github.pulls[0]!.body.body).toContain("WEB-1");
     expect(await runOf(runId)).toMatchObject({ status: "PR_OPEN", prUrl: opened.url });
     expect(await db.pullRequestLink.count({ where: { issueId: issue.id } })).toBe(1);
@@ -401,6 +510,17 @@ describe("open_pull_request", () => {
     anthropic.status = "terminated";
     await sync(runId);
     expect((await runOf(runId)).status).toBe("PR_OPEN");
+  });
+
+  it("says who can fix it when the app can't open pull requests", async () => {
+    const s = await setup();
+    await dispatched(s);
+    await claimIssue(s.agentCtx, "WEB-1");
+    github.installation = { ...OLD_ACCESS };
+    await expect(openPullRequest(s.agentCtx, "WEB-1", { branch: "web-1-fix", title: "Fix" })).rejects.toMatchObject({
+      status: 409,
+      message: "Kanso's GitHub App can't open pull requests in acme/web yet. An owner of acme needs to accept the app's updated permissions on GitHub.",
+    });
   });
 
   it("is only for the workspace agent", async () => {

@@ -25,7 +25,8 @@ These are separate from `GITHUB_CLIENT_ID`/`SECRET`, which are only for
 "Sign in with GitHub". When the app isn't configured, Settings → Integrations
 says so and nothing else changes.
 
-**App permissions:** Issues read & write; Pull requests read; Checks read;
+**App permissions:** Issues read & write; Contents read & write and Pull
+requests read & write (for the workspace agent, feature 18); Checks read;
 Metadata read.
 
 **App events:** Installation, Installation repositories, Issues, Pull request,

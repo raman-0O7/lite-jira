@@ -1,7 +1,8 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CircleAlert, ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -30,16 +31,17 @@ import {
   agentKeys,
   createAgent,
   deleteAgent,
+  fetchWorkspaceAgentGitHub,
   formatCents,
   updateAgent,
   type UpdateAgentInput,
   WORKSPACE_AGENT_MODELS,
+  type WorkspaceAgentGitHub,
   type WorkspaceAgentModel,
 } from "@/lib/api/agents";
+import { cn } from "@/lib/utils";
 
 const CONSOLE_KEYS_URL = "https://platform.claude.com/settings/keys";
-const GITHUB_TOKEN_URL =
-  "https://github.com/settings/personal-access-tokens/new";
 
 const modelLabel = (model: WorkspaceAgentModel | undefined) =>
   WORKSPACE_AGENT_MODELS.find((m) => m.id === model)?.label.replace(
@@ -81,18 +83,22 @@ export function WorkspaceAgentSection({
           onEdit={() => setEditing(true)}
         />
       ) : (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed bg-surface px-4 py-3">
-          <span className="flex size-8 items-center justify-center rounded-full bg-chip">
-            <ClaudeMark className="size-4" />
-          </span>
-          <p className="min-w-0 flex-1 text-sm text-muted-foreground">
-            Connect a Claude API key and a GitHub token, set a monthly limit,
-            and everyone can use it.
-          </p>
-          <Button size="sm" onClick={() => setEditing(true)}>
-            <Plus />
-            Connect workspace agent
-          </Button>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed bg-surface px-4 py-3">
+            <span className="flex size-8 items-center justify-center rounded-full bg-chip">
+              <ClaudeMark className="size-4" />
+            </span>
+            <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+              Connect your organization’s Claude API key, set a monthly limit,
+              and everyone can use it. It works in your repositories through
+              Kanso’s GitHub App.
+            </p>
+            <Button size="sm" onClick={() => setEditing(true)}>
+              <Plus />
+              Connect workspace agent
+            </Button>
+          </div>
+          <GitHubAccess hideWhenReady />
         </div>
       )}
       {isAdmin ? (
@@ -161,7 +167,7 @@ function WorkspaceAgentRow({
           </p>
           <p className="truncate text-xs text-muted-foreground">
             {settings
-              ? `${modelLabel(settings.model)} · API key ${settings.apiKeyHint} · GitHub token ${settings.githubTokenHint}`
+              ? `${modelLabel(settings.model)} · API key ${settings.apiKeyHint}`
               : "Anyone in the workspace can hand it an issue"}
           </p>
         </div>
@@ -190,6 +196,12 @@ function WorkspaceAgentRow({
           </div>
         ) : null}
       </div>
+
+      {isAdmin ? (
+        <div className="ml-11">
+          <GitHubAccess />
+        </div>
+      ) : null}
 
       {settings && agent.spend ? (
         <SpendMeter
@@ -284,7 +296,6 @@ function SpendMeter({
 type Form = {
   name: string;
   apiKey: string;
-  githubToken: string;
   model: WorkspaceAgentModel;
   monthlyLimit: string;
   runLimit: string;
@@ -296,7 +307,6 @@ function initialForm(agent: Agent | undefined): Form {
   return {
     name: agent?.name ?? "Workspace agent",
     apiKey: "",
-    githubToken: "",
     model: s?.model ?? "claude-opus-5-5",
     monthlyLimit: s ? String(s.monthlyLimitCents / 100) : "100",
     runLimit: s ? String(s.runLimitCents / 100) : "25",
@@ -336,14 +346,12 @@ function WorkspaceAgentDialog({
             kind: "CLAUDE_API",
             ...base,
             apiKey: form.apiKey.trim(),
-            githubToken: form.githubToken.trim(),
           })
         ).agent;
       }
       // Secrets are sent only when replaced.
       const patch: UpdateAgentInput = { ...base };
       if (form.apiKey.trim()) patch.apiKey = form.apiKey.trim();
-      if (form.githubToken.trim()) patch.githubToken = form.githubToken.trim();
       return updateAgent(slug, agent.id, patch);
     },
     onSuccess: (saved) => {
@@ -434,41 +442,16 @@ function WorkspaceAgentDialog({
               required={!editing}
             />
           </Field>
-          <Field
-            id="wa-github"
-            label="GitHub token"
-            hint={
-              <>
-                A{" "}
-                <a
-                  href={GITHUB_TOKEN_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-0.5 underline"
-                >
-                  fine-grained token <ExternalLink className="size-3" />
-                </a>
-                , ideally for a bot account, with Contents and Pull requests
-                read & write on your connected repositories. Protect your base
-                branch with a required review so merging stays with people.
-                {editing ? " Leave empty to keep the current token." : ""}
-              </>
-            }
-          >
-            <Input
-              id="wa-github"
-              type="password"
-              autoComplete="off"
-              value={form.githubToken}
-              onChange={(e) => set("githubToken", e.target.value)}
-              placeholder={
-                agent?.workspaceAgent
-                  ? `Current token ${agent.workspaceAgent.githubTokenHint}`
-                  : "github_pat_…"
-              }
-              required={!editing}
-            />
-          </Field>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-sm font-medium">GitHub</p>
+            <p className="text-xs text-muted-foreground">
+              Kanso’s GitHub App pushes the agent’s branches and opens its pull
+              requests, only in repositories connected to your projects. Protect
+              your base branch with a required review so merging stays with
+              people.
+            </p>
+            <GitHubAccess hideWhenReady />
+          </div>
           <Field id="wa-model" label="Model">
             <Select
               value={form.model}
@@ -578,4 +561,133 @@ function Field({
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
+}
+
+/**
+ * Whether Kanso's GitHub App can push for the workspace agent, and who can
+ * fix it if not (docs/features/18-workspace-agent.md "GitHub access").
+ */
+function GitHubAccess({ hideWhenReady = false }: { hideWhenReady?: boolean }) {
+  const { slug } = useWorkspace();
+  const { data } = useQuery({
+    queryKey: agentKeys.github(slug),
+    queryFn: () => fetchWorkspaceAgentGitHub(slug),
+    staleTime: 60_000,
+  });
+  if (!data || (hideWhenReady && data.status === "ready")) return null;
+  const message = gitHubMessage(data, slug);
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-2 text-xs",
+        message.ok
+          ? "text-muted-foreground"
+          : "rounded-md bg-warning/10 px-3 py-2 text-foreground",
+      )}
+    >
+      {message.ok ? null : (
+        <CircleAlert className="mt-px size-3.5 shrink-0 text-warning" />
+      )}
+      <div className="flex flex-col gap-1">
+        <p>{message.text}</p>
+        {message.links.length ? (
+          <p className="flex flex-wrap gap-x-3 gap-y-1">
+            {message.links.map((link) =>
+              link.internal ? (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="font-medium underline"
+                >
+                  {link.label}
+                </Link>
+              ) : (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-0.5 font-medium underline"
+                >
+                  {link.label} <ExternalLink className="size-3" />
+                </a>
+              ),
+            )}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+type GitHubMessage = {
+  ok: boolean;
+  text: string;
+  links: { href: string; label: string; internal?: boolean }[];
+};
+
+const listNames = (names: string[]) =>
+  names.length <= 1
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+function gitHubMessage(
+  github: WorkspaceAgentGitHub,
+  slug: string,
+): GitHubMessage {
+  const integrations = {
+    href: `/${slug}/settings/integrations`,
+    label: "Open Integrations",
+    internal: true,
+  };
+  switch (github.status) {
+    case "ready":
+      return {
+        ok: true,
+        text: `Works through Kanso’s GitHub App on ${listNames(github.accounts.map((a) => a.login))}.`,
+        links: [],
+      };
+    case "needs_approval": {
+      const waiting = github.accounts.filter((a) => !a.ready);
+      return {
+        ok: false,
+        text: `Kanso’s GitHub App now asks for access to code and pull requests. ${listNames(waiting.map((a) => a.login))} ${waiting.length === 1 ? "needs" : "need"} to accept it on GitHub before the agent can work there.`,
+        links: waiting.map((a) => ({
+          href: a.settingsUrl,
+          label:
+            waiting.length === 1 ? "Review on GitHub" : `Review for ${a.login}`,
+        })),
+      };
+    }
+    case "app_needs_access":
+      return github.settingsUrl
+        ? {
+            ok: false,
+            text: "Kanso’s GitHub App doesn’t have access to code yet. In its settings, set Contents and Pull requests to Read and write; each connected account then accepts the change.",
+            links: [{ href: github.settingsUrl, label: "Open app settings" }],
+          }
+        : {
+            ok: false,
+            text: "Kanso’s GitHub App doesn’t have access to code yet. Whoever runs Kanso needs to give it Contents and Pull requests (read and write) access.",
+            links: [],
+          };
+    case "not_connected":
+      return {
+        ok: false,
+        text: "Connect GitHub first: the agent works in the repositories you connect to projects.",
+        links: [integrations],
+      };
+    case "not_configured":
+      return {
+        ok: false,
+        text: "GitHub isn’t set up on this Kanso server yet. The agent needs it to work in your repositories.",
+        links: [integrations],
+      };
+    default:
+      return {
+        ok: false,
+        text: "Couldn’t check Kanso’s GitHub access right now.",
+        links: [],
+      };
+  }
 }
