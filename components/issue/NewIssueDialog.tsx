@@ -1,10 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ImagePlus } from "lucide-react";
+import { ImagePlus, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { useCanUseAi } from "@/components/ai/use-ai";
 import { Kbd } from "@/components/icons/Kbd";
 import { ProjectTile } from "@/components/icons/ProjectTile";
 import { PendingImages } from "@/components/issue/IssueActivity";
@@ -13,6 +14,7 @@ import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useAssigneeShortcuts } from "@/components/workspace/AssigneeShortcuts";
+import { draftIssueWithAi } from "@/lib/api/ai";
 import { ATTACHMENT_TYPES, MAX_ATTACHMENTS, mergeImages } from "@/lib/api/comments";
 import { createIssue } from "@/lib/api/issues";
 import { fetchMembers, memberKeys } from "@/lib/api/members";
@@ -112,6 +114,27 @@ function NewIssueForm({
     if (result.error) toast.error(result.error);
     else setImages(result.files);
   }
+
+  // "Fill in": the note so far becomes the issue's fields, for the person to review.
+  const canUseAi = useCanUseAi();
+  const fillIn = useMutation({
+    mutationFn: () => draftIssueWithAi(project.id, [draft.title, draft.description].filter((t) => t.trim()).join("\n\n")),
+    onSuccess: (suggestion) => {
+      const before = draft;
+      set({
+        title: suggestion.title,
+        description: suggestion.description ?? "",
+        type: suggestion.type,
+        priority: suggestion.priority,
+        assigneeUserId: suggestion.assigneeUserId,
+      });
+      toast("Filled in by AI. Check it before creating.", {
+        action: { label: "Undo", onClick: () => setDraft(before) },
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const hasText = Boolean(draft.title.trim() || draft.description.trim());
 
   const create = useMutation({
     mutationFn: ({ columnId: target, ...fields }: Draft & { columnId: string }) =>
@@ -266,6 +289,21 @@ function NewIssueForm({
           >
             <ImagePlus />
           </Button>
+          {canUseAi ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              title="Turn what you wrote into a title, description, type, priority and assignee"
+              disabled={!hasText || create.isPending}
+              loading={fillIn.isPending}
+              loadingText="Filling in…"
+              onClick={() => fillIn.mutate()}
+            >
+              <Sparkles />
+              Fill in
+            </Button>
+          ) : null}
           <span className="mr-auto hidden items-center gap-1 text-2xs text-muted-foreground sm:flex">
             <Kbd>⌘</Kbd>
             <Kbd>↵</Kbd>
@@ -274,7 +312,7 @@ function NewIssueForm({
           <Button type="button" variant="ghost" size="sm" onClick={close} disabled={create.isPending}>
             Cancel
           </Button>
-          <Button type="submit" size="sm" loading={create.isPending} loadingText="Creating…">
+          <Button type="submit" size="sm" disabled={fillIn.isPending} loading={create.isPending} loadingText="Creating…">
             Create issue
           </Button>
         </div>

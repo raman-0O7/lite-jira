@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 
+import { useIssueSummary } from "@/components/ai/IssueSummary";
 import { AgentIcon } from "@/components/icons/AgentIcon";
 import { Avatar } from "@/components/icons/Avatar";
 import { StatusIcon } from "@/components/icons/StatusIcon";
@@ -468,12 +469,18 @@ export function IssueActivity({
   }
   items.sort((a, b) => a.at.localeCompare(b.at));
 
+  // Worth summarizing once there's a discussion.
+  const summary = useIssueSummary(issueId, (commentsQuery.data?.length ?? 0) >= 2, MARKDOWN_CLASS);
   const loading = commentsQuery.isPending || activityQuery.isPending;
   const error = commentsQuery.error ?? activityQuery.error;
 
   return (
     <section aria-label="Activity" className="flex flex-col gap-2">
-      <h2 className="font-heading text-sm font-semibold text-foreground">Activity</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="font-heading text-sm font-semibold text-foreground">Activity</h2>
+        {summary.trigger}
+      </div>
+      {summary.panel}
       {loading ? (
         <ActivitySkeleton />
       ) : error ? (

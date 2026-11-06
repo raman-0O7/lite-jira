@@ -1,12 +1,25 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChartLine, ChevronRight, Columns3, IterationCcw, List, ListTodo, MoreHorizontal, Plus } from "lucide-react";
+import {
+  ArrowLeft,
+  ChartLine,
+  ChevronRight,
+  Columns3,
+  IterationCcw,
+  List,
+  ListTodo,
+  MoreHorizontal,
+  Plus,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { AskProjectDialog } from "@/components/ai/AskProjectDialog";
+import { useCanUseAi } from "@/components/ai/use-ai";
 import { PageHeader, PageTitle } from "@/components/app-shell/PageHeader";
 import { ProjectRepos } from "@/components/project/ProjectRepos";
 import { useAppUI, useRegisterNewIssue } from "@/components/app-shell/app-ui";
@@ -284,7 +297,9 @@ export function ProjectView({ projectId }: { projectId: string }) {
   useRegisterNewIssue(project && canEditIssues && columns.length > 0 ? () => startNewIssue() : null);
 
   const { setShortcutsOpen } = useAppUI();
-  const overlayOpen = newIssue.open || addColumnOpen || openIssue !== null;
+  const canUseAi = useCanUseAi();
+  const [askOpen, setAskOpen] = useState(false);
+  const overlayOpen = newIssue.open || addColumnOpen || askOpen || openIssue !== null;
   useHotkeys(
     {
       "/": () => searchRef.current?.focus(),
@@ -370,6 +385,12 @@ export function ProjectView({ projectId }: { projectId: string }) {
               </span>
             ) : null}
             <ProjectRepos project={project} />
+            {canUseAi ? (
+              <Button variant="ghost" size="sm" onClick={() => setAskOpen(true)} aria-label="Ask about this project">
+                <Sparkles />
+                <span className="hidden sm:inline">Ask</span>
+              </Button>
+            ) : null}
             <ThemeToggle />
             {canUpdateProject ? (
               <DropdownMenu>
@@ -525,6 +546,10 @@ export function ProjectView({ projectId }: { projectId: string }) {
         onOpenChange={(open) => setNewIssue((prev) => ({ ...prev, open }))}
         onCreated={(issue) => openIssueByKey(issue.key)}
       />
+
+      {canUseAi ? (
+        <AskProjectDialog project={project} open={askOpen} onOpenChange={setAskOpen} onOpenIssue={openIssueByKey} />
+      ) : null}
 
       <CompleteSprintDialog projectId={projectId} sprint={completing} onOpenChange={(open) => !open && setCompleting(null)} />
 

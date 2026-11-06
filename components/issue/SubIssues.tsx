@@ -1,14 +1,16 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { useCanUseAi } from "@/components/ai/use-ai";
 import { Avatar } from "@/components/icons/Avatar";
 import { StatusIcon } from "@/components/icons/StatusIcon";
 import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
+import { breakDownWithAi } from "@/lib/api/ai";
 import { createSubIssue, issueKeys, type IssueFull } from "@/lib/api/issues";
 import { projectKeys, type ProjectDetail } from "@/lib/api/projects";
 import { cn } from "@/lib/utils";
@@ -60,6 +62,35 @@ export function SubIssues({
     if (trimmed) add.mutate(trimmed);
   }
 
+  // "Break down": AI suggests sub-issues; the person picks which to add.
+  const canBreakDown = useCanUseAi() && canEdit && issue.type !== "SUBTASK" && issue.type !== "EPIC";
+  const [suggested, setSuggested] = useState<{ title: string; picked: boolean }[] | null>(null);
+  const suggest = useMutation({
+    mutationFn: () => breakDownWithAi(issue.id),
+    onSuccess: ({ subIssues }) => {
+      if (!subIssues.length) toast("No new sub-issues to suggest.");
+      setSuggested(subIssues.length ? subIssues.map((s) => ({ title: s.title, picked: true })) : null);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const addPicked = useMutation({
+    mutationFn: async (titles: string[]) => {
+      // One at a time, so they're numbered in the suggested order.
+      for (const title of titles) await createSubIssue(issue.id, title);
+      return titles.length;
+    },
+    onSuccess: (count) => {
+      setSuggested(null);
+      toast.success(count === 1 ? "Added 1 sub-issue." : `Added ${count} sub-issues.`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: issueKeys.detail(issue.id) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.detail(issue.projectId) });
+    },
+  });
+  const picked = suggested?.filter((s) => s.picked) ?? [];
+
   const done = issue.subIssueDoneCount;
   const total = issue.subIssueCount;
 
@@ -77,7 +108,59 @@ export function SubIssues({
             </span>
           </>
         ) : null}
+        {canBreakDown && !suggested ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            className="ml-auto text-muted-foreground"
+            loading={suggest.isPending}
+            loadingText="Thinking…"
+            onClick={() => suggest.mutate()}
+          >
+            <Sparkles />
+            Break down
+          </Button>
+        ) : null}
       </div>
+      {suggested ? (
+        <div className="flex flex-col gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-primary-text">
+            <Sparkles className="size-3.5" />
+            Suggested sub-issues
+          </p>
+          <ul className="flex flex-col gap-1">
+            {suggested.map((s, index) => (
+              <li key={index}>
+                <label className="flex cursor-pointer items-start gap-2 rounded px-1 py-0.5 text-sm hover:bg-accent/60">
+                  <input
+                    type="checkbox"
+                    checked={s.picked}
+                    onChange={() =>
+                      setSuggested(suggested.map((x, i) => (i === index ? { ...x, picked: !x.picked } : x)))
+                    }
+                    className="mt-1 accent-primary"
+                  />
+                  <span className={cn(s.picked ? "text-foreground" : "text-muted-foreground line-through")}>{s.title}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSuggested(null)} disabled={addPicked.isPending}>
+              Dismiss
+            </Button>
+            <Button
+              size="sm"
+              disabled={!picked.length}
+              loading={addPicked.isPending}
+              loadingText="Adding…"
+              onClick={() => addPicked.mutate(picked.map((s) => s.title))}
+            >
+              {picked.length === 1 ? "Add 1 sub-issue" : `Add ${picked.length} sub-issues`}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {issue.subIssues.length > 0 || canEdit ? (
         <ul className="flex flex-col overflow-hidden rounded-lg border">
           {issue.subIssues.map((sub) => (

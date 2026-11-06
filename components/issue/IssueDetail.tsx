@@ -7,6 +7,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 
+import { IssueTriage } from "@/components/ai/IssueTriage";
 import { Avatar } from "@/components/icons/Avatar";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { DueDatePicker } from "@/components/issue/DueDatePicker";
@@ -487,6 +488,8 @@ export function IssueDetail({
             </div>
             <TitleField value={issue.title} disabled={!canEdit} onSave={(title) => commit({ title }, { title })} />
           </div>
+
+          <IssueTriage issue={issue} onApply={(payload, card) => commit(payload, card)} />
 
           <section aria-label="Description">
             <MarkdownField

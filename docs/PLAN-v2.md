@@ -194,7 +194,7 @@ DONE, rest = IN_PROGRESS).
 | 9 | **17 — Personal agents** (done): each member connects their own Claude, only its owner starts a Claude Code agent, the person stays the assignee while their agent works the issue; a one-time claim code in the run message lets the run claim the issue from whichever Claude account its routine runs on | 12, 13, 16 |
 | 10 | **18 — Workspace agent on the Claude API** (done): one agent for the whole workspace on the organization's Claude API key (billed per token), any member hands it work, comments in Kanso reach its running session | 12, 17 |
 | 10 | **19 — Codex adapter (beta)**: dispatch via `@codex` mention posted as the user on the linked GitHub issue; status from GitHub events | 11, 12 |
-| 11 | **20 — In-app AI**: provider abstraction (platform key / BYOK / Sign in with ChatGPT), natural-language quick add, break-down-into-subtasks, GitHub import triage, summaries, "ask your board" | 07 |
+| 11 | **20 — In-app AI** (done): workspace Claude API key or platform key (Sign in with ChatGPT left out for now), natural-language quick add ("Fill in"), break down into sub-issues, GitHub import triage, summaries, "Ask" on a project; every write is a suggestion the person accepts | 07 |
 | 11 | **21 — Sprints** (done): Kanban or Scrum per project; backlog with sprint sections, sprint planning, start/complete with carry-over, the board scoped to the active sprint, burndown rebuilt from history, velocity; `sprint:` queries and MCP | 09 |
 | 11 | **22 — My Work & saved filters** (done): cross-project home, issues page with saved filters (personal or shared), issue links (blocks/blocked by, relates, duplicates) with a Blocked chip and `is:blocked` | 09 |
 | later | Automation rules, WebMCP adapter, notifications, file attachments, recurring issues, templates, calendar view, billing | — |
@@ -321,7 +321,9 @@ failures clearly; swap to an official API if OpenAI ships one.
 ### 20 — In-app AI
 Provider interface with three implementations: platform Anthropic key,
 workspace BYOK Anthropic key (encrypted), Sign in with ChatGPT (pending OpenAI
-partner approval — apply early). Default model: latest Claude. Every AI write
+partner approval — apply early). Shipped with the first two; Sign in with
+ChatGPT is left out until OpenAI approves hosted apps
+(docs/features/20-in-app-ai.md). Default model: latest Claude. Every AI write
 is a suggestion the user confirms, then goes through services like any edit.
 
 ## 7. Open risks

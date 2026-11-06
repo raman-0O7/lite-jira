@@ -173,6 +173,15 @@ See [`docs/PLAN-v2.md`](docs/PLAN-v2.md) for the phase 2 roadmap and
   too). Kanso must be reachable at a public `BETTER_AUTH_URL` for the agent to call
   its MCP server. Spec:
   [`docs/features/18-workspace-agent.md`](docs/features/18-workspace-agent.md).
+- **In-app AI**: Claude fills in a new issue from a sentence, breaks an issue
+  into sub-issues, triages issues imported from GitHub, summarizes long
+  discussions, and answers questions about a project ("Ask"). It only
+  suggests; people accept what changes an issue. An admin adds the workspace's
+  Claude API key in Settings → AI (or reuses the workspace agent's), picks the
+  model, and can turn it off; members use it, guests and tokens can't. A
+  server can offer it without setup through `AI_PLATFORM_API_KEY`, capped per
+  workspace per day. Spec:
+  [`docs/features/20-in-app-ai.md`](docs/features/20-in-app-ai.md).
 - **Guided setup**: the Projects page's Get started card, the assignee menu's
   "Invite people…" / "Add your AI agent…" rows, and a step-by-step agent setup
   dialog that detects when Kanso is connected to Claude. Spec:

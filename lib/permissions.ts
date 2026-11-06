@@ -33,7 +33,8 @@ export type Action =
   | "filter.write"
   | "filter.share"
   | "filter.moderate"
-  | "sprint.manage";
+  | "sprint.manage"
+  | "ai.use";
 
 // Guests can read and comment (PLAN-v2 §4); they can't change issues. Everyone
 // manages their own API tokens and saved filters.
@@ -52,6 +53,8 @@ const WRITE: Action[] = [
   "filter.share",
   // Creating, starting and completing sprints (docs/features/21-sprints.md).
   "sprint.manage",
+  // In-app AI spends the workspace's money (docs/features/20-in-app-ai.md).
+  "ai.use",
 ];
 const ADMIN: Action[] = [
   "project.delete",
@@ -95,6 +98,8 @@ const AGENT_NEVER: ReadonlySet<Action> = new Set([
   // Starting and closing a sprint is the team's call; tokens can still move
   // issues between sprints (issue.write).
   "sprint.manage",
+  // In-app AI is for people in the web app.
+  "ai.use",
 ]);
 
 /** What a read-only credential can still do. */
