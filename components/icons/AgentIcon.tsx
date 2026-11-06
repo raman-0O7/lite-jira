@@ -11,9 +11,9 @@ export function ClaudeMark({ className, ...props }: React.SVGProps<SVGSVGElement
   );
 }
 
-/** An agent's icon: the Claude mark for Claude Code, a bot for anything else. */
-export function AgentIcon({ kind, className }: { kind?: "CLAUDE_CODE" | "MCP"; className?: string }) {
-  return kind === "CLAUDE_CODE" ? (
+/** An agent's icon: the Claude mark for Claude (Code or the workspace agent), a bot for anything else. */
+export function AgentIcon({ kind, className }: { kind?: "CLAUDE_CODE" | "MCP" | "CLAUDE_API"; className?: string }) {
+  return kind === "CLAUDE_CODE" || kind === "CLAUDE_API" ? (
     <ClaudeMark className={className} />
   ) : (
     <Bot className={cn("text-review", className)} aria-hidden />

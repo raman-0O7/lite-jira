@@ -40,7 +40,7 @@ export function RunStatusBadge({
       {/* The Claude mark keeps its colour; a bot takes the status colour. */}
       <AgentIcon
         kind={kind}
-        className={cn("size-3", kind !== "CLAUDE_CODE" && "text-current", status === "RUNNING" && "animate-pulse")}
+        className={cn("size-3", kind === "MCP" && "text-current", status === "RUNNING" && "animate-pulse")}
       />
       {RUN_STATUS_LABEL[status]}
     </span>

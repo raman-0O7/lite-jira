@@ -1,7 +1,9 @@
 import type { AgentRunStatus, Prisma } from "@prisma/client";
 
+import { interruptRunSessions } from "@/lib/agents/claude-api-client";
 import { claimTimeoutMinutes } from "@/lib/agents/config";
 import { db } from "@/lib/db";
+import { defer } from "@/lib/defer";
 import { type ActivityAction, recordActivity } from "@/lib/services/activity";
 import type { Ctx } from "@/lib/services/context";
 import { moveIssue } from "@/lib/services/issues";
@@ -30,14 +32,17 @@ export async function recordRunActivity(
   });
 }
 
-/** Mark a run FAILED (only if it's still in one of `from`) and note it on the issue. */
+/**
+ * Mark a run FAILED (only if it's still in one of `from`) and note it on the
+ * issue. A workspace agent's session is interrupted.
+ */
 export async function failRun(
   runId: string,
   error: string,
   from: AgentRunStatus[] = ACTIVE_RUN,
   ctx?: Ctx,
 ) {
-  return db.$transaction(async (tx) => {
+  const failed = await db.$transaction(async (tx) => {
     const run = await tx.agentRun.findUnique({ where: { id: runId } });
     if (!run || !from.includes(run.status)) return false;
     const { count } = await tx.agentRun.updateMany({
@@ -52,6 +57,8 @@ export async function failRun(
     await recordRunActivity(tx, ctx ?? dispatcherCtx(run.workspaceId), run, "agent.failed", { error: error.slice(0, 500) });
     return true;
   });
+  if (failed) defer("agents.interrupt", () => interruptRunSessions([runId]));
+  return failed;
 }
 
 /**

@@ -787,6 +787,8 @@ model Agent {
 enum AgentKind {
   CLAUDE_CODE
   MCP
+  /// The workspace agent: Claude Managed Agents on the workspace's API key (docs/features/18-workspace-agent.md).
+  CLAUDE_API
 }
 
 model AgentRun {
@@ -809,6 +811,14 @@ model AgentRun {
   sessionUrl        String?
   prUrl             String?
   error             String?
+  /// Workspace agent: the session's list cost so far, and the spend ceiling it was given (US cents).
+  costCents         Int?
+  budgetCents       Int?
+  /// Workspace agent: when the session was last reconciled.
+  syncedAt          DateTime?
+  /// Workspace agent: the session's repository resource, and when its GitHub App token was last renewed (they last an hour).
+  githubResourceId  String?
+  githubTokenAt     DateTime?
   dispatchedAt      DateTime?
   claimedAt         DateTime?
   finishedAt        DateTime?

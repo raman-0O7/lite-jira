@@ -18,7 +18,8 @@ export function appManifest(origin: string, input: { name: string; public: boole
     request_oauth_on_install: true,
     hook_attributes: { url: `${origin}/api/github/webhooks`, active: true },
     public: input.public,
-    default_permissions: { issues: "write", pull_requests: "read", checks: "read", metadata: "read" },
+    // Contents and pull requests (write): the workspace agent pushes branches and Kanso opens its PRs.
+    default_permissions: { issues: "write", contents: "write", pull_requests: "write", checks: "read", metadata: "read" },
     default_events: ["issues", "pull_request", "check_suite"],
   };
 }

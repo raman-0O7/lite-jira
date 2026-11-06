@@ -20,7 +20,7 @@ import {
   type Workflow,
 } from "@/lib/mcp/resolve";
 import { listIssueActivity } from "@/lib/services/activity";
-import { claimIssue, listAgentQueue, releaseIssue, reportProgress } from "@/lib/services/agents";
+import { claimIssue, listAgentQueue, openPullRequest, releaseIssue, reportProgress } from "@/lib/services/agents";
 import { addComment, getAttachment, listComments } from "@/lib/services/comments";
 import type { Ctx } from "@/lib/services/context";
 import { badRequest, forbidden } from "@/lib/services/errors";
@@ -728,6 +728,29 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
       run(async () => {
         const ctx = await writeCtx(principal, args.workspace);
         return ok({ key: args.key, ...(await releaseIssue(ctx, args.key, { reason: args.reason })) });
+      }),
+  );
+
+  server.registerTool(
+    "open_pull_request",
+    {
+      title: "Open pull request (workspace agent)",
+      description:
+        "For the Kanso workspace agent: after pushing your branch, Kanso opens the pull request into the base branch and links it to the issue. Never merges.",
+      inputSchema: z.object({
+        workspace,
+        key: issueKey,
+        branch: z.string().min(1).max(255).describe("The branch you pushed (the one claim_issue named)"),
+        title: z.string().min(1).max(256),
+        body: z.string().max(60_000).optional().describe("Markdown: what changed and how you checked it"),
+      }),
+      annotations: ADD,
+      scopeChallenge: challenge,
+    },
+    (args) =>
+      run(async () => {
+        const ctx = await writeCtx(principal, args.workspace);
+        return ok({ key: args.key, ...(await openPullRequest(ctx, args.key, args)) });
       }),
   );
 

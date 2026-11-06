@@ -1,7 +1,10 @@
 import { newClaimCode } from "@/lib/agents/claim-code";
+import { reconcileActiveRuns, startWorkspaceSession } from "@/lib/agents/claude-api";
 import { fireRoutine } from "@/lib/agents/claude-code";
 import { type ClaudeCodeConfig, decryptConfig, type McpAgentConfig } from "@/lib/agents/config";
+import { PUSH_PERMISSIONS, repoAccessToken } from "@/lib/agents/github-access";
 import { DispatchError } from "@/lib/agents/http";
+import { interruptRunSessions } from "@/lib/agents/claude-api-client";
 import { failRun } from "@/lib/agents/lifecycle";
 import { issueRepository } from "@/lib/agents/repo";
 import { postAgentWebhook } from "@/lib/agents/webhook";
@@ -19,8 +22,9 @@ export async function dispatchRun(runId: string) {
     where: { id: runId },
     select: {
       id: true,
+      workspaceId: true,
       status: true,
-      agent: { select: { id: true, kind: true, enabled: true, configEnc: true } },
+      agent: { select: { id: true, name: true, kind: true, enabled: true, configEnc: true } },
       issue: { select: { id: true, number: true, title: true, project: { select: { key: true, workspace: { select: { slug: true } } } } } },
     },
   });
@@ -54,6 +58,41 @@ export async function dispatchRun(runId: string) {
           sessionUrl: session.sessionUrl,
         },
       });
+    } else if (run.agent.kind === "CLAUDE_API") {
+      if (!repository) throw new DispatchError("The project has no connected GitHub repository");
+      // Kanso's GitHub App: a token that can only push to this repository.
+      const github = await repoAccessToken(run.workspaceId, repository.fullName, PUSH_PERMISSIONS, "push to");
+      // Up-to-date costs for the monthly limit.
+      await reconcileActiveRuns({ agentId: run.agent.id });
+      const session = await startWorkspaceSession({
+        agentId: run.agent.id,
+        agentName: run.agent.name,
+        configEnc: run.agent.configEnc,
+        runId: run.id,
+        key,
+        title: run.issue.title,
+        workspace,
+        repository,
+        githubToken: github.token,
+      });
+      const { count } = await db.agentRun.updateMany({
+        where: { id: run.id, status: "QUEUED" },
+        data: {
+          status: "DISPATCHED",
+          dispatchedAt: new Date(),
+          externalSessionId: session.sessionId,
+          sessionUrl: session.sessionUrl,
+          budgetCents: session.budgetCents,
+          githubResourceId: session.githubResourceId,
+          githubTokenAt: new Date(),
+          syncedAt: new Date(),
+        },
+      });
+      if (!count) {
+        // Cancelled while the session was starting: stop it.
+        await db.agentRun.update({ where: { id: run.id }, data: { externalSessionId: session.sessionId } });
+        await interruptRunSessions([run.id]);
+      }
     } else {
       const config = decryptConfig<McpAgentConfig>(run.agent.configEnc);
       await postAgentWebhook(config, {

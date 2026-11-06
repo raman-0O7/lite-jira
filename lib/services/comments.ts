@@ -1,4 +1,5 @@
 import { toAttachmentData, type UploadedImage } from "@/lib/attachments";
+import { FORWARD_STATUSES, forwardComment } from "@/lib/agents/claude-api";
 import { resumeRun } from "@/lib/agents/resume";
 import { db } from "@/lib/db";
 import { defer } from "@/lib/defer";
@@ -71,7 +72,8 @@ export async function listComments(ctx: Ctx, issueId: string) {
 
 /**
  * Add a comment, optionally with images (already validated by readImages). A
- * teammate's comment while an MCP agent waits for input is sent to it.
+ * teammate's comment while an MCP agent waits for input, or while the
+ * workspace agent works, is sent to it.
  */
 export async function addComment(ctx: Ctx, issueId: string, input: unknown, images: UploadedImage[] = []) {
   authorize(ctx, "comment.write");
@@ -108,6 +110,13 @@ export async function addComment(ctx: Ctx, issueId: string, input: unknown, imag
       select: { id: true },
     });
     if (waiting) defer("agents.resume", () => resumeRun(ctx, waiting.id, comment.id));
+    // The workspace agent hears every teammate's comment while it works (docs/features/18-workspace-agent.md).
+    const working = await db.agentRun.findFirst({
+      where: { issueId, status: { in: FORWARD_STATUSES }, agent: { kind: "CLAUDE_API" } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (working) defer("agents.forward", () => forwardComment(ctx, working.id, comment.id));
   }
   return comment;
 }

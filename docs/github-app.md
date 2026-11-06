@@ -39,9 +39,13 @@ or under an organization: Organization settings → Developer settings. Fill in:
 
 **Repository permissions:**
 - Issues: **Read and write**
-- Pull requests: **Read-only**
+- Contents: **Read and write** (the workspace agent pushes its branches)
+- Pull requests: **Read and write** (Kanso opens the workspace agent's pull requests)
 - Checks: **Read-only**
 - Metadata: Read-only (required)
+
+Kanso never merges. Each workspace agent session gets a token that can only
+push to its one repository, so protect base branches with a required review.
 
 **Subscribe to events:** Issues, Pull request, Check suite. (Installation
 and Installation repositories events are always sent to the app.)
@@ -60,7 +64,7 @@ Equivalent manifest, for the [manifest flow](https://docs.github.com/apps/sharin
   "request_oauth_on_install": true,
   "hook_attributes": { "url": "https://kanso.example.com/api/github/webhooks", "active": true },
   "public": false,
-  "default_permissions": { "issues": "write", "pull_requests": "read", "checks": "read", "metadata": "read" },
+  "default_permissions": { "issues": "write", "contents": "write", "pull_requests": "write", "checks": "read", "metadata": "read" },
   "default_events": ["issues", "pull_request", "check_suite"]
 }
 ```
@@ -96,6 +100,15 @@ callback URL) can stay `http://localhost:3000`.
    automatically).
 3. An admin connects repositories to projects. Assigned open issues are
    imported right away, and webhooks keep things in sync from then on.
+
+### Upgrading an app created before the workspace agent
+
+Apps registered earlier only asked for Issues (write) and Pull requests
+(read). In the app's settings on GitHub (**Permissions & events**), set
+**Contents** and **Pull requests** to **Read and write** and save. GitHub
+then asks the owner of each account the app is installed on to accept the
+change; until they do, everything keeps working with the old permissions,
+and Settings → Agents shows admins a "Review on GitHub" link.
 
 To revoke access completely, uninstall the app on GitHub. **Remove** in Kanso
 only forgets the installation.

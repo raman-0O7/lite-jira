@@ -6,20 +6,34 @@ import { z } from "zod";
 import {
   type AgentConfig,
   assertWebhookUrl,
+  type ClaudeApiConfig,
   type ClaudeCodeConfig,
   claudeCodeConfigSchema,
   decryptConfig,
   encryptConfig,
   type McpAgentConfig,
+  WORKSPACE_AGENT_MODELS,
 } from "@/lib/agents/config";
 import { hashClaimCode } from "@/lib/agents/claim-code";
+import {
+  DEFINITION_VERSION,
+  provisionWorkspaceAgent,
+  reconcileActiveRuns,
+  updateAgentDefinition,
+  workspaceAgentSpend,
+} from "@/lib/agents/claude-api";
+import { describeAnthropicError, interruptRunSessions } from "@/lib/agents/claude-api-client";
 import { dispatchRun } from "@/lib/agents/dispatcher";
-import { ACTIVE_RUN, failStaleRuns, recordRunActivity } from "@/lib/agents/lifecycle";
+import { PULL_REQUEST_PERMISSIONS, repoAccessToken, workspaceAgentGitHub } from "@/lib/agents/github-access";
+import { DispatchError } from "@/lib/agents/http";
+import { ACTIVE_RUN, failStaleRuns, onPullRequestLinked, recordRunActivity } from "@/lib/agents/lifecycle";
 import { issueRepository } from "@/lib/agents/repo";
 import { db } from "@/lib/db";
 import { defer } from "@/lib/defer";
 import { branchName } from "@/lib/github/branch";
+import { createPullRequest, getRepo, GitHubError } from "@/lib/github/client";
 import { authorize, can } from "@/lib/permissions";
+import { isServerOwner } from "@/lib/server-owner";
 import { recordActivity } from "@/lib/services/activity";
 import { mintAgentToken } from "@/lib/services/api-tokens";
 import { addComment } from "@/lib/services/comments";
@@ -51,8 +65,28 @@ const agentSelect = {
 
 type AgentRow = Prisma.AgentGetPayload<{ select: typeof agentSelect }>;
 
+const hint = (secret: string) => `…${secret.slice(-4)}`;
+
+/** The workspace agent's settings, for admins: secrets only as their last 4 characters. */
+function workspaceAgentSettings(config: ClaudeApiConfig) {
+  return {
+    apiKeyHint: hint(config.apiKey),
+    model: config.model,
+    monthlyLimitCents: config.monthlyLimitCents,
+    runLimitCents: config.runLimitCents,
+    consoleWorkspaceId: config.consoleWorkspaceId,
+  };
+}
+
+type PublicAgent = Omit<AgentRow, "configEnc" | "_count"> & {
+  tokenCount: number;
+  fireUrl?: string;
+  webhookUrl?: string | null;
+  workspaceAgent?: ReturnType<typeof workspaceAgentSettings>;
+};
+
 /** Public shape: secrets never leave the server, only whether they're set. */
-function toAgent(row: AgentRow) {
+function toAgent(row: AgentRow): PublicAgent {
   const { configEnc, _count, ...agent } = row;
   const config = decryptConfig<AgentConfig>(configEnc);
   return {
@@ -60,34 +94,99 @@ function toAgent(row: AgentRow) {
     tokenCount: _count.tokens,
     ...(agent.kind === "CLAUDE_CODE"
       ? { fireUrl: (config as ClaudeCodeConfig).fireUrl.replace(/trig_[A-Za-z0-9_-]+/, (t) => `${t.slice(0, 9)}…`) }
-      : { webhookUrl: (config as McpAgentConfig).webhookUrl }),
+      : agent.kind === "MCP"
+        ? { webhookUrl: (config as McpAgentConfig).webhookUrl }
+        : { workspaceAgent: workspaceAgentSettings(config as ClaudeApiConfig) }),
   };
 }
 
 /**
- * Admins see every agent. Others see their own and the shared MCP agents: a
- * teammate's Claude Code agent is theirs alone (only they can start it).
+ * Admins see every agent. Others see their own and the shared ones (MCP
+ * agents, the workspace agent): a teammate's Claude Code agent is theirs alone
+ * (only they can start it). Only admins see the workspace agent's settings and
+ * spend.
  */
 export async function listAgents(ctx: Ctx) {
   authorize(ctx, "workspace.read");
-  const scope: Prisma.AgentWhereInput = can(ctx, "agent.manage")
+  const admin = can(ctx, "agent.manage");
+  const scope: Prisma.AgentWhereInput = admin
     ? {}
-    : { OR: [{ ownerUserId: actingUserId(ctx) ?? "" }, { kind: "MCP" }] };
+    : { OR: [{ ownerUserId: actingUserId(ctx) ?? "" }, { kind: { in: ["MCP", "CLAUDE_API"] } }] };
   const rows = await db.agent.findMany({
     where: { workspaceId: ctx.workspaceId, ...scope },
     orderBy: { createdAt: "asc" },
     select: agentSelect,
   });
-  return rows.map(toAgent);
+  return Promise.all(
+    rows.map(async (row) => {
+      const agent = toAgent(row);
+      if (agent.kind !== "CLAUDE_API") return agent;
+      if (!admin) return { ...agent, workspaceAgent: undefined };
+      return { ...agent, spend: await workspaceAgentSpend(agent.id) };
+    }),
+  );
+}
+
+/**
+ * Whether Kanso's GitHub App can push and open pull requests for the
+ * workspace agent, and who can fix it if not (admins, Settings → Agents).
+ */
+export async function getWorkspaceAgentGitHub(ctx: Ctx) {
+  authorize(ctx, "agent.manage");
+  const github = await workspaceAgentGitHub(ctx.workspaceId);
+  if (github.status !== "app_needs_access") return github;
+  // Only whoever runs Kanso can change the app's own settings.
+  return (await isServerOwner(actingUserId(ctx))) ? github : { status: github.status, settingsUrl: null };
 }
 
 const name = z.string().trim().min(1, "Name is required").max(40);
 const webhookUrl = z.string().trim().max(500).nullish();
 
+// The workspace agent (docs/features/18-workspace-agent.md "Setup").
+const apiKey = z
+  .string()
+  .trim()
+  .max(300)
+  .regex(/^sk-ant-[A-Za-z0-9_-]{20,}$/, "Paste a Claude API key (sk-ant-…) from the Claude Console");
+const limit = z.coerce.number().min(1, "Limits start at $1").max(100_000);
+const consoleWorkspaceId = z
+  .string()
+  .trim()
+  .max(100)
+  .regex(/^[A-Za-z0-9_-]*$/, "That doesn't look like a Console workspace ID")
+  .nullish();
+const workspaceAgentModel = z.enum(WORKSPACE_AGENT_MODELS);
+
 const createAgentSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("CLAUDE_CODE"), name, ...claudeCodeConfigSchema.shape }),
   z.object({ kind: z.literal("MCP"), name, webhookUrl }),
+  z.object({
+    kind: z.literal("CLAUDE_API"),
+    name,
+    apiKey,
+    model: workspaceAgentModel.default("claude-opus-5-5"),
+    monthlyLimit: limit.default(100),
+    runLimit: limit.default(25),
+    consoleWorkspaceId,
+  }),
 ]);
+
+/** Shown once at creation: an MCP agent's first token and webhook signing secret. */
+type AgentSecrets = { token?: string; webhookSecret?: string };
+
+const toCents = (value: number) => Math.round(value * 100);
+
+/** An Anthropic failure while provisioning, as a safe message. */
+function provisioningError(error: unknown) {
+  const { status, message } = describeAnthropicError(error);
+  if (status === 401) return badRequest("Claude rejected that API key");
+  if (status === 403) return badRequest(message);
+  return new ServiceError(502, `Couldn't set up the agent on Claude: ${message.toLowerCase()}`);
+}
+
+async function revokeToken(tokenId: string) {
+  await db.apiToken.updateMany({ where: { id: tokenId, revokedAt: null }, data: { revokedAt: new Date() } });
+}
 
 function ownerOf(ctx: Ctx) {
   if (ctx.actor.type !== "user") throw forbidden();
@@ -110,6 +209,7 @@ async function assertNameFree(workspaceId: string, agentName: string, exceptId?:
 export async function createAgent(ctx: Ctx, input: unknown) {
   authorize(ctx, "agent.create");
   const data = createAgentSchema.parse(input);
+  if (data.kind === "CLAUDE_API") return createWorkspaceAgent(ctx, data);
   const ownerUserId = ownerOf(ctx);
   await assertNameFree(ctx.workspaceId, data.name);
 
@@ -124,13 +224,162 @@ export async function createAgent(ctx: Ctx, input: unknown) {
       select: { id: true, workspaceId: true, ownerUserId: true, name: true },
     });
     await recordActivity(tx, ctx, { action: "agent.created", data: { agentId: agent.id, name: agent.name, kind: data.kind } });
-    const secrets =
+    const secrets: AgentSecrets =
       data.kind === "MCP"
         ? { token: (await mintAgentToken(tx, agent)).secret, webhookSecret: (config as McpAgentConfig).webhookSecret }
         : {};
     const row = await tx.agent.findUniqueOrThrow({ where: { id: agent.id }, select: agentSelect });
     return { agent: toAgent(row), secrets };
   });
+}
+
+/**
+ * Connect the workspace agent (admins, one per workspace): the row and its
+ * Kanso token first, then the Anthropic side; if that fails the row goes.
+ */
+async function createWorkspaceAgent(ctx: Ctx, data: Extract<z.infer<typeof createAgentSchema>, { kind: "CLAUDE_API" }>) {
+  authorize(ctx, "agent.manage");
+  const ownerUserId = ownerOf(ctx);
+  if (await db.agent.count({ where: { workspaceId: ctx.workspaceId, kind: "CLAUDE_API" } })) {
+    throw new ServiceError(409, "This workspace already has a workspace agent");
+  }
+  if (data.runLimit > data.monthlyLimit) throw badRequest("The per-run limit can't be more than the monthly limit");
+  await assertNameFree(ctx.workspaceId, data.name);
+  const workspace = await db.workspace.findUniqueOrThrow({ where: { id: ctx.workspaceId }, select: { slug: true } });
+
+  const base: ClaudeApiConfig = {
+    apiKey: data.apiKey,
+    model: data.model,
+    monthlyLimitCents: toCents(data.monthlyLimit),
+    runLimitCents: toCents(data.runLimit),
+    consoleWorkspaceId: data.consoleWorkspaceId || null,
+    environmentId: "",
+    anthropicAgentId: "",
+    anthropicAgentVersion: 0,
+    vaultId: "",
+    vaultTokenId: "",
+    definitionVersion: DEFINITION_VERSION,
+  };
+  // Disabled until provisioned, so nobody can assign it half set up.
+  const { agent, minted } = await db.$transaction(async (tx) => {
+    const agent = await tx.agent.create({
+      data: { workspaceId: ctx.workspaceId, name: data.name, kind: "CLAUDE_API", ownerUserId, enabled: false, configEnc: encryptConfig(base) },
+      select: { id: true, workspaceId: true, ownerUserId: true, name: true },
+    });
+    return { agent, minted: await mintAgentToken(tx, agent) };
+  });
+
+  let config: ClaudeApiConfig;
+  try {
+    const provisioned = await provisionWorkspaceAgent({
+      apiKey: data.apiKey,
+      model: data.model,
+      name: data.name,
+      workspaceSlug: workspace.slug,
+      mcpToken: minted.secret,
+    });
+    config = { ...base, ...provisioned, vaultTokenId: minted.token.id };
+  } catch (error) {
+    await db.agent.delete({ where: { id: agent.id } });
+    throw provisioningError(error);
+  }
+
+  return db.$transaction(async (tx) => {
+    const row = await tx.agent.update({
+      where: { id: agent.id },
+      data: { enabled: true, configEnc: encryptConfig(config) },
+      select: agentSelect,
+    });
+    await recordActivity(tx, ctx, { action: "agent.created", data: { agentId: agent.id, name: agent.name, kind: "CLAUDE_API" } });
+    const secrets: AgentSecrets = {};
+    return { agent: toAgent(row), secrets };
+  });
+}
+
+const updateWorkspaceAgentSchema = z.object({
+  name: name.optional(),
+  enabled: z.boolean().optional(),
+  apiKey: apiKey.optional(),
+  model: workspaceAgentModel.optional(),
+  monthlyLimit: limit.optional(),
+  runLimit: limit.optional(),
+  consoleWorkspaceId,
+});
+
+/**
+ * Change the workspace agent (admins). A new API key provisions afresh (it may
+ * belong to another organization) with a new Kanso token; a new model
+ * publishes a new agent version. Disabling it cancels its runs.
+ */
+async function updateWorkspaceAgent(ctx: Ctx, agent: { id: string; name: string; configEnc: string }, input: unknown) {
+  authorize(ctx, "agent.manage");
+  const patch = updateWorkspaceAgentSchema.parse(input);
+  if (patch.name) await assertNameFree(ctx.workspaceId, patch.name, agent.id);
+  const current = decryptConfig<ClaudeApiConfig>(agent.configEnc);
+  const agentName = patch.name ?? agent.name;
+  let config: ClaudeApiConfig = {
+    ...current,
+    ...(patch.model ? { model: patch.model } : {}),
+    ...(patch.monthlyLimit !== undefined ? { monthlyLimitCents: toCents(patch.monthlyLimit) } : {}),
+    ...(patch.runLimit !== undefined ? { runLimitCents: toCents(patch.runLimit) } : {}),
+    ...(patch.consoleWorkspaceId !== undefined ? { consoleWorkspaceId: patch.consoleWorkspaceId || null } : {}),
+  };
+  if (config.runLimitCents > config.monthlyLimitCents) throw badRequest("The per-run limit can't be more than the monthly limit");
+
+  let oldTokenId: string | null = null;
+  if (patch.apiKey && patch.apiKey !== current.apiKey) {
+    const owner = await db.agent.findUniqueOrThrow({ where: { id: agent.id }, select: { id: true, workspaceId: true, ownerUserId: true, name: true } });
+    const minted = await db.$transaction((tx) => mintAgentToken(tx, owner));
+    const workspace = await db.workspace.findUniqueOrThrow({ where: { id: ctx.workspaceId }, select: { slug: true } });
+    try {
+      const provisioned = await provisionWorkspaceAgent({
+        apiKey: patch.apiKey,
+        model: config.model,
+        name: agentName,
+        workspaceSlug: workspace.slug,
+        mcpToken: minted.secret,
+      });
+      config = { ...config, ...provisioned, apiKey: patch.apiKey, vaultTokenId: minted.token.id, definitionVersion: DEFINITION_VERSION };
+      oldTokenId = current.vaultTokenId || null;
+    } catch (error) {
+      await revokeToken(minted.token.id);
+      throw provisioningError(error);
+    }
+  } else if (patch.model && patch.model !== current.model) {
+    try {
+      config.anthropicAgentVersion = await updateAgentDefinition(config, agentName);
+      config.definitionVersion = DEFINITION_VERSION;
+    } catch (error) {
+      throw provisioningError(error);
+    }
+  }
+
+  const cancelled: string[] = [];
+  const result = await db.$transaction(async (tx) => {
+    if (patch.enabled === false) {
+      const active = await tx.agentRun.findMany({ where: { agentId: agent.id, status: { in: ACTIVE_RUN } }, select: { id: true } });
+      cancelled.push(...active.map((r) => r.id));
+      await tx.agentRun.updateMany({
+        where: { id: { in: cancelled } },
+        data: { status: "CANCELLED", error: "The agent was disabled", finishedAt: new Date() },
+      });
+    }
+    const row = await tx.agent.update({
+      where: { id: agent.id },
+      data: {
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+        configEnc: encryptConfig(config),
+      },
+      select: agentSelect,
+    });
+    // Field names only: never the secrets themselves.
+    await recordActivity(tx, ctx, { action: "agent.updated", data: { agentId: agent.id, fields: Object.keys(patch) } });
+    return toAgent(row);
+  });
+  if (oldTokenId) await revokeToken(oldTokenId);
+  if (cancelled.length) defer("agents.interrupt", () => interruptRunSessions(cancelled));
+  return result;
 }
 
 async function findAgent(ctx: Ctx, id: string) {
@@ -159,8 +408,9 @@ const updateAgentSchema = z.object({
 });
 
 export async function updateAgent(ctx: Ctx, id: string, input: unknown) {
-  const patch = updateAgentSchema.parse(input);
   const agent = await findManagedAgent(ctx, id);
+  if (agent.kind === "CLAUDE_API") return updateWorkspaceAgent(ctx, agent, input);
+  const patch = updateAgentSchema.parse(input);
   if (patch.name) await assertNameFree(ctx.workspaceId, patch.name, id);
 
   const data: Prisma.AgentUpdateInput = {};
@@ -189,6 +439,12 @@ export async function updateAgent(ctx: Ctx, id: string, input: unknown) {
 /** Delete an agent: its tokens and runs go with it; its issues become unassigned. */
 export async function deleteAgent(ctx: Ctx, id: string) {
   const agent = await findManagedAgent(ctx, id);
+  if (agent.kind === "CLAUDE_API") {
+    authorize(ctx, "agent.manage");
+    // Its runs go with it, so stop their sessions first.
+    const active = await db.agentRun.findMany({ where: { agentId: id, status: { in: ACTIVE_RUN } }, select: { id: true } });
+    await interruptRunSessions(active.map((r) => r.id));
+  }
   await db.$transaction(async (tx) => {
     await tx.agent.delete({ where: { id } });
     await recordActivity(tx, ctx, { action: "agent.deleted", data: { agentId: id, name: agent.name } });
@@ -224,23 +480,26 @@ export async function revokeAgentToken(ctx: Ctx, id: string, tokenId: string) {
 
 // ---------- assignment & runs ----------
 
-/** Cancel an issue's active runs (reassignment). */
 /**
- * Claude Code works in a cloud copy of a repository, so it needs one to be
- * named: refuse the run up front rather than fire a routine that can't start.
+ * Claude Code and the workspace agent work in a cloud copy of a repository,
+ * so it needs one to be named: refuse the run up front rather than start a
+ * session that can't work.
  */
 async function requireRepository(tx: Prisma.TransactionClient, issueId: string, kind: string, projectName: string) {
-  if (kind !== "CLAUDE_CODE" || (await issueRepository(issueId, tx))) return;
+  if (kind === "MCP" || (await issueRepository(issueId, tx))) return;
   throw badRequest(
     `Connect a GitHub repository to ${projectName} first (Settings → Integrations), so Claude knows which code to work on.`,
   );
 }
 
+/** Cancel an issue's active runs (reassignment). Returns their ids, to interrupt sessions after commit. */
 async function cancelActiveRuns(tx: Prisma.TransactionClient, issueId: string, reason: string) {
+  const active = await tx.agentRun.findMany({ where: { issueId, status: { in: ACTIVE_RUN } }, select: { id: true } });
   await tx.agentRun.updateMany({
-    where: { issueId, status: { in: ACTIVE_RUN } },
+    where: { id: { in: active.map((r) => r.id) } },
     data: { status: "CANCELLED", error: reason, finishedAt: new Date() },
   });
+  return active.map((r) => r.id);
 }
 
 /**
@@ -265,6 +524,7 @@ export async function assignAgent(ctx: Ctx, issueId: string, input: unknown) {
   authorize(ctx, "agent.dispatch");
   const { agentId } = z.object({ agentId: z.string().min(1).nullable() }).parse(input);
 
+  const cancelled: string[] = [];
   const runId = await db.$transaction(async (tx) => {
     const issue = await tx.issue.findFirst({
       where: { id: issueId, project: projectScope(ctx) },
@@ -291,7 +551,7 @@ export async function assignAgent(ctx: Ctx, issueId: string, input: unknown) {
       return null;
     }
 
-    await cancelActiveRuns(tx, issueId, agentId ? "Reassigned" : "Unassigned");
+    cancelled.push(...(await cancelActiveRuns(tx, issueId, agentId ? "Reassigned" : "Unassigned")));
     await tx.issue.update({
       where: { id: issueId },
       data: { assigneeAgentId: agentId, assigneeUserId: person, claimedByAgentId: null, claimedAt: null },
@@ -311,6 +571,7 @@ export async function assignAgent(ctx: Ctx, issueId: string, input: unknown) {
     return run.id;
   });
 
+  if (cancelled.length) defer("agents.interrupt", () => interruptRunSessions(cancelled));
   if (runId) defer("agents.dispatch", () => dispatchRun(runId));
   return { runId };
 }
@@ -353,6 +614,7 @@ export async function listAgentRuns(ctx: Ctx, issueId: string) {
   const issue = await db.issue.findFirst({ where: { id: issueId, project: projectScope(ctx) }, select: { id: true } });
   if (!issue) throw notFound("Issue not found");
   await failStaleRuns();
+  await reconcileActiveRuns({ issueId });
   return db.agentRun.findMany({
     where: { issueId },
     orderBy: { createdAt: "desc" },
@@ -363,6 +625,8 @@ export async function listAgentRuns(ctx: Ctx, issueId: string) {
       sessionUrl: true,
       prUrl: true,
       error: true,
+      costCents: true,
+      budgetCents: true,
       createdAt: true,
       dispatchedAt: true,
       claimedAt: true,
@@ -589,4 +853,65 @@ export async function releaseIssue(ctx: Ctx, key: string, input: unknown) {
     });
   });
   return { released: true };
+}
+
+const pullRequestSchema = z.object({
+  branch: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .regex(/^(?!refs\/)(?!.*\.\.)[A-Za-z0-9._/-]+$/, "That isn't a valid branch name"),
+  title: z.string().trim().min(1).max(256),
+  body: z.string().max(60_000).default(""),
+});
+
+/**
+ * The workspace agent's pushed branch becomes a pull request
+ * (docs/features/18-workspace-agent.md "open_pull_request"). Kanso opens it
+ * as its GitHub App: only for the agent that claimed the
+ * issue, only in the issue's repository, never from the base branch. Never
+ * merges.
+ */
+export async function openPullRequest(ctx: Ctx, key: string, input: unknown) {
+  authorize(ctx, "issue.write");
+  const data = pullRequestSchema.parse(input);
+  const issue = await findAgentIssue(ctx, key);
+  const agentCtx = await agentCtxFor(ctx, issue);
+  const agentId = issue.assigneeAgent!.id;
+  const issueKey = formatKey(issue.project.key, issue.number);
+  const agent = await db.agent.findUniqueOrThrow({ where: { id: agentId }, select: { kind: true } });
+  if (agent.kind !== "CLAUDE_API") {
+    throw badRequest("open_pull_request is for the workspace agent. Push your branch and open the pull request yourself.");
+  }
+  if (issue.claimedByAgentId !== agentId) throw new ServiceError(409, `Claim ${issueKey} first`);
+  const repository = await issueRepository(issue.id);
+  if (!repository) throw new ServiceError(409, "The project has no connected GitHub repository");
+
+  const body = data.body.toUpperCase().includes(issueKey) ? data.body : `${data.body}\n\nKanso issue: ${issueKey}`.trim();
+  let pr;
+  try {
+    const { token } = await repoAccessToken(ctx.workspaceId, repository.fullName, PULL_REQUEST_PERMISSIONS, "open pull requests in");
+    const base = repository.baseBranch ?? (await getRepo(token, repository.fullName)).default_branch;
+    if (data.branch === base) throw badRequest(`Push your work to its own branch, not ${base}`);
+    pr = await createPullRequest(token, repository.fullName, { head: data.branch, base, title: data.title, body });
+  } catch (error) {
+    if (error instanceof DispatchError) throw new ServiceError(409, error.message);
+    if (!(error instanceof GitHubError)) throw error;
+    if (error.status === 404) throw new ServiceError(502, `Kanso's GitHub App can't see ${repository.fullName}`);
+    // GitHub's own explanation, e.g. no commits between the branches, or a PR already exists.
+    if (error.status === 422) throw badRequest(error.message.slice(0, 300));
+    throw new ServiceError(502, "GitHub couldn't open the pull request; try again");
+  }
+
+  const where = { issueId_repoFullName_number: { issueId: issue.id, repoFullName: repository.fullName, number: pr.number } };
+  const fields = { url: pr.html_url, title: pr.title.slice(0, 300), branch: pr.head.ref.slice(0, 255), headSha: pr.head.sha, state: "OPEN" as const };
+  const link = await db.pullRequestLink.upsert({
+    where,
+    create: { issueId: issue.id, repoFullName: repository.fullName, number: pr.number, ...fields },
+    update: fields,
+    select: { url: true, state: true },
+  });
+  await onPullRequestLinked(agentCtx, issue.id, link);
+  return { url: pr.html_url, number: pr.number };
 }

@@ -54,7 +54,7 @@ with a signed `state` (1 hour, bound to the workspace and admin). The manifest:
 | `callback_urls` | `/api/github/callback` |
 | `request_oauth_on_install` | true |
 | `hook_attributes.url` | `/api/github/webhooks` |
-| permissions | issues write; pull requests, checks, metadata read |
+| permissions | issues, contents, pull requests write (the last two for the workspace agent); checks, metadata read |
 | events | issues, pull_request, check_suite |
 
 GitHub creates the app and sends the admin to `redirect_url` with a one-time
