@@ -9,7 +9,7 @@ export default async function SettingsLayout({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader>
-        <PageTitle>Settings</PageTitle>
+        <PageTitle className="sr-only sm:not-sr-only">Settings</PageTitle>
         <SettingsNav slug={workspace} />
       </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">

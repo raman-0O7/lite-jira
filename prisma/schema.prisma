@@ -96,6 +96,8 @@ model Workspace {
   agents              Agent[]
   agentRuns           AgentRun[]
   savedFilters        SavedFilter[]
+  aiSettings          AiSettings?
+  aiUsage             AiUsage[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 }
@@ -838,4 +840,33 @@ enum AgentRunStatus {
   DONE
   FAILED
   CANCELLED
+}
+
+// In-app AI (docs/features/20-in-app-ai.md "Data"): one row per workspace,
+// created the first time an admin saves Settings → AI.
+model AiSettings {
+  workspaceId String    @id
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  enabled     Boolean   @default(true)
+  model       String    @default("claude-opus-5-5")
+  // The workspace's own Claude API key, AES-256-GCM (lib/crypto.ts); null → Kanso's platform key, if any.
+  apiKeyEnc   String?
+  apiKeyHint  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// In-app AI usage per workspace per UTC day: the platform key's daily cap, and
+// the spend estimate admins see.
+model AiUsage {
+  workspaceId      String
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  day              DateTime  @db.Date
+  requests         Int       @default(0)
+  platformRequests Int       @default(0)
+  inputTokens      Int       @default(0)
+  outputTokens     Int       @default(0)
+  costUsd          Float     @default(0)
+
+  @@id([workspaceId, day])
 }
