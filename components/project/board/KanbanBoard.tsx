@@ -5,7 +5,6 @@ import {
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
-  closestCorners,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -28,6 +27,7 @@ import { AddIssueComposer } from "@/components/project/board/AddIssueComposer";
 import { BoardColumn } from "@/components/project/board/BoardColumn";
 import { IssueCardOverlay } from "@/components/project/board/BoardIssueCard";
 import { ColumnIssues } from "@/components/project/board/ColumnIssues";
+import { boardCollisionDetection } from "@/components/project/board/collision";
 import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { moveIssue } from "@/lib/api/issues";
@@ -133,6 +133,7 @@ export function KanbanBoard({
   const canEdit = useCan("issue.write");
 
   const columnIds = columns.map((c) => c.id);
+  const collisionDetection = boardCollisionDetection(columnIds);
 
   // ---- cache helpers -------------------------------------------------------
 
@@ -355,7 +356,7 @@ export function KanbanBoard({
   return (
     <DndContext
       sensors={canEdit ? sensors : []}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
