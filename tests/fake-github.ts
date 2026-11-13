@@ -46,6 +46,8 @@ export function fakeGitHub() {
     issues: {} as Record<string, FakeIssue[]>,
     checkSuites: {} as Record<string, { status: string; conclusion: string | null; latest_check_runs_count?: number }[]>,
     failNextPatch: false,
+    /** Logins whose `assignee=` issue query returns a 422. */
+    failAssignees: [] as string[],
     /** Files GitHub hosts (issue images), by full URL. A value starting with "redirect:" is a 302. */
     files: {} as Record<string, Uint8Array | string>,
   };
@@ -104,6 +106,7 @@ export function fakeGitHub() {
     m = /^\/repos\/([^/]+\/[^/]+)\/issues$/.exec(path);
     if (m) {
       const assignee = url.searchParams.get("assignee");
+      if (assignee && state.failAssignees.includes(assignee)) return json({ message: "Validation Failed" }, 422);
       const since = url.searchParams.get("since");
       const all = url.searchParams.get("state") === "all";
       const list = (state.issues[m[1]!] ?? []).filter(

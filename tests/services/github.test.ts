@@ -201,6 +201,29 @@ describe("repositories & import", () => {
     expect(activity).toMatchObject({ actorType: "GITHUB", data: expect.objectContaining({ via: "github" }) });
   });
 
+  it("ASSIGNED mode: one member's failed lookup doesn't block the others, and lastSyncedAt advances", async () => {
+    const { ctx, workspace, user, installation } = await installedTeam();
+    const bob = await makeUser("Bob");
+    await addMember(workspace.id, bob, "MEMBER");
+    await db.gitHubUserLink.create({ data: { userId: bob.id, githubUserId: 2002, login: "bob-gh" } });
+    const { project } = await makeProject(ctx, "Web", "WEB");
+    gh.state.failAssignees = ["bob-gh"];
+    gh.state.issues["acme/web"] = [
+      { number: 1, title: "Ana's", body: null, state: "open", assignees: ["ana-gh"] },
+      { number: 2, title: "Bob's", body: null, state: "open", assignees: ["bob-gh"] },
+    ];
+    const repo = await connectRepo(ctx, {
+      installationId: installation.id,
+      repoFullName: "acme/web",
+      projectId: project.id,
+      importIssues: "ASSIGNED",
+    });
+    await flushDeferred();
+    const issues = await db.issue.findMany({ where: { projectId: project.id } });
+    expect(issues.map((i) => [i.title, i.assigneeUserId])).toEqual([["Ana's", user.id]]);
+    expect((await db.projectRepo.findUniqueOrThrow({ where: { id: repo.id } })).lastSyncedAt).not.toBeNull();
+  });
+
   it("ALL mode imports every open issue; unassigned unless a linked member has it", async () => {
     const { ctx, user, installation } = await installedTeam();
     const { project } = await makeProject(ctx, "Web", "WEB");

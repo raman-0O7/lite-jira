@@ -531,7 +531,12 @@ export async function syncRepo(projectRepoId: string) {
     issues = await gh.listRepoIssues(installationId, repo.repoFullName);
   } else if (repo.importIssues === "ASSIGNED") {
     for (const member of await linkedMembers(repo.installation.workspaceId)) {
-      issues.push(...(await gh.listAssignedIssues(installationId, repo.repoFullName, member.login)));
+      // One member's lookup failing (renamed/deleted login, unassignable) must not block the others.
+      try {
+        issues.push(...(await gh.listAssignedIssues(installationId, repo.repoFullName, member.login)));
+      } catch (error) {
+        console.error("[github.sync] member", repo.id, member.login, error instanceof Error ? error.message : "error");
+      }
     }
   }
 
