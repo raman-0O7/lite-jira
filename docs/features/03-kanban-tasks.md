@@ -29,6 +29,9 @@ tasks, drag to reorder within a column and move across columns, persisted.
 - Render task lists inside F02's `ColumnContainer` slot.
 - `DndContext` + `SortableContext` per column; support intra-column reorder and
   cross-column move. Use drag overlay for smooth UX.
+- Cards and whole columns share one `DndContext`. While a column is dragged,
+  collision detection only considers other columns (`board/collision.ts`), so a
+  column dropped over cards or an empty column body still reorders.
 - Optimistic reorder; on drop call `/api/tasks/move`; rollback + toast on error.
 - "Add task" inline composer at column bottom (title only → opens modal later).
 - Delete task (card menu) with confirm.
