@@ -22,7 +22,8 @@ a spec at `docs/features/NN-*.md` written before work starts.
 | GitHub | **GitHub App** (repo-scoped, webhooks): import assigned issues, two-way status sync, PR linking, auto-move on merge. |
 | Agent access | **Remote MCP server** (primary) + personal API tokens. WebMCP later as a thin adapter over the same tools. |
 | Agent execution | Assign an issue to an **agent member** → dispatched to Claude Code cloud (scheduled-task API trigger) or Codex cloud (`@codex` mention, beta). Agents report back via MCP; PRs link via the GitHub App. |
-| In-app AI | Claude by default. Paid by: platform key (covered by our plans) · workspace's own Anthropic key (BYOK) · Sign in with ChatGPT (OpenAI plan). |
+| In-app AI | Any provider (feature 24): Anthropic by default, OpenAI, Google Gemini, Mistral, xAI, DeepSeek, Groq, or a custom OpenAI-compatible endpoint. Paid by: the workspace's own key for that provider (BYOK) · platform key (covered by our plans) · later, Sign in with ChatGPT (each person's ChatGPT plan, once OpenAI approves). |
+| AI apps | People use Kanso from the AI app they already pay for (ChatGPT, Claude, Codex, Gemini CLI, Cursor…) over MCP (feature 23). No provider lock-in anywhere. |
 | Out of scope (phase 2) | Billing/plans (Stripe), self-hosting, mobile apps, email notifications beyond invites, attachments. |
 
 ### AI billing — what is and isn't allowed
@@ -32,7 +33,9 @@ a spec at `docs/features/NN-*.md` written before work starts.
 | Claude Code cloud agent runs | User's **Claude subscription** | Runs inside Anthropic's own product under the user's account; we only fire their scheduled-task trigger (a token scoped to firing that one task). Only that user starts it (feature 17); a team shares no account. |
 | Workspace agent runs (feature 18) | Workspace's **Claude API key** | Pay-per-token on the organization's own API account; no Claude.ai credentials involved. |
 | Codex cloud agent runs | User's **ChatGPT plan** | Started by an `@codex` mention made as the user on GitHub. |
-| In-app AI features (quick-add, breakdown, summaries…) | Platform API key · workspace BYOK Anthropic key · Sign in with ChatGPT | Anthropic **forbids** third-party apps from using Claude.ai/Free/Pro/Max credentials or offering Claude.ai login. We must never ask for, store, or proxy Claude.ai credentials. Sign in with ChatGPT is an official OpenAI program (beta, partner rollout — requires applying). |
+| Using Kanso from an AI app over MCP (feature 23) | The person's **own AI plan** (ChatGPT, Claude, Gemini…) | Their app calls Kanso; Kanso calls no model and pays nothing. |
+| Workspace agent on OpenAI (feature 25) | Workspace's **OpenAI API key** | Agents API, pay-per-token on the organization's own account. |
+| In-app AI features (quick-add, breakdown, summaries…) | Workspace BYOK key for any supported provider · platform API key · later, Sign in with ChatGPT | Only API keys and official OAuth programs. Anthropic **forbids** third-party apps from using Claude.ai/Free/Pro/Max credentials or offering Claude.ai login, and the same rule applies to every provider: we never ask for, store, or proxy a person's consumer AI account credentials. Sign in with ChatGPT is OpenAI's official program; ChatGPT plan usage is open to open-source, locally hosted apps, but a hosted app like Kanso needs OpenAI's approval ([interest form](https://openai.com/form/sign-in-with-chatgpt-interest/)). |
 
 ## 2. Tech stack additions
 
@@ -45,7 +48,9 @@ Tailwind v4 + shadcn/ui, TanStack Query, dnd-kit, Zod). Additions:
 - **MCP TypeScript SDK** — Streamable HTTP server at `/api/mcp`.
 - **Octokit** (`@octokit/app`, `@octokit/webhooks`) — GitHub App auth + webhook
   verification.
-- **Anthropic SDK** (and OpenAI SDK for Sign in with ChatGPT) — in-app AI only.
+- **Anthropic SDK** — the Claude agents (features 17, 18).
+- **AI SDK** (`ai` v7 + `@ai-sdk/*` provider packages) — in-app AI on any provider (feature 24).
+- **OpenAI SDK** — the workspace agent on OpenAI's Agents API (feature 25).
 - **Encryption at rest** for stored secrets (agent trigger tokens, BYOK keys):
   AES-256-GCM with `ENCRYPTION_KEY` env var, helper in `lib/crypto.ts`.
 - **Test runner** (Vitest) — phase 1 has no tests; phase 2 services must be
@@ -197,6 +202,10 @@ DONE, rest = IN_PROGRESS).
 | 11 | **20 — In-app AI** (done): workspace Claude API key or platform key (Sign in with ChatGPT left out for now), natural-language quick add ("Fill in"), break down into sub-issues, GitHub import triage, summaries, "Ask" on a project; every write is a suggestion the person accepts | 07 |
 | 11 | **21 — Sprints** (done): Kanban or Scrum per project; backlog with sprint sections, sprint planning, start/complete with carry-over, the board scoped to the active sprint, burndown rebuilt from history, velocity; `sprint:` queries and MCP | 09 |
 | 11 | **22 — My Work & saved filters** (done): cross-project home, issues page with saved filters (personal or shared), issue links (blocks/blocked by, relates, duplicates) with a Blocked chip and `is:blocked` | 09 |
+| 12 | **23 — Connect your AI**: a "Connect your AI" page with setup for ChatGPT, Claude, Codex, Claude Code, Gemini CLI, Cursor and VS Code; ChatGPT verified end to end against our OAuth; an MCP tool contract test so tool changes can't silently break ChatGPT | 10 |
+| 12 | **24 — In-app AI on any provider**: in-app AI on the AI SDK; admins pick provider (Anthropic, OpenAI, Gemini, Mistral, xAI, DeepSeek, Groq, custom OpenAI-compatible) and model with the workspace's own key | 20 |
+| 13 | **25 — Workspace agent on OpenAI**: the workspace agent (18) made provider-agnostic, with an OpenAI Agents API backend (Codex harness, hosted sandbox) on the workspace's OpenAI key | 18 |
+| 13 | **26 — Sign in with ChatGPT**: each person's ChatGPT plan pays for their in-app AI. Waits on OpenAI's approval for hosted apps | 24 |
 | later | Automation rules, WebMCP adapter, notifications, file attachments, recurring issues, templates, calendar view, billing | — |
 
 ```
@@ -213,6 +222,10 @@ Wave 9:  [12 Agents & dispatcher] → [13 Guided setup] ‖ [14 Loading] ‖ [15
 Wave 10: [18 Workspace agent (Claude API)] ‖ [19 Codex adapter]
               │
 Wave 11: [20 In-app AI] ‖ [21 Sprints UI] ‖ [22 My Work]
+              │
+Wave 12: [23 Connect your AI] ‖ [24 In-app AI on any provider]
+              │
+Wave 13: [25 Workspace agent on OpenAI] ‖ [26 Sign in with ChatGPT (on approval)]
 ```
 
 10 and 11 do not depend on 09 and may start once 07 lands if we want them
@@ -326,13 +339,31 @@ ChatGPT is left out until OpenAI approves hosted apps
 (docs/features/20-in-app-ai.md). Default model: latest Claude. Every AI write
 is a suggestion the user confirms, then goes through services like any edit.
 
+### 23–26 — Many providers
+Kanso works with the AI people already pay for, at three levels:
+- **Their AI app uses Kanso** (23): any MCP client, on their own plan. ChatGPT's
+  full MCP (read and write) is on Business and Enterprise/Edu; Pro is read-only
+  and Plus has none, so Plus users are pointed to Codex.
+- **Kanso's in-app AI uses their provider** (24): one AI SDK call path, a
+  provider catalog in `lib/ai/catalog.ts`, the workspace's key.
+- **Their provider runs Kanso's workspace agent** (25): Claude Managed Agents
+  or OpenAI's Agents API behind one adapter interface.
+
+Specs: [`23-connect-your-ai.md`](features/23-connect-your-ai.md),
+[`24-multi-provider-ai.md`](features/24-multi-provider-ai.md); 25 and 26 are
+written before they start.
+
 ## 7. Open risks
 
 | Risk | Mitigation |
 |------|-----------|
 | Claude scheduled-task fire API is a research preview | Adapter isolation; pin beta header; generic MCP agent as fallback. |
 | Codex `@codex` dispatch is unreliable | Labeled beta; clear failure states; watchdog. |
-| Sign in with ChatGPT needs partner approval | Apply early; BYOK/platform key work without it. |
+| Sign in with ChatGPT needs partner approval (hosted apps aren't covered by the open-source program) | Interest form submitted early; BYOK on any provider and the platform key work without it. |
+| ChatGPT freezes a snapshot of our MCP tools; a breaking tool change fails silently until an admin refreshes | MCP tool contract test (feature 23); breaking changes called out in release notes. |
+| ChatGPT full MCP is limited to Business/Enterprise plans | Say so on the Connect page; point Plus users to Codex. |
+| A custom AI endpoint URL could target internal services | HTTPS + public host, re-checked against the resolved address per request, no redirects (feature 24). |
+| Provider model ids and prices change often | Curated catalog checked against provider docs on each bump; "Other model…" for new ids; no price → no cost shown. |
 | Prompt injection via imported GitHub issues | Untrusted labeling, member-only dispatch, branch-only pushes, human merge. |
 | GitHub webhooks need a public URL | Vercel for prod; tunnel + dev app locally; polling fallback. |
 | Large rename (Board→Project, Task→Issue) | Done once in 07 with a migration; no compatibility aliases kept. |
