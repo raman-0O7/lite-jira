@@ -9,6 +9,24 @@ sessions that open PRs.
 As in phase 1, each **feature** below is sized to be handed to one sub-agent, with
 a spec at `docs/features/NN-*.md` written before work starts.
 
+### Positioning (November 2026)
+**The open-source issue tracker where your team's AI agents, on the AI plans
+you already pay for, share one project context.**
+
+Linear and Cursor already give agents shared context (Linear's coding agent
+with repository environments and guidance, billed in Linear credits; Cursor's
+shared Projects, launched 10 Nov 2026). We don't try to match Linear's breadth
+(initiatives, Slack, insights, triage AI). We win on what they can't say:
+
+| | Kanso |
+|---|---|
+| Open | Open source and self-hostable; no lock-in to our hosting. |
+| Your AI, your plan | Agents run on the person's own Claude or ChatGPT subscription (Claude Code, Codex), or the workspace's key for any provider. Kanso adds no per-run charge. |
+| Any vendor | One project context and one agent loop for every agent: Claude, Codex, Gemini, Cursor, any MCP client (features 23–27). |
+| Solo to team | Unlimited issues; a workspace per client for freelancers. |
+
+Open source alone isn't the edge (Plane and others exist); the combination is.
+
 ---
 
 ## 1. Product summary
@@ -16,7 +34,7 @@ a spec at `docs/features/NN-*.md` written before work starts.
 | Aspect | Decision |
 |--------|----------|
 | Users | Teams **and** solo. Signup auto-creates a personal workspace; solo users never see team UI. Freelancers can run one workspace per client and invite the client as a guest. |
-| Hosting | Hosted by us (single deployment, Vercel + Neon). Self-hosting not a goal for now. |
+| Hosting | Hosted by us (single deployment, Vercel + Neon). The code is open source, so self-hosting is possible; a polished self-host path (docs, one-command deploy) comes later. |
 | Work items | **Issues** (renamed from tasks) with keys (`WEB-42`), types (Epic · Story · Task · Bug · Sub-task), subtasks, epics, assignee (person or agent), estimate, comments, activity history. |
 | Project modes | Per project: **Kanban** (continuous flow) or **Scrum** (backlog + sprints). Sprint schema ships in the foundation; sprint UI comes later. |
 | GitHub | **GitHub App** (repo-scoped, webhooks): import assigned issues, two-way status sync, PR linking, auto-move on merge. |
@@ -206,6 +224,7 @@ DONE, rest = IN_PROGRESS).
 | 12 | **24 — In-app AI on any provider**: in-app AI on the AI SDK; admins pick provider (Anthropic, OpenAI, Gemini, Mistral, xAI, DeepSeek, Groq, custom OpenAI-compatible) and model with the workspace's own key | 20 |
 | 13 | **25 — Workspace agent on OpenAI**: the workspace agent (18) made provider-agnostic, with an OpenAI Agents API backend (Codex harness, hosted sandbox) on the workspace's OpenAI key | 18 |
 | 13 | **26 — Sign in with ChatGPT**: each person's ChatGPT plan pays for their in-app AI. Waits on OpenAI's approval for hosted apps | 24 |
+| 12 | **27 — Project context**: a brief per project plus sourced decisions, constraints, conventions and vocabulary, served to every agent (`claim_issue`, `get_project_context`) and to in-app AI; agents propose what they learned and people accept; overlap warnings when two pieces of work change the same files | 10, 11, 12 |
 | later | Automation rules, WebMCP adapter, notifications, file attachments, recurring issues, templates, calendar view, billing | — |
 
 ```
@@ -223,7 +242,7 @@ Wave 10: [18 Workspace agent (Claude API)] ‖ [19 Codex adapter]
               │
 Wave 11: [20 In-app AI] ‖ [21 Sprints UI] ‖ [22 My Work]
               │
-Wave 12: [23 Connect your AI] ‖ [24 In-app AI on any provider]
+Wave 12: [23 Connect your AI] ‖ [24 In-app AI on any provider] ‖ [27 Project context]
               │
 Wave 13: [25 Workspace agent on OpenAI] ‖ [26 Sign in with ChatGPT (on approval)]
 ```
@@ -353,6 +372,14 @@ Specs: [`23-connect-your-ai.md`](features/23-connect-your-ai.md),
 [`24-multi-provider-ai.md`](features/24-multi-provider-ai.md); 25 and 26 are
 written before they start.
 
+### 27 — Project context
+The shared layer every agent works from, whoever makes the agent. People write a
+brief; agents propose decisions, constraints, conventions and terms when they
+finish; only what a person accepts is served to other agents, so an injected
+GitHub issue can't spread through it. Overlap warnings use linked PRs' changed
+files and the files agents say they plan to touch. Spec:
+[`27-project-context.md`](features/27-project-context.md).
+
 ## 7. Open risks
 
 | Risk | Mitigation |
@@ -363,6 +390,7 @@ written before they start.
 | ChatGPT freezes a snapshot of our MCP tools; a breaking tool change fails silently until an admin refreshes | MCP tool contract test (feature 23); breaking changes called out in release notes. |
 | ChatGPT full MCP is limited to Business/Enterprise plans | Say so on the Connect page; point Plus users to Codex. |
 | A custom AI endpoint URL could target internal services | HTTPS + public host, re-checked against the resolved address per request, no redirects (feature 24). |
+| Project context is served to every agent, so it's a prime prompt-injection target | Only entries a person accepted are served; agents can only propose (feature 27). |
 | Provider model ids and prices change often | Curated catalog checked against provider docs on each bump; "Other model…" for new ids; no price → no cost shown. |
 | Prompt injection via imported GitHub issues | Untrusted labeling, member-only dispatch, branch-only pushes, human merge. |
 | GitHub webhooks need a public URL | Vercel for prod; tunnel + dev app locally; polling fallback. |
