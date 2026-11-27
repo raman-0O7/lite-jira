@@ -96,13 +96,23 @@ export function IntegrationsSettings() {
             you can install it here on your own GitHub account.
           </div>
         )
+      ) : settings.data.installations.length === 0 ? (
+        // Nothing installed yet: one next step. Installing also links the admin's account,
+        // and a link is useless until a repository is connected, so no Link button here.
+        settings.data.canManage ? (
+          <InstallButton hasInstallations={false} />
+        ) : (
+          <div className="rounded-lg border bg-surface p-4 text-sm text-muted-foreground shadow-card">
+            An admin needs to connect GitHub to this workspace first.
+          </div>
+        )
       ) : (
         <>
-          <AccountLink link={settings.data.link} />
           {settings.data.installations.map((installation) => (
             <Installation key={installation.id} installation={installation} canManage={settings.data.canManage} />
           ))}
-          {settings.data.canManage ? <InstallButton hasInstallations={settings.data.installations.length > 0} /> : null}
+          {settings.data.canManage ? <InstallButton hasInstallations /> : null}
+          <AccountLink link={settings.data.link} />
         </>
       )}
     </section>
@@ -150,30 +160,31 @@ function AccountLink({ link }: { link: { login: string } | null }) {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-surface px-4 py-3 shadow-card">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">Your GitHub account</p>
-        <p className="text-xs text-muted-foreground">
-          {link ? (
-            <>
-              Linked as <span className="font-medium text-foreground">@{link.login}</span>. Issues assigned to you
-              in connected repositories come into Kanso.
-            </>
-          ) : (
-            "Link your account so issues assigned to you on GitHub come into Kanso."
-          )}
-        </p>
-      </div>
-      {link ? (
-        <Button variant="outline" size="sm" loading={remove.isPending} onClick={() => remove.mutate()}>
+  // Secondary to the installations above, so never a filled button.
+  if (link) {
+    return (
+      <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        Linked as <span className="font-medium text-foreground">@{link.login}</span>
+        <span aria-hidden>·</span>
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto p-0 text-xs"
+          loading={remove.isPending}
+          onClick={() => remove.mutate()}
+        >
           Unlink
         </Button>
-      ) : (
-        <Button size="sm" loading={go.isPending} loadingText="Opening GitHub…" onClick={() => go.mutate()}>
-          Link GitHub account
-        </Button>
-      )}
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <p className="text-xs text-muted-foreground">Link your GitHub account to get issues assigned to you.</p>
+      <Button variant="outline" size="sm" loading={go.isPending} loadingText="Opening GitHub…" onClick={() => go.mutate()}>
+        <GitHubMark className="size-3.5" />
+        Link GitHub account
+      </Button>
     </div>
   );
 }
@@ -195,9 +206,13 @@ function InstallButton({ hasInstallations }: { hasInstallations: boolean }) {
         onClick={() => go.mutate()}
       >
         <GitHubMark className="size-3.5" />
-        {hasInstallations ? "Install on another account" : "Install GitHub App"}
+        {hasInstallations ? "Install on another account" : "Connect GitHub"}
       </Button>
-      <p className="text-xs text-muted-foreground">Choose which repositories Kanso can see on GitHub.</p>
+      <p className="text-xs text-muted-foreground">
+        {hasInstallations
+          ? "Choose which repositories Kanso can see on GitHub."
+          : "Choose which repositories Kanso can see. This also links your GitHub account."}
+      </p>
     </div>
   );
 }
