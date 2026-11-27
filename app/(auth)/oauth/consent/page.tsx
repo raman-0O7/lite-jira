@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { ConsentForm } from "@/components/oauth/consent-form";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { auth, getSession } from "@/lib/auth";
+import { KNOWN_CLIENT_NAMES, knownClient } from "@/lib/mcp/known-clients";
 import { describeScopes } from "@/lib/mcp/scopes";
 import { oauthQuery } from "@/lib/safe-next";
 
@@ -67,11 +68,14 @@ export default async function ConsentPage({ searchParams }: PageProps<"/oauth/co
   }
   if (!client) return <Problem message="This app isn't registered." />;
 
-  const redirectHost = hostOf(typeof params.redirect_uri === "string" ? params.redirect_uri : null);
+  const redirectUri = typeof params.redirect_uri === "string" ? params.redirect_uri : null;
+  const redirectHost = hostOf(redirectUri);
+  // A known app (ChatGPT, Claude…) by where the code goes, not by the name it registered with.
+  const known = knownClient({ clientId, redirectUris: redirectUri ? [redirectUri] : [] });
   return (
     <ConsentForm
       app={{
-        name: client.client_name || hostOf(client.client_uri) || "An app",
+        name: known ? KNOWN_CLIENT_NAMES[known] : client.client_name || hostOf(client.client_uri) || "An app",
         site: hostOf(client.client_uri),
         logo: client.logo_uri?.startsWith("https://") ? client.logo_uri : null,
       }}

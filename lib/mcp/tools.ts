@@ -113,7 +113,7 @@ async function writeCtx(principal: McpPrincipal, workspace?: string) {
   if (!canWrite(principal)) {
     throw forbidden(
       principal.kind === "api_token"
-        ? "This API token is read-only. Create a read & write token in Settings → API & MCP to make changes."
+        ? "This API token is read-only. Create a read & write token in Settings → Connect your AI to make changes."
         : "This connection is read-only. Reconnect and allow changes (kanso:write).",
     );
   }

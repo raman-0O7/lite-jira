@@ -13,7 +13,7 @@ import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { copy } from "@/components/workspace/ApiSettings";
+import { copy } from "@/components/workspace/SetupSteps";
 import { completeAppSetup, startAppSetup } from "@/lib/api/github";
 
 const APP_NAME_MAX = 34;

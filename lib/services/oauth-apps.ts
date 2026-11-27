@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { KNOWN_CLIENT_NAMES, knownClient } from "@/lib/mcp/known-clients";
 import { notFound } from "@/lib/services/errors";
 
 /**
@@ -17,21 +18,27 @@ export async function listConnectedApps(userId: string) {
       clientId: true,
       scopes: true,
       createdAt: true,
-      oauthclient: { select: { name: true, uri: true, icon: true } },
+      oauthclient: { select: { name: true, uri: true, icon: true, redirectUris: true } },
     },
   });
   const seen = new Set<string>();
   return consents
     .filter((c) => !seen.has(c.clientId) && seen.add(c.clientId))
-    .map((c) => ({
-      id: c.id,
-      clientId: c.clientId,
-      name: c.oauthclient.name ?? hostOf(c.oauthclient.uri) ?? hostOf(c.clientId) ?? "Unnamed app",
-      site: hostOf(c.oauthclient.uri),
-      icon: c.oauthclient.icon?.startsWith("https://") ? c.oauthclient.icon : null,
-      scopes: c.scopes,
-      connectedAt: c.createdAt,
-    }));
+    .map((c) => {
+      // Known apps by where they receive sign-ins, never by the name they give themselves.
+      const known = knownClient({ clientId: c.clientId, redirectUris: c.oauthclient.redirectUris });
+      return {
+        id: c.id,
+        clientId: c.clientId,
+        name: known
+          ? KNOWN_CLIENT_NAMES[known]
+          : (c.oauthclient.name ?? hostOf(c.oauthclient.uri) ?? hostOf(c.clientId) ?? "Unnamed app"),
+        site: hostOf(c.oauthclient.uri),
+        icon: c.oauthclient.icon?.startsWith("https://") ? c.oauthclient.icon : null,
+        scopes: c.scopes,
+        connectedAt: c.createdAt,
+      };
+    });
 }
 
 /**

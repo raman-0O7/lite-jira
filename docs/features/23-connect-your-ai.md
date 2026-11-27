@@ -80,8 +80,13 @@ Connected apps (existing list, feature 10) · API tokens (existing, feature 10)
   "What's assigned to me in Kanso?"
 - **Connected apps** (`listConnectedApps`, feature 10) stays below the tabs. A
   row whose client is a known app shows its name ("ChatGPT", "Claude",
-  "Cursor"…) from the OAuth client's name or redirect host, instead of a raw
-  host or "Unnamed app".
+  "Cursor", "VS Code") instead of a raw host or "Unnamed app". Known apps are
+  recognized by where they receive sign-ins (client ID URL or redirect URI:
+  `chatgpt.com`, `claude.ai`, `cursor://`, `vscode:`…), never by the name a
+  client registers with, which anyone can choose (`lib/mcp/known-clients.ts`).
+  The consent screen uses the same rule, so a client calling itself "ChatGPT"
+  with another redirect isn't shown as ChatGPT. CLIs that sign in through a
+  loopback address keep their registered name.
 - **API tokens** stay at the bottom, under "For clients without OAuth".
 
 ### Get started checklist (feature 13)
@@ -107,8 +112,7 @@ tools, and calls a read tool and a write tool. Check, and fix whatever fails:
 | Rate limit (120/min per credential) holds up under ChatGPT's scan plus a conversation | `lib/mcp/rate-limit.ts` |
 
 Same smoke test, shorter, for Claude (custom connector), Codex CLI and Gemini
-CLI. The results go in a table at the end of this spec when the feature ships
-(app, date, plan, result).
+CLI. The results go in the table under "Verification" (app, date, plan, result).
 
 ### Tool contract test
 ChatGPT keeps a **frozen snapshot** of a server's tools once an admin publishes
@@ -119,15 +123,18 @@ So: a Vitest test (`tests/mcp-contract.test.ts`) lists the MCP server's tools
 and compares each one's name, annotations and input schema with a checked-in
 snapshot (`tests/__snapshots__/mcp-tools.json`). The rules:
 
-- **Allowed** (the test updates the snapshot with `-u`): a new tool; a new
-  *optional* input; a looser constraint; a changed description.
+- **Allowed** (refresh the snapshot with
+  `UPDATE_MCP_CONTRACT=1 pnpm test tests/mcp-contract.test.ts`): a new tool; a
+  new *optional* input; a looser constraint. Descriptions and titles aren't
+  part of the snapshot, so changing them never needs an update.
 - **Breaking** (the test fails, with a message that says why and points here):
   a removed or renamed tool; a removed input; an optional input made
   required; a narrowed type or enum; a changed annotation from read-only to
   write.
 
-A breaking change is still possible. It needs a deliberate snapshot update and
-a line in the release notes that tells ChatGPT admins to refresh Kanso's tools.
+A breaking change is still possible. It needs a deliberate snapshot update
+(`UPDATE_MCP_CONTRACT=1 ALLOW_BREAKING_MCP_CHANGES=1`) and a line in the
+release notes that tells ChatGPT admins to refresh Kanso's tools.
 
 ## Out of scope
 - **A listed ChatGPT app** (OpenAI's app directory, Apps SDK widgets). Later,
@@ -155,3 +162,31 @@ a line in the release notes that tells ChatGPT admins to refresh Kanso's tools.
 - `tests/mcp-contract.test.ts` fails on a removed tool, a removed input, or a
   newly required input, and passes on a new optional input.
 - `pnpm lint`, `tsc --noEmit`, `pnpm test` and `pnpm build` are clean.
+
+## Verification
+
+### Local, against a dev server (27 Nov 2026)
+A script that does what ChatGPT does, with ChatGPT's redirect URI
+(`https://chatgpt.com/connector_platform_oauth_redirect`):
+
+| Check | Result |
+|---|---|
+| Unauthenticated MCP call: 401 with `resource_metadata` and `scope="kanso:read kanso:write offline_access"` | Pass |
+| Authorization server metadata lists `offline_access`; `authorization_response_iss_parameter_supported: true`; DCR and Client ID Metadata Documents both on | Pass |
+| Protected-resource metadata lists `kanso:read kanso:write` only (Better Auth keeps `offline_access` in the authorization server document, which is where ChatGPT looks) | As designed |
+| Dynamic registration with ChatGPT's redirect URI | Pass |
+| PKCE authorize → consent page shows "ChatGPT" (by redirect, even when registered under another name) | Pass |
+| Callback carries `code`, `state` and `iss` (RFC 9207, also needed by Gemini CLI) | Pass |
+| Code exchange returns an access token (1 hour) and a refresh token | Pass |
+| `initialize`, `tools/list` (22 tools, every one with `readOnlyHint`), a read tool | Pass |
+| A failing write comes back as a tool result with a readable message ("Project not found"), not a protocol error | Pass |
+| Refresh returns a new access token that works on MCP | Pass |
+| `bulk_update_issues` without elicitation: proceeds without Kanso's own confirmation (ChatGPT confirms writes itself from the annotations) | By design (unchanged) |
+
+### With the real apps (to do on a deployed preview)
+| App | Date | Plan | Result |
+|---|---|---|---|
+| ChatGPT | — | Business | not yet run |
+| Claude (custom connector) | — | — | not yet run |
+| Codex CLI | — | — | not yet run |
+| Gemini CLI | — | — | not yet run |

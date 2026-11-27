@@ -1,19 +1,8 @@
 import { db } from "@/lib/db";
+import { knownClient } from "@/lib/mcp/known-clients";
 import { authorize } from "@/lib/permissions";
 import { actingUserId, type Ctx } from "@/lib/services/context";
 import { projectScope } from "@/lib/services/scope";
-
-/** Hosts whose OAuth clients are Claude itself (claude.ai connectors, Claude Code on the web). */
-const CLAUDE_HOSTS = ["claude.ai", "claude.com"];
-
-function isClaudeUrl(url: string) {
-  try {
-    const { protocol, hostname } = new URL(url);
-    return protocol === "https:" && CLAUDE_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Which setup steps are done, for the caller in this workspace
@@ -64,7 +53,7 @@ export async function getSetupStatus(ctx: Ctx) {
     assistant: consents.length > 0 || tokens > 0,
     // Kanso is a connector on the caller's Claude account, which a routine needs.
     claudeConnected: consents.some(
-      ({ oauthclient }) => isClaudeUrl(oauthclient.clientId) || oauthclient.redirectUris.some(isClaudeUrl),
+      ({ oauthclient }) => knownClient(oauthclient) === "claude",
     ),
     // Repos connected to projects the caller sees: what a Claude Code task should clone.
     repositories: repos.map((repo) => repo.repoFullName),

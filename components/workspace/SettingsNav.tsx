@@ -13,7 +13,7 @@ const TABS = [
   { href: "agents", label: "Agents" },
   // Admins only: the workspace's AI key and model.
   { href: "ai", label: "AI", admin: true },
-  { href: "api", label: "API & MCP" },
+  { href: "api", label: "Connect your AI" },
 ] as const;
 
 export function SettingsNav({ slug }: { slug: string }) {

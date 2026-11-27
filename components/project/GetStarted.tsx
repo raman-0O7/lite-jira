@@ -114,8 +114,8 @@ export function GetStarted({ projectCount }: { projectCount: number }) {
     },
     {
       id: "assistant",
-      title: "Use Kanso from your AI assistant",
-      description: "Ask Claude, Cursor, or VS Code to find, create, and update issues for you.",
+      title: "Connect your AI",
+      description: "Use Kanso from ChatGPT, Claude, Codex, Gemini or Cursor, on the AI plan you already pay for.",
       done: status.assistant,
       action: { label: "Connect", href: `/${slug}/settings/api` },
     },

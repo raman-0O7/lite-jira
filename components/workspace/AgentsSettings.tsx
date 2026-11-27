@@ -25,7 +25,7 @@ import {
   AgentSetupDialog,
   OneTimeSecret,
 } from "@/components/workspace/AgentSetupDialog";
-import { Snippet } from "@/components/workspace/ApiSettings";
+import { Snippet } from "@/components/workspace/SetupSteps";
 import { WorkspaceAgentSection } from "@/components/workspace/WorkspaceAgentCard";
 import {
   type Agent,

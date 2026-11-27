@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bot, Check, ChevronRight, Copy, ExternalLink, X } from "lucide-react";
+import { ArrowLeft, Bot, Check, Copy, ExternalLink, X } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState } from "react";
 import { toast } from "sonner";
@@ -20,7 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { copy, Snippet } from "@/components/workspace/ApiSettings";
+import { copy, Path, Snippet, StepRow, Ui, Value } from "@/components/workspace/SetupSteps";
 import { useSession } from "@/lib/auth-client";
 import { type Agent, type AgentSecrets, agentKeys, createAgent } from "@/lib/api/agents";
 import { fetchSetup, setupKeys } from "@/lib/api/setup";
@@ -661,38 +661,6 @@ function PromptBox() {
   );
 }
 
-/** A button, tab or field in Claude, drawn the way it looks there. */
-function Ui({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-px text-xs font-medium whitespace-nowrap text-foreground shadow-xs">
-      {children}
-    </span>
-  );
-}
-
-/** Something the person types or picks, rather than clicks. */
-function Value({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center rounded-md border border-dashed px-1.5 py-px text-xs whitespace-nowrap text-muted-foreground">
-      {children}
-    </span>
-  );
-}
-
-/** Clicks in order: strings are buttons or tabs, nodes are drawn as given. */
-function Path({ items }: { items: React.ReactNode[] }) {
-  return (
-    <span className="flex flex-wrap items-center gap-1">
-      {items.map((item, i) => (
-        <Fragment key={i}>
-          {i > 0 ? <ChevronRight className="size-3 text-muted-foreground" aria-hidden /> : null}
-          {typeof item === "string" ? <Ui>{item}</Ui> : item}
-        </Fragment>
-      ))}
-    </span>
-  );
-}
-
 /** "Do this in Claude" header: what, why, and the button that opens the right page. */
 function InClaude({ title, subtitle, href, action }: { title: string; subtitle: string; href: string; action: string }) {
   return (
@@ -711,32 +679,6 @@ function InClaude({ title, subtitle, href, action }: { title: string; subtitle: 
         </a>
       </Button>
     </div>
-  );
-}
-
-/** A numbered step on a vertical rail. */
-function StepRow({
-  number,
-  title,
-  last,
-  children,
-}: {
-  number: number;
-  title: string;
-  last?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <li className="relative flex gap-3 pb-4 last:pb-0">
-      {last ? null : <span className="absolute top-7 bottom-1 left-3 w-px bg-border" aria-hidden />}
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-chip text-xs font-medium text-muted-foreground">
-        {number}
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-2 pt-0.5">
-        <p className="font-medium">{title}</p>
-        {children}
-      </div>
-    </li>
   );
 }
 

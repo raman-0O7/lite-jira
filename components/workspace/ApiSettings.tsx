@@ -26,7 +26,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ConnectYourAi } from "@/components/workspace/ConnectYourAi";
 import { ProjectPicker } from "@/components/workspace/ProjectPicker";
+import { copy, Snippet } from "@/components/workspace/SetupSteps";
 import { fetchProjects, projectKeys } from "@/lib/api/projects";
 import {
   type ApiToken,
@@ -49,15 +51,6 @@ const EXPIRY_CHOICES = [
   { value: "never", label: "Never" },
 ] as const;
 
-export async function copy(text: string, what: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast.success(`${what} copied.`);
-  } catch {
-    toast.error("Couldn’t copy. Select the text and copy it yourself.");
-  }
-}
-
 function day(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
@@ -65,46 +58,10 @@ function day(iso: string) {
 export function ApiSettings({ mcpUrl }: { mcpUrl: string }) {
   return (
     <div className="flex flex-col gap-8">
-      <ConnectInstructions mcpUrl={mcpUrl} />
-      <ApiTokens mcpUrl={mcpUrl} />
+      <ConnectYourAi mcpUrl={mcpUrl} />
       <ConnectedApps />
+      <ApiTokens mcpUrl={mcpUrl} />
     </div>
-  );
-}
-
-export function Snippet({ label, text }: { label: string; text: string }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="flex items-start gap-2">
-        <pre className="min-w-0 flex-1 overflow-x-auto rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs">
-          {text}
-        </pre>
-        <Button variant="outline" size="icon-sm" aria-label={`Copy ${label}`} onClick={() => copy(text, label)}>
-          <Copy />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function ConnectInstructions({ mcpUrl }: { mcpUrl: string }) {
-  const json = JSON.stringify({ mcpServers: { kanso: { type: "http", url: mcpUrl } } }, null, 2);
-  return (
-    <section className="flex flex-col gap-3">
-      <div>
-        <h2 className="font-heading text-sm font-semibold text-foreground">Connect an AI client</h2>
-        <p className="text-sm text-muted-foreground">
-          Kanso is a remote MCP server. Add it to Claude, Cursor, VS Code, or any MCP client; you’ll
-          sign in and choose what it may do. It acts as you, with your role in each workspace.
-        </p>
-      </div>
-      <div className="flex flex-col gap-3 rounded-lg border bg-surface p-4 shadow-card">
-        <Snippet label="Server URL" text={mcpUrl} />
-        <Snippet label="Claude Code" text={`claude mcp add --transport http kanso ${mcpUrl}`} />
-        <Snippet label="JSON config (Cursor, VS Code, …)" text={json} />
-      </div>
-    </section>
   );
 }
 
@@ -135,7 +92,7 @@ function ApiTokens({ mcpUrl }: { mcpUrl: string }) {
       <div>
         <h2 className="font-heading text-sm font-semibold text-foreground">API tokens</h2>
         <p className="text-sm text-muted-foreground">
-          For clients that can’t sign in, such as scripts and CI. A token works only in this
+          For clients without OAuth sign-in, such as scripts and CI. A token works only in this
           workspace, only with the MCP server, and never beyond your role.
         </p>
       </div>

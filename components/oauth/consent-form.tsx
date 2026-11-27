@@ -65,7 +65,7 @@ export function ConsentForm({ app, account, scopes, redirectHost }: Props) {
         </ul>
         <p className="text-xs text-muted-foreground">
           It acts with your role in each workspace and its changes appear in issue history as you.
-          You can disconnect it any time in Settings → API &amp; MCP.
+          You can disconnect it any time in Settings → Connect your AI.
         </p>
       </CardContent>
       <CardFooter className="flex-col gap-2 border-t bg-transparent py-4">
