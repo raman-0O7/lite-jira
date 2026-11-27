@@ -16,6 +16,7 @@ let fetchImpl: Fetch = (...args) => fetch(...args);
 export function setGitHubFetch(impl: Fetch | null) {
   fetchImpl = impl ?? ((...args) => fetch(...args));
   tokenCache.clear();
+  assignableCache.clear();
 }
 
 /** The swappable fetch, for downloading GitHub-hosted files (images in issue bodies). */
@@ -160,6 +161,30 @@ export async function listRepoIssues(
     if (data.length < 100) break;
   }
   return issues.slice(0, limit);
+}
+
+const ASSIGNABLE_TTL = 10 * 60_000;
+const assignableCache = new Map<string, { value: boolean; expiresAt: number }>();
+
+/**
+ * Whether GitHub lets issues in `repo` be assigned to `login` (collaborators
+ * and org members only). Cached for a few minutes so the settings page doesn't
+ * hit GitHub on every load.
+ */
+export async function isAssignable(installationId: number, repo: string, login: string): Promise<boolean> {
+  const key = `${installationId}:${repo.toLowerCase()}:${login.toLowerCase()}`;
+  const cached = assignableCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  let value: boolean;
+  try {
+    await asInstallation(installationId, `/repos/${repo}/assignees/${encodeURIComponent(login)}`);
+    value = true;
+  } catch (error) {
+    if (!(error instanceof GitHubError && error.status === 404)) throw error;
+    value = false;
+  }
+  assignableCache.set(key, { value, expiresAt: Date.now() + ASSIGNABLE_TTL });
+  return value;
 }
 
 export const setIssueState = (installationId: number, repo: string, number: number, state: "open" | "closed") =>

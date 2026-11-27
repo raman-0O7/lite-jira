@@ -146,12 +146,21 @@ description, and never interpreted.
     |---|---|
     | No installation, admin | One primary **Connect GitHub** button: "This also links your GitHub account." No personal-link card. |
     | No installation, member | No buttons: "An admin needs to connect GitHub to this workspace first." |
-    | Installed, viewer not linked | Installations and repos first; below them "Link your GitHub account to get issues assigned to you" with an outline button. |
-    | Installed, viewer linked | Installations and repos; "Linked as @login · Unlink". |
+    | Installed, viewer not linked | **Workspace** (installations and repos) first; below it, under **You**, "Link your GitHub account to get issues assigned to you" with an outline button. |
+    | Installed, viewer linked | **Workspace** (installations and repos); under **You**, "Linked as @login · Unlink". |
 
-  - with installations: each lists its connected repositories with their project and
-    toggles, a Sync now button and a "Connect repository" form; admins get Remove and an
-    outline **Install on another account** button;
+  - with installations, the section is split under two headings, **Workspace** and **You**;
+  - **Workspace** lists installations ("GitHub account @login · added by Ana (Kanso)"),
+    each with its connected repositories, their project and toggles, a Sync now button
+    and a "Connect repository" form; admins get Remove and an outline
+    **Install on another account** button;
+  - **You** shows your GitHub link, with Link / Unlink, and says what it does: it
+    tells Kanso who you are on GitHub, grants no repo access, stores no token, and
+    applies to all your workspaces (`GitHubUserLink` is keyed by user only);
+  - when linked, **You** also shows what the link reaches: the connected
+    repositories GitHub can assign issues to your login in (checked with
+    `GET /repos/{repo}/assignees/{login}`, cached ~10 minutes), a hint to ask an
+    admin when it's none of them, or a plain note when no repository is connected yet;
   - never more than one primary (filled) button at a time.
 - **Issue detail, GitHub section**:
   - the linked GitHub issue (repo#number, state, link);

@@ -103,12 +103,39 @@ export async function getGitHubSettings(ctx: Ctx) {
       !configured && canManage && (await isServerOwner(userId))
         ? { defaultName: defaultAppName(appUrl()), local: isLocalOrigin(appUrl()) }
         : null,
-    link,
+    link: link && {
+      ...link,
+      repos: ctx.role === "GUEST" ? null : await linkRepos(link.login, installations),
+    },
     installations: installations.map(({ createdById, ...installation }) => ({
       ...installation,
       connectedBy: creators.find((user) => user.id === createdById) ?? null,
     })),
   };
+}
+
+/**
+ * The connected repos a member's link applies to, and whether GitHub can
+ * assign issues there to the linked login. `assignable` is null when GitHub
+ * couldn't be asked (suspended installation, API error).
+ */
+async function linkRepos(
+  login: string,
+  installations: { installationId: number; suspendedAt: Date | null; repos: { repoFullName: string }[] }[],
+) {
+  return Promise.all(
+    installations.flatMap((installation) =>
+      installation.repos.map(async ({ repoFullName }) => {
+        let assignable: boolean | null = null;
+        if (!installation.suspendedAt) {
+          try {
+            assignable = await gh.isAssignable(installation.installationId, repoFullName, login);
+          } catch {}
+        }
+        return { fullName: repoFullName, assignable };
+      }),
+    ),
+  );
 }
 
 // ---------- guided app setup (docs/features/15-github-setup.md) ----------

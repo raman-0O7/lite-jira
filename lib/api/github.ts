@@ -27,7 +27,15 @@ export type GitHubSettings = {
   configured: boolean;
   canManage: boolean;
   setup: { defaultName: string; local: boolean } | null;
-  link: { login: string; createdAt: string } | null;
+  link: {
+    login: string;
+    createdAt: string;
+    /**
+     * Connected repos and whether GitHub can assign their issues to this login
+     * (null: couldn't check). Null for guests, who don't see repos.
+     */
+    repos: { fullName: string; assignable: boolean | null }[] | null;
+  } | null;
   installations: GitHubInstallation[];
 };
 
