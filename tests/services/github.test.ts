@@ -138,6 +138,37 @@ describe("install & link", () => {
     await completeGitHubCallback(other.id, { code: "good-code", state: installState(otherCtx, "link") });
     expect((await db.gitHubUserLink.findFirstOrThrow()).userId).toBe(other.id);
   });
+  it("a GitHub account linked by another user's install says how to free it", async () => {
+    // Same person, two Kanso accounts: installing as A links A's GitHub login.
+    const { workspace } = await installedTeam();
+    const holder = await db.gitHubUserLink.findFirstOrThrow({ include: { user: true } });
+
+    // B shares the workspace: the message names A's account.
+    const b = await makeUser("Bo");
+    const bCtx = await addMember(workspace.id, b, "MEMBER");
+    await expect(
+      completeGitHubCallback(b.id, { code: "good-code", state: installState(bCtx, "link") }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message:
+        `GitHub account @ana-gh is already linked to ${holder.user.name}'s Kanso account. ` +
+        "Sign in to that account and choose Unlink under Settings → Integrations, then try again.",
+    });
+
+    // C is in another workspace: the message says how to fix it but doesn't name A.
+    const c = await makeTeam();
+    const error = await completeGitHubCallback(c.user.id, {
+      code: "good-code",
+      state: installState(c.ctx, "link"),
+    }).catch((e: Error & { status: number }) => e);
+    expect(error).toMatchObject({ status: 409 });
+    expect((error as Error).message).toBe(
+      "GitHub account @ana-gh is already linked to a different Kanso account. " +
+        "Sign in to that account and choose Unlink under Settings → Integrations, then try again.",
+    );
+    expect((error as Error).message).not.toContain(holder.user.name);
+    expect((error as Error).message).not.toContain(holder.user.email);
+  });
 });
 
 describe("repositories & import", () => {
