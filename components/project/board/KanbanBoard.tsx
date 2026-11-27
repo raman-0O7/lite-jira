@@ -192,9 +192,9 @@ export function KanbanBoard({
     }
   }
 
-  // While dragging a task, move it between columns live so the placeholder &
-  // cross-column transitions feel right. Intra-column ordering settles here too
-  // for tasks; the final position is committed in onDragEnd.
+  // While dragging a task, move it live (between columns and within one) so
+  // the placeholder and transitions follow the pointer and the drop animation
+  // lands on the card's new slot; the final position is committed in onDragEnd.
   function handleDragOver(event: DragOverEvent) {
     const { active, over } = event;
     if (!over) return;
@@ -220,7 +220,21 @@ export function KanbanBoard({
       } else {
         toColumn = findColumnOfTask(cols, overId);
       }
-      if (!toColumn || toColumn.id === fromColumn.id) return cols;
+      if (!toColumn) return cols;
+
+      // Same column: reorder live too, so the layout already matches when the
+      // card is dropped. Reordering only in onDragEnd went through the query
+      // cache, which re-renders a moment after the drop: the drop animation
+      // measured the old layout, so the card flew back to its old slot and its
+      // neighbour jumped, as if they hadn't swapped (they had).
+      if (toColumn.id === fromColumn.id) {
+        if (overId === activeId || overId.startsWith("column:") || columnIds.includes(overId)) return cols;
+        const fromIndex = fromColumn.issues.findIndex((t) => t.id === activeId);
+        const overIndex = fromColumn.issues.findIndex((t) => t.id === overId);
+        if (fromIndex === -1 || overIndex === -1 || fromIndex === overIndex) return cols;
+        const reordered = arrayMove(fromColumn.issues, fromIndex, overIndex).map((t, i) => ({ ...t, position: i }));
+        return cols.map((c) => (c.id === fromColumn.id ? { ...c, issues: reordered } : c));
+      }
 
       const moving = fromColumn.issues.find((t) => t.id === activeId);
       if (!moving) return cols;
