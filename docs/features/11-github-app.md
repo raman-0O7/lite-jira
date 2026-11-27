@@ -140,10 +140,19 @@ description, and never interpreted.
 ## UI
 - **Settings → Integrations**:
   - shows "Not configured" when the app isn't set up;
-  - lists installations, with Install / Remove;
-  - shows your GitHub link, with Link / Unlink;
-  - lists connected repositories with their project and toggles, and a Sync now button;
-  - has a "Connect repository" form.
+  - otherwise shows only the next step, by workspace state and viewer role:
+
+    | State | Shown |
+    |---|---|
+    | No installation, admin | One primary **Connect GitHub** button: "This also links your GitHub account." No personal-link card. |
+    | No installation, member | No buttons: "An admin needs to connect GitHub to this workspace first." |
+    | Installed, viewer not linked | Installations and repos first; below them "Link your GitHub account to get issues assigned to you" with an outline button. |
+    | Installed, viewer linked | Installations and repos; "Linked as @login · Unlink". |
+
+  - with installations: each lists its connected repositories with their project and
+    toggles, a Sync now button and a "Connect repository" form; admins get Remove and an
+    outline **Install on another account** button;
+  - never more than one primary (filled) button at a time.
 - **Issue detail, GitHub section**:
   - the linked GitHub issue (repo#number, state, link);
   - linked PRs with state and checks;
