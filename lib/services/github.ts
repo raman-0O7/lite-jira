@@ -239,7 +239,7 @@ export async function completeGitHubCallback(userId: string, input: unknown) {
   // The user token lives only for this request.
   const token = await ghCall(() => gh.exchangeUserCode(code, githubCallbackUrl()));
   const githubUser = await ghCall(() => gh.getAuthenticatedUser(token));
-  await assertLinkable(userId, githubUser);
+  await assertLinkable(userId, ctx.workspaceId, githubUser);
 
   let result: "installed" | "linked" = "linked";
   if (signed.kind === "install" && installationId) {
@@ -255,15 +255,26 @@ export async function completeGitHubCallback(userId: string, input: unknown) {
   return { workspaceId: ctx.workspaceId, result };
 }
 
-/** One GitHub account maps to one Kanso user. */
-async function assertLinkable(userId: string, githubUser: gh.GhUser) {
+/**
+ * One GitHub account maps to one Kanso user. When it's taken, say how to free it, and name the
+ * holder only if they share this workspace: nothing about users outside it is revealed.
+ */
+async function assertLinkable(userId: string, workspaceId: string, githubUser: gh.GhUser) {
   const taken = await db.gitHubUserLink.findUnique({
     where: { githubUserId: githubUser.id },
     select: { userId: true },
   });
-  if (taken && taken.userId !== userId) {
-    throw new ServiceError(409, `GitHub account @${githubUser.login} is already linked to another Kanso user`);
-  }
+  if (!taken || taken.userId === userId) return;
+  const sameWorkspace = await db.membership.findFirst({
+    where: { workspaceId, userId: taken.userId },
+    select: { user: { select: { name: true } } },
+  });
+  const holder = sameWorkspace ? `${sameWorkspace.user.name}'s Kanso account` : "a different Kanso account";
+  throw new ServiceError(
+    409,
+    `GitHub account @${githubUser.login} is already linked to ${holder}. ` +
+      "Sign in to that account and choose Unlink under Settings → Integrations, then try again.",
+  );
 }
 
 async function saveLink(userId: string, githubUser: gh.GhUser) {
