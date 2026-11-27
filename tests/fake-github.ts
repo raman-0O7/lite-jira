@@ -45,6 +45,8 @@ export function fakeGitHub() {
     repos: ["acme/web"],
     issues: {} as Record<string, FakeIssue[]>,
     checkSuites: {} as Record<string, { status: string; conclusion: string | null; latest_check_runs_count?: number }[]>,
+    /** Logins GitHub lets issues be assigned to, by repo. */
+    assignees: {} as Record<string, string[]>,
     failNextPatch: false,
     /** Files GitHub hosts (issue images), by full URL. A value starting with "redirect:" is a 302. */
     files: {} as Record<string, Uint8Array | string>,
@@ -120,6 +122,13 @@ export function fakeGitHub() {
           labels: i.labels ?? [],
         })),
       );
+    }
+    m = /^\/repos\/([^/]+\/[^/]+)\/assignees\/([^/]+)$/.exec(path);
+    if (m) {
+      const login = decodeURIComponent(m[2]!).toLowerCase();
+      return (state.assignees[m[1]!] ?? []).some((a) => a.toLowerCase() === login)
+        ? new Response(null, { status: 204 })
+        : json({ message: "Not Found" }, 404);
     }
     m = /^\/repos\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(path);
     if (m && method === "PATCH") {

@@ -157,6 +157,10 @@ description, and never interpreted.
   - **You** shows your GitHub link, with Link / Unlink, and says what it does: it
     tells Kanso who you are on GitHub, grants no repo access, stores no token, and
     applies to all your workspaces (`GitHubUserLink` is keyed by user only);
+  - when linked, **You** also shows what the link reaches: the connected
+    repositories GitHub can assign issues to your login in (checked with
+    `GET /repos/{repo}/assignees/{login}`, cached ~10 minutes), a hint to ask an
+    admin when it's none of them, or a plain note when no repository is connected yet;
   - never more than one primary (filled) button at a time.
 - **Issue detail, GitHub section**:
   - the linked GitHub issue (repo#number, state, link);
