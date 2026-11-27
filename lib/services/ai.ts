@@ -17,6 +17,7 @@ import { OPEN_BLOCKER } from "@/lib/query/issue-query";
 import { actingUserId, type Ctx } from "@/lib/services/context";
 import { badRequest, notFound } from "@/lib/services/errors";
 import { formatKey } from "@/lib/services/issue-shapes";
+import { BRIEF_MAX, getRenderedContext } from "@/lib/services/project-context";
 import { projectScope } from "@/lib/services/scope";
 
 /**
@@ -179,6 +180,20 @@ const describeIssue = (issue: FoundIssue) =>
     ].join(""),
   );
 
+/** The project context in AI prompts: smaller than agents get, since every request pays for it. */
+const AI_CONTEXT_BUDGET = 8_000;
+
+/**
+ * The team's accepted project context (docs/features/27-project-context.md),
+ * or nothing when the project has none. Only accepted entries are rendered,
+ * so it's the team's own guidance rather than untrusted text.
+ */
+async function contextBlock(ctx: Ctx, projectId: string) {
+  const context = await getRenderedContext(ctx, { id: projectId }, 1, AI_CONTEXT_BUDGET);
+  if (context.empty) return "";
+  return `The team's accepted context for this project; use it, it's the team's own guidance:\n<context>\n${context.markdown}\n</context>\n`;
+}
+
 /** The people an issue can be assigned to: members, never guests. */
 const assignableMembers = (workspaceId: string) =>
   db.membership.findMany({
@@ -206,10 +221,12 @@ export async function draftIssue(ctx: Ctx, projectId: string, input: unknown) {
   const members = await assignableMembers(ctx.workspaceId);
   const me = actingUserId(ctx);
 
+  const context = await contextBlock(ctx, project.id);
   const draft = await generate(ctx.workspaceId, {
     system: SYSTEM,
     schema: DraftOutput,
     prompt: [
+      context,
       `Turn this note into a new issue for the project "${project.name}".`,
       "- title: short and specific, in the imperative or as the problem (at most 80 characters).",
       "- description: Markdown with only the details from the note that the title doesn't cover; empty if there are none. Don't add sections, headings or steps the note doesn't give.",
@@ -247,10 +264,12 @@ export async function breakDownIssue(ctx: Ctx, issueId: string) {
   if (issue.type === "SUBTASK") throw badRequest("Sub-issues can't have their own sub-issues");
   if (issue.type === "EPIC") throw badRequest("Epics group issues with the epic field, not sub-issues");
 
+  const context = await contextBlock(ctx, issue.projectId);
   const result = await generate(ctx.workspaceId, {
     system: SYSTEM,
     schema: BreakdownOutput,
     prompt: [
+      context,
       `Break this issue into 2 to ${MAX_SUB_ISSUES} sub-issues that together complete it.`,
       "Each is one concrete piece of work someone could pick up, titled in the imperative (at most 80 characters).",
       "Order them in the order they'd be done. Fewer is better when the issue is small.",
@@ -298,10 +317,12 @@ export async function triageIssue(ctx: Ctx, issueId: string) {
     select: { id: true, name: true },
   });
 
+  const context = await contextBlock(ctx, issue.projectId);
   const result = await generate(ctx.workspaceId, {
     system: SYSTEM,
     schema: TriageOutput,
     prompt: [
+      context,
       "Triage this issue for the team.",
       "- type: BUG for something broken, STORY for a user-facing feature, EPIC for a large body of work, else TASK.",
       "- priority: URGENT for outages, data loss or security; HIGH for broken core features; LOW for nice-to-haves; else MEDIUM.",
@@ -434,10 +455,12 @@ export async function askProject(ctx: Ctx, projectId: string, input: unknown) {
       .join(" · "),
   );
 
+  const context = await contextBlock(ctx, project.id);
   const result = await generate(ctx.workspaceId, {
     system: SYSTEM,
     schema: AskOutput,
     prompt: [
+      context,
       `Answer a question about the project "${project.name}" from its issues below. Today is ${day(new Date())}.`,
       "Answer in Markdown, briefly (a sentence or a short list). Refer to issues by their key, like " + key(1) + ".",
       "If the issues don't answer the question, say so plainly rather than guessing.",
@@ -451,4 +474,62 @@ export async function askProject(ctx: Ctx, projectId: string, input: unknown) {
     ].join("\n"),
   });
   return { answer: clip(result.answer, 6000) };
+}
+
+// ---------------------------------------------------------------------------
+// Draft a project brief (docs/features/27-project-context.md "The brief")
+
+const BriefOutput = z.object({ brief: z.string() });
+
+/**
+ * A suggested brief from the project's epics, recent work and accepted
+ * context. It only fills the editor: nothing is saved until the person saves.
+ */
+export async function draftBrief(ctx: Ctx, projectId: string) {
+  authorize(ctx, "ai.use");
+  const project = await findProject(ctx, projectId);
+  const issueSelect = { number: true, title: true, type: true, description: true } as const;
+  const [epics, finished, open] = await Promise.all([
+    db.issue.findMany({ where: { projectId: project.id, archivedAt: null, type: "EPIC" }, orderBy: { updatedAt: "desc" }, take: 20, select: issueSelect }),
+    db.issue.findMany({
+      where: { projectId: project.id, archivedAt: null, type: { not: "EPIC" }, column: { category: "DONE" } },
+      orderBy: { updatedAt: "desc" },
+      take: 40,
+      select: issueSelect,
+    }),
+    db.issue.findMany({
+      where: { projectId: project.id, archivedAt: null, type: { not: "EPIC" }, column: { category: { not: "DONE" } } },
+      orderBy: { updatedAt: "desc" },
+      take: 40,
+      select: issueSelect,
+    }),
+  ]);
+  const describe = (issues: typeof epics) =>
+    issues
+      .map((i) => `- ${formatKey(project.key, i.number)} (${i.type.toLowerCase()}): ${i.title}${i.description ? ` — ${clip(i.description.replace(/\s+/g, " "), 300)}` : ""}`)
+      .join("\n") || "(none)";
+  const context = await contextBlock(ctx, project.id);
+
+  const result = await generate(ctx.workspaceId, {
+    system: SYSTEM,
+    schema: BriefOutput,
+    maxTokens: 6000,
+    prompt: [
+      context,
+      `Draft a short brief for the project "${project.name}": what agents and new teammates need to know before working on it.`,
+      "Markdown with these sections, each a few sentences or bullets: ## What this project is, ## Architecture, ## Things that must not break, ## Words we use.",
+      "Use only what the issues and the context below say. Leave a section with a one-line placeholder in italics when they say nothing about it; never invent technologies, people or facts.",
+      "Don't list issues; describe the project. At most 600 words.",
+      "",
+      "Epics:",
+      untrusted(describe(epics)),
+      "",
+      "Recently finished:",
+      untrusted(describe(finished)),
+      "",
+      "Open:",
+      untrusted(describe(open)),
+    ].join("\n"),
+  });
+  return { brief: clip(result.brief.trim(), BRIEF_MAX) };
 }

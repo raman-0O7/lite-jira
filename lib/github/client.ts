@@ -168,6 +168,29 @@ export const setIssueState = (installationId: number, repo: string, number: numb
     ...(state === "closed" ? { state_reason: "completed" } : {}),
   });
 
+/** Most changed-file paths Kanso keeps per pull request (docs/features/27-project-context.md). */
+export const PR_FILES_MAX = 300;
+
+/** The paths a pull request changes (renames count as both names), up to PR_FILES_MAX. */
+export async function listPullRequestFiles(installationId: number, repo: string, number: number) {
+  const paths = new Set<string>();
+  let truncated = false;
+  for (let page = 1; page <= 3; page++) {
+    const data = await asInstallation<{ filename: string; previous_filename?: string }[]>(
+      installationId,
+      `/repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`,
+    );
+    for (const file of data) {
+      paths.add(file.filename);
+      if (file.previous_filename) paths.add(file.previous_filename);
+    }
+    if (data.length < 100) break;
+    if (page === 3) truncated = true;
+  }
+  const files = [...paths];
+  return { files: files.slice(0, PR_FILES_MAX), truncated: truncated || files.length > PR_FILES_MAX };
+}
+
 export async function checkSuites(installationId: number, repo: string, sha: string): Promise<GhCheckSuite[]> {
   const data = await asInstallation<{ check_suites: GhCheckSuite[] }>(
     installationId,

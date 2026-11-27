@@ -431,8 +431,8 @@ describe("status sync", () => {
 });
 
 describe("pull requests & checks", () => {
-  const pr = (over: Record<string, unknown> = {}) => ({
-    action: "opened",
+  const pr = (over: Record<string, unknown> = {}, action = "opened") => ({
+    action,
     installation: { id: 77 },
     repository: { full_name: "acme/web" },
     pull_request: {
@@ -446,6 +446,31 @@ describe("pull requests & checks", () => {
       head: { ref: "web-1-fix-login", sha: "abc" },
       ...over,
     },
+  });
+
+  it("stores a PR's changed files for overlap warnings, refreshed on push", async () => {
+    const { ctx } = await installedTeam();
+    const { project, todo } = await makeProject(ctx, "Web", "WEB");
+    const installation = await db.gitHubInstallation.findFirstOrThrow();
+    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: project.id, importIssues: "OFF" });
+    const issue = await makeIssue(ctx, todo.id, "Login");
+    const files = () => db.pullRequestLink.findFirstOrThrow({ where: { issueId: issue.id }, select: { files: true, filesTruncated: true } });
+
+    gh.state.pullFiles["acme/web#12"] = ["src/a.ts", "src/b.ts"];
+    await deliver("pull_request", pr());
+    expect(await files()).toEqual({ files: ["src/a.ts", "src/b.ts"], filesTruncated: false });
+
+    gh.state.pullFiles["acme/web#12"] = Array.from({ length: 320 }, (_, i) => `src/f${i}.ts`);
+    await deliver("pull_request", pr({ head: { ref: "web-1-fix-login", sha: "def" } }, "synchronize"));
+    const many = await files();
+    expect(many.files).toHaveLength(300);
+    expect(many.filesTruncated).toBe(true);
+
+    // GitHub failing to list files never breaks the webhook; the old list stays.
+    delete gh.state.pullFiles["acme/web#12"];
+    await deliver("pull_request", pr({ title: "Fix login (edited)" }, "synchronize"));
+    expect((await files()).files).toHaveLength(300);
+    expect((await getIssue(ctx, issue.id)).pullRequests![0]!.title).toBe("Fix login (edited)");
   });
 
   it("links PRs by key, tracks checks, and moves to DONE on merge", async () => {

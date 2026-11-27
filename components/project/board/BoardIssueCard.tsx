@@ -5,6 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { ListTree, MoreHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
 
+import { OverlapChip, useIssueOverlaps } from "@/components/context/ContextUI";
 import { GitHubMark } from "@/components/icons/GitHubMark";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
 import { PriorityIcon } from "@/components/icons/PriorityIcon";
@@ -34,6 +35,8 @@ import { cn } from "@/lib/utils";
 
 /** The card's face, shared by the sortable card and the drag overlay. */
 export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.ReactNode }) {
+  // Other work changing the same files (docs/features/27-project-context.md "Overlap warnings").
+  const overlaps = useIssueOverlaps(issue.id);
   const hasMeta =
     issue.labels.length > 0 ||
     issue.subIssueCount > 0 ||
@@ -44,6 +47,7 @@ export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.
     Boolean(issue.pullRequests?.length) ||
     Boolean(issue.blockedBy?.length) ||
     issue.source === "GITHUB";
+  const showMeta = hasMeta || overlaps.length > 0;
   const runStatus = cardRunStatus(issue.agentRuns);
   return (
     <>
@@ -56,9 +60,10 @@ export function IssueCardFace({ issue, menu }: { issue: IssueCard; menu?: React.
         </span>
       </div>
       <p className="line-clamp-3 font-medium break-words text-foreground">{issue.title}</p>
-      {hasMeta ? (
+      {showMeta ? (
         <div className="flex min-h-5 flex-wrap items-center gap-1.5">
           <BlockedChip blockedBy={issue.blockedBy} />
+          <OverlapChip overlaps={overlaps} />
           {issue.labels.map((label) => (
             <LabelChip key={label.id} label={label} />
           ))}

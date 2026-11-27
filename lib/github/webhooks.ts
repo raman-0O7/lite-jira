@@ -4,7 +4,7 @@ import { z } from "zod";
 import { onPullRequestLinked } from "@/lib/agents/lifecycle";
 import { db } from "@/lib/db";
 import { toAttachmentData } from "@/lib/attachments";
-import { checkSuites, type GhCheckSuite } from "@/lib/github/client";
+import { checkSuites, type GhCheckSuite, listPullRequestFiles } from "@/lib/github/client";
 import { copyBodyImages } from "@/lib/github/images";
 import { parseKey } from "@/lib/services/issue-shapes";
 import {
@@ -222,6 +222,19 @@ export function extractIssueKeys(...texts: (string | null | undefined)[]) {
   return [...keys];
 }
 
+/** Actions after which a PR's changed files may differ (overlap warnings, docs/features/27-project-context.md). */
+const FILE_ACTIONS = new Set(["opened", "reopened", "synchronize", "ready_for_review"]);
+
+/** A PR's changed files, or null when GitHub can't say: overlaps are a hint, never worth failing the webhook for. */
+async function changedFiles(installationId: number, repo: string, number: number) {
+  try {
+    return await listPullRequestFiles(installationId, repo, number);
+  } catch (error) {
+    console.error("[github] pull request files", repo, number, error instanceof Error ? error.message.slice(0, 200) : "error");
+    return null;
+  }
+}
+
 async function onPullRequest(payload: z.infer<typeof pullRequestPayload>) {
   if (!["opened", "edited", "reopened", "synchronize", "closed", "ready_for_review"].includes(payload.action)) return;
   const installation = await installationFor(payload.installation.id);
@@ -239,6 +252,9 @@ async function onPullRequest(payload: z.infer<typeof pullRequestPayload>) {
   const intoBase = !repo.baseBranch || pr.base?.ref === repo.baseBranch;
   const state: PullRequestState = pr.merged ? "MERGED" : pr.state === "closed" ? "CLOSED" : "OPEN";
   const ctx = githubCtx(installation);
+  const changed = state === "OPEN" && FILE_ACTIONS.has(payload.action)
+    ? await changedFiles(installation.installationId, repoFullName, pr.number)
+    : null;
 
   for (const key of extractIssueKeys(pr.head.ref, pr.title, pr.body)) {
     const parsed = parseKey(key)!;
@@ -257,6 +273,7 @@ async function onPullRequest(payload: z.infer<typeof pullRequestPayload>) {
       headSha: pr.head.sha,
       state,
       mergedAt: pr.merged_at ? new Date(pr.merged_at) : null,
+      ...(changed ? { files: changed.files, filesTruncated: changed.truncated } : {}),
     };
     const link = await db.pullRequestLink.upsert({
       where,

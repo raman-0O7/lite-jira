@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  BookOpen,
   ChartLine,
   ChevronRight,
   Columns3,
@@ -19,6 +20,8 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AskProjectDialog } from "@/components/ai/AskProjectDialog";
+import { OverlapsProvider } from "@/components/context/ContextUI";
+import { ProjectContextView } from "@/components/context/ProjectContextView";
 import { useCanUseAi } from "@/components/ai/use-ai";
 import { PageHeader, PageTitle } from "@/components/app-shell/PageHeader";
 import { ProjectRepos } from "@/components/project/ProjectRepos";
@@ -78,7 +81,7 @@ import { isFiltersEmpty, matchesFilters } from "@/lib/board-filters";
 import { statusVariants } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
-type View = "board" | "list" | "backlog" | "reports";
+type View = "board" | "list" | "backlog" | "reports" | "context";
 const SCRUM_VIEWS: View[] = ["backlog", "reports"];
 
 /** The labels in use on the project's issues (deduped, by name): the label filter's options. */
@@ -160,7 +163,9 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
   const viewParam = searchParams.get("view");
   const requestedView: View =
-    viewParam === "list" || viewParam === "backlog" || viewParam === "reports" ? viewParam : "board";
+    viewParam === "list" || viewParam === "backlog" || viewParam === "reports" || viewParam === "context"
+      ? viewParam
+      : "board";
   const issueParam = searchParams.get("issue")?.toUpperCase() ?? null;
 
   const projectQuery = useQuery({
@@ -357,10 +362,12 @@ export function ProjectView({ projectId }: { projectId: string }) {
           { id: "board", label: "Board", icon: Columns3 },
           { id: "list", label: "List", icon: List },
           { id: "reports", label: "Reports", icon: ChartLine },
+          { id: "context", label: "Context", icon: BookOpen },
         ]
       : [
           { id: "board", label: "Board", icon: Columns3 },
           { id: "list", label: "List", icon: List },
+          { id: "context", label: "Context", icon: BookOpen },
         ]
   ) satisfies { id: View; label: string; icon: typeof List }[];
 
@@ -473,8 +480,11 @@ export function ProjectView({ projectId }: { projectId: string }) {
         />
       ) : null}
 
+      <OverlapsProvider projectId={projectId}>
       <div className="min-h-0 flex-1">
-        {view === "backlog" ? (
+        {view === "context" ? (
+          <ProjectContextView projectId={projectId} onOpenIssue={(key) => openIssueByKey(key)} />
+        ) : view === "backlog" ? (
           <BacklogView
             projectId={projectId}
             onOpenIssue={(key) => openIssueByKey(key)}
@@ -526,6 +536,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
           />
         )}
       </div>
+      </OverlapsProvider>
 
       <IssuePanel
         projectId={projectId}

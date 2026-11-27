@@ -99,10 +99,17 @@ _4 older entries not shown: call get_project_context with page 2._
 | Status | Proposed → **Accepted** or **Rejected** |
 | Replaces | Optionally, an earlier accepted entry it supersedes |
 
-- **People add directly.** A member who adds an entry (on the Context page, or
-  through MCP as themselves) adds it accepted.
-- **Agents propose.** An agent's entry is **Proposed** until a member accepts
-  it, edits and accepts it, or rejects it.
+- **People add directly, in the web app.** A member who adds an entry on the
+  Context page adds it accepted.
+- **Everything through MCP or an API token is a proposal**, whoever signed in.
+  Claude Code and ChatGPT connect *as the person*, so "a person through MCP" is
+  usually an AI writing; it waits for review like any agent's entry. It stays
+  **Proposed** until a member accepts it, edits and accepts it, or rejects it.
+- **Attribution.** A proposal that names an issue claimed by an agent the
+  caller runs (its own token, or the person who owns or runs it, e.g. a Claude
+  Code routine) is attributed to that agent and its run.
+- **Duplicates.** Proposing text that's already accepted or waiting (same kind,
+  same words) adds nothing and says so.
 - **Replacing.** An entry can name an accepted entry it replaces. When it's
   accepted, the old one shows as "Replaced by …" in Kanso and is no longer
   served to agents. One entry can be replaced at most once (the chain stays
@@ -165,7 +172,7 @@ without a breaking-change update):
 | Tool | Kind | |
 |---|---|---|
 | `get_project_context(workspace, project, page?)` | read | The rendered context, as above |
-| `propose_context(workspace, project, kind, text, issueKey?, replaces?)` | write | People: added accepted. Agents: proposed. Returns the entry and its status |
+| `propose_context(workspace, project, kind, text, issueKey?, replaces?)` | write | Always a proposal (see "Context entries"). Returns the entry, its status and whether it was a duplicate |
 | `claim_issue` | existing | Adds `context` (rendered, within budget), `overlaps`, and the two rules above |
 | `report_progress` | existing | New optional `files: string[]` (≤ 300 paths, each ≤ 500 chars); response adds `overlaps` |
 
@@ -180,8 +187,10 @@ Resource: `project://{workspace}/{key}/context`.
 | Propose entries | ✓ | ✓ | ✓ | — | ✓ (proposed only) |
 | See overlaps | ✓ | ✓ | ✓ | shared projects | in its own tool responses |
 
-Permission actions: `project.read` to read, `project.update` to edit and
-decide, a new `context.propose` for agents. API tokens with read scope can read
+Permission actions: `project.read` to read; a new `context.write` (members
+and up) to edit, decide and propose. Agents and token clients hold it through
+their role, but the service lets them only propose: editing the brief and
+deciding on entries need a person in the web app. API tokens with read scope can read
 only. Every change writes an Activity row (`context.brief_updated`,
 `context.entry_added`, `context.entry_proposed`, `context.entry_accepted`,
 `context.entry_rejected`, `context.entry_archived`).
@@ -232,7 +241,7 @@ model ContextEntry {
   runId             String?
   decidedByUserId   String?
   decidedAt         DateTime?
-  replacesId        String?       @unique   // the accepted entry this one supersedes
+  replacesId        String?                 // the entry this one supersedes; only one accepted replacement per entry (checked on accept)
   archivedAt        DateTime?
   createdAt         DateTime      @default(now())
   @@index([projectId, status, createdAt])
@@ -268,7 +277,9 @@ renderer is a pure function, unit-tested on its own.
 | `POST /api/projects/[id]/context/entries` | `{ kind, text, issueId?, replacesId? }` → accepted |
 | `PATCH /api/context-entries/[id]` | `{ action: "accept" \| "reject" \| "archive", text? }` (`text` = edit and accept) |
 | `POST /api/projects/[id]/context/draft` | AI draft (in-app AI rules) |
-| `GET /api/issues/[id]/overlaps` | for the chip |
+| `GET /api/issues/[id]/overlaps` | for the issue panel |
+| `GET /api/projects/[id]/overlaps` | every issue's overlaps in one request, for the board's chips |
+| `GET /api/issues/[id]/context-proposals` | proposals from the issue, for its panel |
 
 ## Out of scope
 - Reading Slack, email or meeting transcripts into the context. Kanso holds

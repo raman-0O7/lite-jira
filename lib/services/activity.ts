@@ -59,7 +59,13 @@ export type ActivityAction =
   | "agent.done"
   | "agent.failed"
   | "agent.released"
-  | "agent.resumed";
+  | "agent.resumed"
+  | "context.brief_updated"
+  | "context.entry_added"
+  | "context.entry_proposed"
+  | "context.entry_accepted"
+  | "context.entry_rejected"
+  | "context.entry_archived";
 
 type ActivityEntry = {
   action: ActivityAction;

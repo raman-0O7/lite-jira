@@ -386,6 +386,33 @@
     }
   },
   {
+    "name": "get_project_context",
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "page": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "project": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "link_issues",
     "annotations": {
       "readOnlyHint": false,
@@ -549,6 +576,54 @@
     }
   },
   {
+    "name": "propose_context",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "issueKey": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "DECISION",
+            "CONSTRAINT",
+            "CONVENTION",
+            "VOCABULARY"
+          ],
+          "type": "string"
+        },
+        "project": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "replaces": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "kind",
+        "text"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "release_issue",
     "annotations": {
       "readOnlyHint": false,
@@ -586,6 +661,15 @@
     },
     "inputSchema": {
       "properties": {
+        "files": {
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 300,
+          "type": "array"
+        },
         "key": {
           "minLength": 1,
           "type": "string"

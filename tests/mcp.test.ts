@@ -15,6 +15,7 @@ import { addComment, listComments } from "@/lib/services/comments";
 import { createSavedFilter } from "@/lib/services/filters";
 import { getIssueByKey } from "@/lib/services/issues";
 import { createLabel } from "@/lib/services/labels";
+import { addEntry, saveBrief } from "@/lib/services/project-context";
 import { updateProject } from "@/lib/services/projects";
 import { createSprint } from "@/lib/services/sprints";
 import { createWorkspace } from "@/lib/services/workspaces";
@@ -115,6 +116,7 @@ describe("MCP server", () => {
       "list_workspaces",
       "list_projects",
       "get_project",
+      "get_project_context",
       "search_issues",
       "get_issue",
       "get_attachment",
@@ -127,6 +129,7 @@ describe("MCP server", () => {
       "assign_issue",
       "link_issues",
       "add_comment",
+      "propose_context",
       "list_agent_queue",
       "claim_issue",
       "report_progress",
@@ -143,6 +146,7 @@ describe("MCP server", () => {
     expect(templates.map((t) => t.uriTemplate)).toEqual([
       "issue://{workspace}/{key}",
       "project://{workspace}/{key}/workflow",
+      "project://{workspace}/{key}/context",
     ]);
     const prompts = (await rpc(principal, "prompts/list")).result!.prompts as { name: string }[];
     expect(prompts.map((p) => p.name)).toEqual(["break_down_epic", "plan_sprint", "write_standup"]);
@@ -374,6 +378,39 @@ describe("agent tools", () => {
     // Still assigned, so the agent can pick it up again (a new run).
     const again = await tool(principal, "claim_issue", { key: "WEB-1" });
     expect(again.data).toMatchObject({ run: { status: "RUNNING" } });
+  });
+
+  it("hands agents the project context and takes proposals back (feature 27)", async () => {
+    const { owner, web } = await setup();
+    await saveBrief(owner.ctx, web.project.id, { body: "Kanso's web app.", version: 0 });
+    await addEntry(owner.ctx, web.project.id, { kind: "CONSTRAINT", text: "API v1 stays compatible" });
+    const { agent, secrets } = await createAgent(owner.ctx, { kind: "MCP", name: "Bot", webhookUrl: null });
+    const issue = await makeIssue(owner.ctx, web.todo.id, "Fix login");
+    await assignAgent(owner.ctx, issue.id, { agentId: agent.id });
+    await flushDeferred();
+    const principal: McpPrincipal = { kind: "api_token", ctx: (await ctxForApiToken(secrets.token!))! };
+
+    const claim = await tool(principal, "claim_issue", { key: "WEB-1" });
+    expect(claim.data!.context).toContain("Kanso's web app.");
+    expect(claim.data!.context).toContain("API v1 stays compatible");
+    expect(claim.data!.overlaps).toEqual([]);
+    expect((claim.data!.rules as string[]).some((rule) => rule.includes("propose_context"))).toBe(true);
+
+    const read = await tool(principal, "get_project_context", { project: "WEB" });
+    expect(read.data).toMatchObject({ project: "WEB", page: 1, pages: 1 });
+
+    const proposed = await tool(principal, "propose_context", { project: "WEB", kind: "DECISION", text: "Sessions stay cookie-based", issueKey: "WEB-1" });
+    expect(proposed.data).toMatchObject({ status: "PROPOSED", duplicate: false });
+    // Not shared until a person accepts it.
+    expect((await tool(principal, "get_project_context", { project: "WEB" })).data!.context).not.toContain("cookie-based");
+
+    const report = await tool(principal, "report_progress", { key: "WEB-1", message: "Plan", files: ["src/login.ts"] });
+    expect(report.data).toMatchObject({ overlaps: [] });
+    const bad = await tool(principal, "report_progress", { key: "WEB-1", message: "Plan", files: ["../secrets"] });
+    expect(bad.isError).toBe(true);
+
+    const resource = await rpc(principal, "resources/read", { uri: `project://${owner.workspace.slug}/WEB/context` });
+    expect(JSON.stringify(resource.result)).toContain("API v1 stays compatible");
   });
 
   it("claim_issue rules name the base branch only when one is set", async () => {

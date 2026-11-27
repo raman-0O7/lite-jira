@@ -10,31 +10,34 @@ datasource db {
 
 // ---------- Better Auth ----------
 model User {
-  id                 String              @id
+  id                 String                 @id
   name               String
-  email              String              @unique
-  emailVerified      Boolean             @default(false)
+  email              String                 @unique
+  emailVerified      Boolean                @default(false)
   image              String?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
   sessions           Session[]
   accounts           Account[]
   memberships        Membership[]
   activities         Activity[]
-  assignedIssues     Issue[]             @relation("IssueAssignee")
-  reportedIssues     Issue[]             @relation("IssueReporter")
+  assignedIssues     Issue[]                @relation("IssueAssignee")
+  reportedIssues     Issue[]                @relation("IssueReporter")
   comments           Comment[]
-  invitesSent        Invite[]            @relation("InviteSender")
+  invitesSent        Invite[]               @relation("InviteSender")
   apiTokens          ApiToken[]
   oauthClients       OauthClient[]
   oauthRefreshTokens OauthRefreshToken[]
   oauthAccessTokens  OauthAccessToken[]
   oauthConsents      OauthConsent[]
   githubLink         GitHubUserLink?
-  agentsOwned        Agent[]             @relation("AgentOwner")
-  agentRunsRequested AgentRun[]          @relation("AgentRunRequester")
-  agentRunsRun       AgentRun[]          @relation("AgentRunRunner")
+  agentsOwned        Agent[]                @relation("AgentOwner")
+  agentRunsRequested AgentRun[]             @relation("AgentRunRequester")
+  agentRunsRun       AgentRun[]             @relation("AgentRunRunner")
   savedFilters       SavedFilter[]
+  briefRevisions     ProjectBriefRevision[]
+  contextProposed    ContextEntry[]         @relation("ContextProposer")
+  contextDecided     ContextEntry[]         @relation("ContextDecider")
 }
 
 model Session {
@@ -188,24 +191,27 @@ enum ActorType {
 
 // ---------- Projects & issues ----------
 model Project {
-  id           String          @id @default(cuid())
-  name         String
+  id             String                 @id @default(cuid())
+  name           String
   // Issue key prefix ("WEB" → WEB-42). Unique per workspace, immutable.
-  key          String
+  key            String
   // Last issue number handed out; incremented atomically, never reused.
-  issueCounter Int             @default(0)
-  mode         ProjectMode     @default(KANBAN)
-  workspaceId  String
-  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  columns      Column[]
-  labels       Label[]
-  issues       Issue[]
-  sprints      Sprint[]
-  access       ProjectAccess[]
-  repos        ProjectRepo[]
-  archivedAt   DateTime?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  issueCounter   Int                    @default(0)
+  mode           ProjectMode            @default(KANBAN)
+  workspaceId    String
+  workspace      Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  columns        Column[]
+  labels         Label[]
+  issues         Issue[]
+  sprints        Sprint[]
+  access         ProjectAccess[]
+  repos          ProjectRepo[]
+  brief          ProjectBrief?
+  briefRevisions ProjectBriefRevision[]
+  contextEntries ContextEntry[]
+  archivedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
 
   @@unique([workspaceId, key])
   @@index([workspaceId])
@@ -278,6 +284,7 @@ model Issue {
   githubLink         GitHubIssueLink?
   pullRequests       PullRequestLink[]
   agentRuns          AgentRun[]
+  contextEntries     ContextEntry[]
   archivedAt         DateTime?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
@@ -322,17 +329,17 @@ enum Priority {
 }
 
 model Comment {
-  id            String    @id @default(cuid())
+  id            String       @id @default(cuid())
   issueId       String
-  issue         Issue     @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  issue         Issue        @relation(fields: [issueId], references: [id], onDelete: Cascade)
   authorUserId  String?
-  author        User?     @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  author        User?        @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
   authorAgentId String?
-  authorAgent   Agent?    @relation(fields: [authorAgentId], references: [id], onDelete: SetNull)
+  authorAgent   Agent?       @relation(fields: [authorAgentId], references: [id], onDelete: SetNull)
   body          String
   attachments   Attachment[]
   editedAt      DateTime?
-  createdAt     DateTime  @default(now())
+  createdAt     DateTime     @default(now())
 
   @@index([issueId, createdAt])
 }
@@ -720,20 +727,23 @@ enum GitHubIssueState {
 }
 
 model PullRequestLink {
-  id           String           @id @default(cuid())
-  issueId      String
-  issue        Issue            @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  repoFullName String
-  number       Int
-  url          String
-  title        String
-  branch       String
-  headSha      String?
-  state        PullRequestState @default(OPEN)
-  checks       ChecksState      @default(NONE)
-  mergedAt     DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  id             String           @id @default(cuid())
+  issueId        String
+  issue          Issue            @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  repoFullName   String
+  number         Int
+  url            String
+  title          String
+  branch         String
+  headSha        String?
+  state          PullRequestState @default(OPEN)
+  checks         ChecksState      @default(NONE)
+  mergedAt       DateTime?
+  /// Paths the PR changes (docs/features/27-project-context.md "Overlap warnings"); at most 300.
+  files          String[]         @default([])
+  filesTruncated Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   @@unique([issueId, repoFullName, number])
   @@index([repoFullName, number])
@@ -763,25 +773,26 @@ model GitHubDelivery {
 // ---------- Agents (docs/features/12-agents.md) ----------
 
 model Agent {
-  id          String     @id @default(cuid())
-  workspaceId String
-  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  name        String
-  kind        AgentKind
+  id             String         @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name           String
+  kind           AgentKind
   // The user the agent acts for (its role, capped by AGENT_NEVER).
-  ownerUserId String
-  owner       User       @relation("AgentOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  ownerUserId    String
+  owner          User           @relation("AgentOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
   // AES-256-GCM JSON (lib/crypto.ts): fire URL + token, or webhook URL + secret.
-  configEnc   String
-  enabled     Boolean    @default(true)
-  runs        AgentRun[]
-  tokens      ApiToken[]
-  assigned    Issue[]    @relation("IssueAgentAssignee")
-  claimed     Issue[]    @relation("IssueAgentClaim")
-  comments    Comment[]
-  activities  Activity[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  configEnc      String
+  enabled        Boolean        @default(true)
+  runs           AgentRun[]
+  tokens         ApiToken[]
+  assigned       Issue[]        @relation("IssueAgentAssignee")
+  claimed        Issue[]        @relation("IssueAgentClaim")
+  comments       Comment[]
+  activities     Activity[]
+  contextEntries ContextEntry[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@unique([workspaceId, name])
 }
@@ -824,6 +835,9 @@ model AgentRun {
   dispatchedAt      DateTime?
   claimedAt         DateTime?
   finishedAt        DateTime?
+  /// Paths the agent says it plans to change, before it has a PR (report_progress `files`).
+  plannedFiles      String[]       @default([])
+  contextEntries    ContextEntry[]
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -869,4 +883,76 @@ model AiUsage {
   costUsd          Float     @default(0)
 
   @@id([workspaceId, day])
+}
+
+// ---------- Project context (docs/features/27-project-context.md) ----------
+
+/// The project's brief: Markdown people write, served to every agent.
+model ProjectBrief {
+  projectId String   @id
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  body      String   @default("")
+  /// Bumped on each save; a save with a stale version is refused (409).
+  version   Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+/// Every saved version of a brief, for history and restore.
+model ProjectBriefRevision {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version    Int
+  body       String
+  editedById String?
+  editedBy   User?    @relation(fields: [editedById], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@unique([projectId, version])
+}
+
+/// One sourced fact about a project. Only ACCEPTED, unarchived, unreplaced entries reach agents.
+model ContextEntry {
+  id                String         @id @default(cuid())
+  projectId         String
+  project           Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind              ContextKind
+  text              String
+  status            ContextStatus  @default(PROPOSED)
+  sourceIssueId     String?
+  sourceIssue       Issue?         @relation(fields: [sourceIssueId], references: [id], onDelete: SetNull)
+  sourcePrUrl       String?
+  proposedByUserId  String?
+  proposedBy        User?          @relation("ContextProposer", fields: [proposedByUserId], references: [id], onDelete: SetNull)
+  proposedByAgentId String?
+  proposedByAgent   Agent?         @relation(fields: [proposedByAgentId], references: [id], onDelete: SetNull)
+  runId             String?
+  run               AgentRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
+  decidedByUserId   String?
+  decidedBy         User?          @relation("ContextDecider", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  decidedAt         DateTime?
+  /// The accepted entry this one supersedes (proposed or accepted). Only one accepted entry may replace another; checked on accept.
+  replacesId        String?
+  replaces          ContextEntry?  @relation("ContextReplaces", fields: [replacesId], references: [id], onDelete: SetNull)
+  replacedBy        ContextEntry[] @relation("ContextReplaces")
+  archivedAt        DateTime?
+  createdAt         DateTime       @default(now())
+
+  @@index([projectId, status, createdAt])
+  @@index([runId])
+  @@index([sourceIssueId])
+  @@index([replacesId])
+}
+
+enum ContextKind {
+  DECISION
+  CONSTRAINT
+  CONVENTION
+  VOCABULARY
+}
+
+enum ContextStatus {
+  PROPOSED
+  ACCEPTED
+  REJECTED
 }

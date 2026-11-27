@@ -34,7 +34,8 @@ export type Action =
   | "filter.share"
   | "filter.moderate"
   | "sprint.manage"
-  | "ai.use";
+  | "ai.use"
+  | "context.write";
 
 // Guests can read and comment (PLAN-v2 §4); they can't change issues. Everyone
 // manages their own API tokens and saved filters.
@@ -55,6 +56,10 @@ const WRITE: Action[] = [
   "sprint.manage",
   // In-app AI spends the workspace's money (docs/features/20-in-app-ai.md).
   "ai.use",
+  // Project context (docs/features/27-project-context.md). Agents and token
+  // clients hold it through their role but can only propose; the service
+  // decides what's added directly.
+  "context.write",
 ];
 const ADMIN: Action[] = [
   "project.delete",

@@ -35,6 +35,14 @@ import { listSavedFilters } from "@/lib/services/filters";
 import { addIssueLink, LINK_RELATIONS, listIssueLinks, removeIssueLink } from "@/lib/services/links";
 import { getProfile, listMembers } from "@/lib/services/members";
 import { getProjectWorkflow, listProjects } from "@/lib/services/projects";
+import {
+  CONTEXT_KINDS,
+  describeOverlaps,
+  FILES_MAX,
+  getRenderedContext,
+  issueOverlaps,
+  proposeEntry,
+} from "@/lib/services/project-context";
 import { searchIssues } from "@/lib/services/search";
 import { listWorkspacesForUser, workspaceSlugForCtx } from "@/lib/services/workspaces";
 import { issueTypeEnum, priorityEnum } from "@/lib/validations/issue";
@@ -225,6 +233,27 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
             .filter((m) => m.role !== "GUEST")
             .map((m) => ({ name: m.name, email: m.email, role: m.role })),
         });
+      }),
+  );
+
+  server.registerTool(
+    "get_project_context",
+    {
+      title: "Get project context",
+      description:
+        "The team's accepted context for a project: its brief, then decisions, constraints, conventions and vocabulary, each with its source. Read it before working on the project's issues and follow it. Long contexts come in pages.",
+      inputSchema: z.object({
+        workspace,
+        project: projectKey,
+        page: z.number().int().min(1).optional().describe("Page number, when the previous page says more entries weren't shown"),
+      }),
+      annotations: READ,
+    },
+    (args) =>
+      run(async () => {
+        const ctx = await ctxForCall(principal, args.workspace);
+        const context = await getRenderedContext(ctx, { key: args.project }, args.page ?? 1);
+        return ok({ project: context.project.key, page: context.page, pages: context.pages, context: context.markdown });
       }),
   );
 
@@ -633,6 +662,40 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
   // ----- agents (docs/features/12-agents.md) -----
 
   server.registerTool(
+    "propose_context",
+    {
+      title: "Propose project context",
+      description:
+        "Suggest one fact for the project's shared context: a decision, constraint, convention or term that agents and people working on the project should know. A person in Kanso reviews it before it's shared with other agents. One fact per call; cite the issue it came from; don't repeat what get_project_context already has.",
+      inputSchema: z.object({
+        workspace,
+        project: projectKey,
+        kind: z.enum(CONTEXT_KINDS).describe("DECISION, CONSTRAINT, CONVENTION or VOCABULARY"),
+        text: z.string().min(1).max(1000).describe("The fact, in one or two sentences, with the reason when there is one"),
+        issueKey: issueKey.optional().describe('The issue this came from, e.g. "WEB-42"'),
+        replaces: z.string().min(1).optional().describe("Id of an accepted entry this one supersedes, if any"),
+      }),
+      annotations: ADD,
+      scopeChallenge: challenge,
+    },
+    (args) =>
+      run(async () => {
+        const ctx = await writeCtx(principal, args.workspace);
+        const { entry, duplicate } = await proposeEntry(ctx, args.project, args);
+        return ok({
+          id: entry.id,
+          status: entry.status,
+          duplicate,
+          note: duplicate
+            ? "The project context already has this (accepted or waiting for review); nothing new was added."
+            : entry.status === "PROPOSED"
+              ? "Proposed. A person in Kanso will accept or reject it; until then it isn't shared with other agents."
+              : "Added.",
+        });
+      }),
+  );
+
+  server.registerTool(
     "list_agent_queue",
     {
       title: "Agent work queue",
@@ -670,12 +733,24 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
       run(async () => {
         const ctx = await writeCtx(principal, args.workspace);
         const claimed = await claimIssue(ctx, args.key, args.claimCode);
+        const [context, overlaps] = await Promise.all([
+          getRenderedContext(ctx, { id: claimed.issue.projectId }),
+          issueOverlaps(ctx, claimed.issue.id),
+        ]);
         return ok({
           issue: issueDetail(claimed.issue),
           run: claimed.run,
           branch: claimed.branch,
           repository: claimed.repository,
+          context: context.markdown,
+          overlaps: describeOverlaps(overlaps),
           rules: [
+            "Follow the project context above: it's what the team has accepted. If it has more pages, read them with get_project_context.",
+            `Before you finish (open the pull request or release the issue), if this work made or relied on a decision, constraint, convention or term that isn't in the project context, propose it with propose_context, one fact per call, with issueKey ${claimed.issue.key}. Don't repeat what's already there.`,
+            "Once you know which files you'll change, pass them to report_progress as files, so teammates and other agents changing the same files are warned.",
+            ...(overlaps.length
+              ? ["Other work is changing some of the same files (see overlaps): keep your change compatible with it; if you can't, ask with report_progress (status needs_input)."]
+              : []),
             claimed.repository
               ? `Work only in ${claimed.repository.fullName}. If you don't have that repository, call release_issue saying so.`
               : "The project has no connected repository: ask with report_progress (status needs_input) which code to change.",
@@ -704,6 +779,11 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
         key: issueKey,
         message: z.string().min(1).max(10_000).describe("Markdown update for the people following this issue"),
         status: z.enum(["working", "needs_input"]).optional(),
+        files: z
+          .array(z.string().min(1).max(500))
+          .max(FILES_MAX)
+          .optional()
+          .describe("Paths you expect to change, relative to the repository root. Replaces the list you sent before."),
       }),
       annotations: ADD,
       scopeChallenge: challenge,
@@ -711,7 +791,9 @@ export function registerTools(server: McpServer, principal: McpPrincipal) {
     (args) =>
       run(async () => {
         const ctx = await writeCtx(principal, args.workspace);
-        return ok({ key: args.key, ...(await reportProgress(ctx, args.key, args)) });
+        const { commentId, issueId } = await reportProgress(ctx, args.key, args);
+        const overlaps = describeOverlaps(await issueOverlaps(ctx, issueId));
+        return ok({ key: args.key, commentId, overlaps });
       }),
   );
 

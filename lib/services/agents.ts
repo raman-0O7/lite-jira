@@ -42,6 +42,7 @@ import { badRequest, forbidden, notFound, ServiceError } from "@/lib/services/er
 import { moveToCategory } from "@/lib/services/github";
 import { formatKey, parseKey } from "@/lib/services/issue-shapes";
 import { getIssue } from "@/lib/services/issues";
+import { filesSchema, setPlannedFiles } from "@/lib/services/project-context";
 import { projectScope } from "@/lib/services/scope";
 
 /**
@@ -800,17 +801,28 @@ export async function claimIssue(ctx: Ctx, key: string, claimCode?: string) {
 const progressSchema = z.object({
   message: z.string().trim().min(1).max(10_000),
   status: z.enum(["working", "needs_input"]).optional(),
+  // Paths the agent expects to change, for overlap warnings (docs/features/27-project-context.md).
+  files: filesSchema.optional(),
 });
 
 /** Post an update as the agent; optionally flag that it needs input. */
 export async function reportProgress(ctx: Ctx, key: string, input: unknown) {
   authorize(ctx, "issue.write");
-  const { message, status } = progressSchema.parse(input);
+  const { message, status, files } = progressSchema.parse(input);
   const issue = await findAgentIssue(ctx, key);
   const agentCtx = await agentCtxFor(ctx, issue);
   if (issue.claimedByAgentId !== issue.assigneeAgent!.id) throw new ServiceError(409, `Claim ${key} first`);
 
   const comment = await addComment(agentCtx, issue.id, { body: message });
+  if (files) {
+    // The latest list replaces the earlier one.
+    const run = await db.agentRun.findFirst({
+      where: { issueId: issue.id, agentId: issue.assigneeAgent!.id, status: { in: ACTIVE_RUN } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (run) await setPlannedFiles(run.id, files);
+  }
   if (status) {
     const next = status === "needs_input" ? "NEEDS_INPUT" : "RUNNING";
     await db.$transaction(async (tx) => {
@@ -823,7 +835,7 @@ export async function reportProgress(ctx: Ctx, key: string, input: unknown) {
       await recordRunActivity(tx, agentCtx, run, "agent.progress", { status: next });
     });
   }
-  return { commentId: comment.id };
+  return { commentId: comment.id, issueId: issue.id };
 }
 
 /** Give the issue back: the claim is cleared and the run ends as FAILED with the reason. */

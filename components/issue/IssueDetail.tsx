@@ -7,6 +7,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 
+import { IssueContextProposals, IssueOverlaps } from "@/components/context/ContextUI";
 import { IssueTriage } from "@/components/ai/IssueTriage";
 import { Avatar } from "@/components/icons/Avatar";
 import { IssueTypeIcon } from "@/components/icons/IssueTypeIcon";
@@ -529,7 +530,10 @@ export function IssueDetail({
 
           <IssueLinks issue={issue} onOpen={onNavigate} />
 
-          <div className="border-t pt-5">
+          <IssueOverlaps issueId={issue.id} onOpenIssue={onNavigate} />
+
+          <div className="flex flex-col gap-4 border-t pt-5">
+            <IssueContextProposals issueId={issue.id} />
             <IssueActivity issueId={issue.id} variants={variants} />
           </div>
         </div>

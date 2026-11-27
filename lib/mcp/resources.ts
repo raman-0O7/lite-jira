@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { ctxForCall, type McpPrincipal } from "@/lib/mcp/principal";
 import { getIssueByKey } from "@/lib/services/issues";
+import { getRenderedContext } from "@/lib/services/project-context";
 import { getProjectWorkflow } from "@/lib/services/projects";
 
 /**
@@ -85,6 +86,21 @@ export function registerResources(server: McpServer, principal: McpPrincipal) {
           : "No labels yet.",
       ].join("\n");
       return { contents: [{ uri: uri.href, mimeType: "text/markdown", text }] };
+    },
+  );
+
+  server.registerResource(
+    "project-context",
+    new ResourceTemplate("project://{workspace}/{key}/context", { list: undefined }),
+    {
+      title: "Project context",
+      description: "The team's accepted context for a project (brief, decisions, constraints, conventions, vocabulary), e.g. project://acme/WEB/context",
+      mimeType: "text/markdown",
+    },
+    async (uri, variables) => {
+      const ctx = await ctxForCall(principal, one(variables.workspace));
+      const context = await getRenderedContext(ctx, { key: one(variables.key) });
+      return { contents: [{ uri: uri.href, mimeType: "text/markdown", text: context.markdown }] };
     },
   );
 }

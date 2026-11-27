@@ -53,6 +53,9 @@ export const ctxForSprint = (sprintId: string) =>
 export const ctxForLabel = (labelId: string) =>
   ctxFor({ projects: { some: { labels: { some: { id: labelId } } } } }, "Label not found");
 
+export const ctxForContextEntry = (entryId: string) =>
+  ctxFor({ projects: { some: { contextEntries: { some: { id: entryId } } } } }, "Entry not found");
+
 export const ctxForComment = (commentId: string) =>
   ctxFor(
     {

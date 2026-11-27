@@ -50,6 +50,8 @@ export function fakeGitHub() {
     failAssignees: [] as string[],
     /** Files GitHub hosts (issue images), by full URL. A value starting with "redirect:" is a 302. */
     files: {} as Record<string, Uint8Array | string>,
+    /** Changed files per pull request, keyed "owner/repo#number". */
+    pullFiles: {} as Record<string, string[]>,
   };
   const calls: { method: string; path: string; body?: unknown; auth?: string }[] = [];
 
@@ -133,6 +135,14 @@ export function fakeGitHub() {
       const issue = state.issues[m[1]!]?.find((i) => i.number === Number(m![2]));
       if (issue) issue.state = body.state;
       return json({ number: Number(m[2]), state: body.state });
+    }
+    m = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/files$/.exec(path);
+    if (m) {
+      const all = state.pullFiles[`${m[1]}#${m[2]}`];
+      if (!all) return json({ message: "Not Found" }, 404);
+      const page = Number(url.searchParams.get("page") ?? 1);
+      const perPage = Number(url.searchParams.get("per_page") ?? 30);
+      return json(all.slice((page - 1) * perPage, page * perPage).map((filename) => ({ filename })));
     }
     m = /^\/repos\/([^/]+\/[^/]+)\/commits\/([^/]+)\/check-suites$/.exec(path);
     if (m) return json({ check_suites: state.checkSuites[m[2]!] ?? [] });
