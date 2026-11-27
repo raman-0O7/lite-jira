@@ -82,7 +82,7 @@ Claude account. So the claim doesn't rely on the connector's identity alone:
   name suggestion uses `claudeNameTaken` from the setup status instead.
 - **Integrations:** the GitHub connection is workspace setup, so every member
   sees which accounts and repos feed which projects, and who connected each
-  ("connected by Ana"). Only admins see Sync now, Remove, Connect repository,
+  ("added by Ana (Kanso)"). Only admins see Sync now, Remove, Connect repository,
   and the import and sync controls; members get a read-only summary.
   Connecting a private repo warns that everyone who can see the project will
   see its imported issues. Kanso doesn't check members' repo access: GitHub
