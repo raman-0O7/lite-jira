@@ -12,7 +12,8 @@ export const GET = apiRoute(async (_request: Request, { params }: RouteContext) 
   return NextResponse.json(await getAi(ctx));
 });
 
-// PUT /api/workspaces/[slug]/ai {apiKey?, useAgentKey?, model?, enabled?} → admins change the settings.
+// PUT /api/workspaces/[slug]/ai {provider?, apiKey?, useAgentKey?, model?, baseUrl?, structuredOutputs?, enabled?}
+// → admins change the settings (docs/features/24-multi-provider-ai.md "API").
 export const PUT = apiRoute(async (request: Request, { params }: RouteContext) => {
   const ctx = await ctxForWorkspaceSlug((await params).slug);
   return NextResponse.json(await updateAiSettings(ctx, await readJson(request)));

@@ -1,16 +1,18 @@
 import { z } from "zod";
 
 import { type ClaudeApiConfig, decryptConfig } from "@/lib/agents/config";
+import { CATALOG, MODEL_ID_PATTERN, PROVIDER_IDS, type ProviderId, providerLabel } from "@/lib/ai/catalog";
+import { normalizeEndpointUrl } from "@/lib/ai/endpoint";
 import {
-  AI_MODELS,
   aiAvailability,
-  checkApiKey,
+  checkConnection,
   generate,
+  type ModelTarget,
   monthUsage,
   platformApiKey,
   platformDailyLimit,
 } from "@/lib/ai/provider";
-import { encrypt } from "@/lib/crypto";
+import { decrypt, encrypt } from "@/lib/crypto";
 import { db } from "@/lib/db";
 import { authorize, can } from "@/lib/permissions";
 import { OPEN_BLOCKER } from "@/lib/query/issue-query";
@@ -37,53 +39,91 @@ export async function getAi(ctx: Ctx) {
     available: availability.available,
     canUse: availability.available && can(ctx, "ai.use"),
     reason: availability.available ? null : availability.reason,
+    // Which provider answers, so the app can say "Ask Claude" or name OpenAI.
+    providerLabel: availability.available ? providerLabel(availability.provider) : null,
   };
   if (!can(ctx, "workspace.update")) return { ai };
 
   const [settings, agentKey, usage] = await Promise.all([
     db.aiSettings.findUnique({
       where: { workspaceId: ctx.workspaceId },
-      select: { enabled: true, model: true, apiKeyHint: true },
+      select: { enabled: true, provider: true, model: true, apiKeyHint: true, baseUrl: true, structuredOutputs: true },
     }),
     db.agent.count({ where: { workspaceId: ctx.workspaceId, kind: "CLAUDE_API" } }),
     monthUsage(ctx.workspaceId),
   ]);
+  const provider = asProvider(settings?.provider);
+  const platform = platformApiKey();
   return {
     ai,
     settings: {
       enabled: settings?.enabled ?? true,
-      model: settings?.model ?? AI_MODELS[0],
+      provider,
+      model: settings?.model ?? CATALOG[provider].defaultModel,
+      baseUrl: settings?.baseUrl ?? null,
+      structuredOutputs: settings?.structuredOutputs ?? true,
       apiKeyHint: settings?.apiKeyHint ?? null,
       source: availability.available ? availability.source : null,
-      platform: platformApiKey() ? { dailyLimit: platformDailyLimit() } : null,
+      platform:
+        platform && availability.available && availability.source === "platform"
+          ? { dailyLimit: platformDailyLimit(), providerLabel: providerLabel(availability.provider), model: availability.model }
+          : platform
+            ? { dailyLimit: platformDailyLimit(), providerLabel: null, model: null }
+            : null,
       agentKeyAvailable: agentKey > 0,
       usage,
     },
   };
 }
 
-const apiKey = z
-  .string()
-  .trim()
-  .max(300)
-  .regex(/^sk-ant-[A-Za-z0-9_-]{20,}$/, "Paste a Claude API key (sk-ant-…) from the Claude Console");
+const asProvider = (value: string | null | undefined): ProviderId =>
+  value && (PROVIDER_IDS as readonly string[]).includes(value) ? (value as ProviderId) : "anthropic";
 
 const updateSchema = z.object({
-  apiKey: apiKey.nullish(),
+  provider: z.enum(PROVIDER_IDS).optional(),
+  apiKey: z.string().trim().min(1, "Paste an API key").max(500).nullish(),
   useAgentKey: z.literal(true).optional(),
-  model: z.enum(AI_MODELS).optional(),
+  model: z.string().trim().regex(MODEL_ID_PATTERN, "That isn't a valid model id").optional(),
+  baseUrl: z.string().trim().max(500).nullish(),
+  structuredOutputs: z.boolean().optional(),
   enabled: z.boolean().optional(),
 });
 
 const hint = (secret: string) => `…${secret.slice(-4)}`;
 
-export async function updateAiSettings(ctx: Ctx, input: unknown) {
-  authorize(ctx, "workspace.update");
-  const patch = updateSchema.parse(input);
-  const data: { enabled?: boolean; model?: string; apiKeyEnc?: string | null; apiKeyHint?: string | null } = {};
-  if (patch.enabled !== undefined) data.enabled = patch.enabled;
-  if (patch.model) data.model = patch.model;
+type SettingsData = {
+  enabled?: boolean;
+  provider?: string;
+  model?: string;
+  baseUrl?: string | null;
+  structuredOutputs?: boolean;
+  apiKeyEnc?: string | null;
+  apiKeyHint?: string | null;
+};
 
+/**
+ * Work out what a settings change means (docs/features/24-multi-provider-ai.md
+ * "API"): the row to save, and the provider, key, model and URL to check with
+ * one request when any of them changed.
+ */
+async function planSettings(ctx: Ctx, input: unknown) {
+  const patch = updateSchema.parse(input);
+  const current = await db.aiSettings.findUnique({
+    where: { workspaceId: ctx.workspaceId },
+    select: { provider: true, model: true, baseUrl: true, structuredOutputs: true, apiKeyEnc: true },
+  });
+  const currentProvider = asProvider(current?.provider);
+  const provider = patch.provider ?? currentProvider;
+  const entry = CATALOG[provider];
+  const providerChanged = provider !== currentProvider;
+  const data: SettingsData = {};
+  if (patch.enabled !== undefined) data.enabled = patch.enabled;
+
+  // A key belongs to one provider: switching needs the new provider's key in the same save.
+  if (providerChanged && !patch.apiKey && !patch.useAgentKey) throw badRequest(`Paste an API key for ${entry.label}`);
+  if (patch.useAgentKey && provider !== "anthropic") throw badRequest("The workspace agent's key only works with Anthropic");
+
+  let apiKey: string | null = providerChanged ? null : current?.apiKeyEnc ? decrypt(current.apiKeyEnc) : null;
   if (patch.useAgentKey) {
     // Reuse the workspace agent's key (feature 18) without it ever reaching the browser.
     const agent = await db.agent.findFirst({
@@ -91,24 +131,67 @@ export async function updateAiSettings(ctx: Ctx, input: unknown) {
       select: { configEnc: true },
     });
     if (!agent) throw badRequest("This workspace has no workspace agent");
-    const key = decryptConfig<ClaudeApiConfig>(agent.configEnc).apiKey;
-    data.apiKeyEnc = encrypt(key);
-    data.apiKeyHint = hint(key);
+    apiKey = decryptConfig<ClaudeApiConfig>(agent.configEnc).apiKey;
   } else if (patch.apiKey) {
-    await checkApiKey(patch.apiKey);
-    data.apiKeyEnc = encrypt(patch.apiKey);
-    data.apiKeyHint = hint(patch.apiKey);
+    if (entry.keyPattern && !entry.keyPattern.test(patch.apiKey)) {
+      throw badRequest(`That doesn't look like an API key for ${entry.label} (${entry.keyPlaceholder})`);
+    }
+    apiKey = patch.apiKey;
   } else if (patch.apiKey === null) {
-    data.apiKeyEnc = null;
-    data.apiKeyHint = null;
+    apiKey = null;
   }
 
+  let baseUrl: string | null = null;
+  if (provider === "custom") {
+    const raw = patch.baseUrl !== undefined ? patch.baseUrl : providerChanged ? null : (current?.baseUrl ?? null);
+    if (!raw) throw badRequest("Enter the endpoint's base URL");
+    baseUrl = normalizeEndpointUrl(raw);
+  } else if (patch.baseUrl) {
+    throw badRequest("Only a custom endpoint takes a base URL");
+  }
+
+  const model = patch.model ?? (providerChanged ? entry.defaultModel : (current?.model ?? entry.defaultModel));
+  if (!model) throw badRequest("Enter the model id the endpoint expects");
+  const structuredOutputs = provider === "custom" ? (patch.structuredOutputs ?? current?.structuredOutputs ?? true) : true;
+
+  const changed =
+    providerChanged ||
+    patch.apiKey !== undefined ||
+    Boolean(patch.useAgentKey) ||
+    model !== current?.model ||
+    baseUrl !== (current?.baseUrl ?? null) ||
+    structuredOutputs !== (current?.structuredOutputs ?? true);
+  if (changed) {
+    Object.assign(data, { provider, model, baseUrl, structuredOutputs });
+    if (patch.apiKey !== undefined || patch.useAgentKey || providerChanged) {
+      data.apiKeyEnc = apiKey ? encrypt(apiKey) : null;
+      data.apiKeyHint = apiKey ? hint(apiKey) : null;
+    }
+  }
+  const target: ModelTarget | null = apiKey ? { provider, model, apiKey, baseUrl, structuredOutputs } : null;
+  return { data, target, changed };
+}
+
+/** Save the workspace's AI settings. Any change to provider, key, model or URL is checked first; nothing is saved if it fails. */
+export async function updateAiSettings(ctx: Ctx, input: unknown) {
+  authorize(ctx, "workspace.update");
+  const { data, target, changed } = await planSettings(ctx, input);
+  if (changed && target) await checkConnection(target);
   await db.aiSettings.upsert({
     where: { workspaceId: ctx.workspaceId },
     create: { workspaceId: ctx.workspaceId, ...data },
     update: data,
   });
   return getAi(ctx);
+}
+
+/** The same check as saving, without saving ("Test connection"). */
+export async function testAiSettings(ctx: Ctx, input: unknown) {
+  authorize(ctx, "workspace.update");
+  const { target } = await planSettings(ctx, input);
+  if (!target) throw badRequest("Paste an API key to test");
+  await checkConnection(target);
+  return { ok: true as const };
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +211,7 @@ const ISSUE_TYPES = ["EPIC", "STORY", "TASK", "BUG"] as const;
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 type SuggestedType = (typeof ISSUE_TYPES)[number];
 type SuggestedPriority = (typeof PRIORITIES)[number];
-// Structured outputs don't hold Claude to an enum, so normalize and fall back.
+// Structured outputs don't hold every model to an enum, so normalize and fall back.
 const pick = <T extends string>(values: readonly T[], value: string, fallback: T): T => {
   const upper = value.trim().toUpperCase() as T;
   return values.includes(upper) ? upper : fallback;

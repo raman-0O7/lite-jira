@@ -1,37 +1,46 @@
-import type { IssueType, Priority } from "@/lib/api/projects";
+import type { ProviderId } from "@/lib/ai/catalog";
 import { request } from "@/lib/api/http";
+import type { IssueType, Priority } from "@/lib/api/projects";
 
-/** In-app AI (docs/features/20-in-app-ai.md). Every call only suggests. */
-
-export const AI_MODELS = [
-  { id: "claude-opus-5-5", label: "Claude Opus 5.5", hint: "Best results" },
-  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", hint: "Balanced" },
-  { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", hint: "Fastest and cheapest" },
-] as const;
-export type AiModel = (typeof AI_MODELS)[number]["id"];
+/** In-app AI (docs/features/20-in-app-ai.md, 24-multi-provider-ai.md). Every call only suggests. */
 
 export type AiStatus = {
-  ai: { available: boolean; canUse: boolean; reason: "off" | "no_key" | null };
+  ai: { available: boolean; canUse: boolean; reason: "off" | "no_key" | null; providerLabel: string | null };
   /** Admins only. */
   settings?: {
     enabled: boolean;
-    model: AiModel;
+    provider: ProviderId;
+    model: string;
+    baseUrl: string | null;
+    structuredOutputs: boolean;
     apiKeyHint: string | null;
     source: "workspace" | "platform" | null;
-    platform: { dailyLimit: number } | null;
+    /** Kanso's own key, when the server has one (and which provider answers on it, when it's in use). */
+    platform: { dailyLimit: number; providerLabel: string | null; model: string | null } | null;
     agentKeyAvailable: boolean;
-    usage: { requests: number; costUsd: number };
+    usage: { requests: number; costUsd: number; unpricedRequests: number };
   };
+};
+
+export type AiSettingsPatch = {
+  provider?: ProviderId;
+  apiKey?: string | null;
+  useAgentKey?: true;
+  model?: string;
+  baseUrl?: string | null;
+  structuredOutputs?: boolean;
+  enabled?: boolean;
 };
 
 export const aiKeys = { status: (slug: string) => ["ai", slug] as const };
 
 export const fetchAi = (slug: string) => request<AiStatus>(`/api/workspaces/${slug}/ai`, "Couldn't load AI settings");
 
-export const updateAi = (
-  slug: string,
-  patch: { apiKey?: string | null; useAgentKey?: true; model?: AiModel; enabled?: boolean },
-) => request<AiStatus>(`/api/workspaces/${slug}/ai`, "Couldn't save AI settings", { method: "PUT", body: patch });
+export const updateAi = (slug: string, patch: AiSettingsPatch) =>
+  request<AiStatus>(`/api/workspaces/${slug}/ai`, "Couldn't save AI settings", { method: "PUT", body: patch });
+
+export const testAi = (slug: string, patch: AiSettingsPatch) =>
+  request<{ ok: true }>(`/api/workspaces/${slug}/ai/test`, "Couldn't test the connection", { method: "POST", body: patch });
 
 type SuggestedType = Exclude<IssueType, "SUBTASK">;
 

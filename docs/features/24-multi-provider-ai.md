@@ -38,6 +38,27 @@ OpenAI's approval; separate feature).
 
 Pin exact package versions in `package.json` (AGENTS.md: versions differ from
 training data — read the installed package's docs before writing code).
+Shipped with `ai` 7.0.173 and the matching `@ai-sdk/*` packages (each the
+newest release at least two weeks old), plus `guarded-fetch` 0.3.0 for custom
+endpoints.
+
+### Models and prices as shipped (checked 27 November 2026)
+| Provider | Models | Prices |
+|---|---|---|
+| Anthropic | **Opus 5.5** (default), Sonnet 5.5, Haiku 5.5 | from feature 20 |
+| OpenAI | GPT-6 Astra, **GPT-6.1 Sol** (default), GPT-6 Luna | OpenAI pricing page |
+| Google Gemini | **Gemini 4 Argon** (default), Gemini 4 Hydrogen | AI Studio pricing; Argon at its standard $4/$20 (the introductory $2/$10 ends 30 Nov) |
+| Mistral | **Mistral Medium** (Mistral's own recommendation), Large, Small | Mistral docs pricing |
+| xAI | **Grok 4.7** | xAI docs pricing |
+| DeepSeek | **V4 Pro**, Flash | none: prices change with the time of day |
+| Groq | **GPT-OSS 120B**, Qwen 3.6 27B | none: no price page Kanso could verify |
+
+Model ids come from each provider package's model table. "Other model…"
+covers anything newer (e.g. GPT-6.2 Astra).
+
+**Key format checks** only where the format is documented and stable
+(Anthropic's `sk-ant-…`). For the others a wrong guess would refuse valid
+keys, so the test request is the check.
 
 ### The catalog (`lib/ai/catalog.ts`)
 One entry per provider, the only place provider facts live:
@@ -150,7 +171,7 @@ provider message.
 | `finishReason: "content-filter"` | "OpenAI declined this request." |
 | `finishReason: "length"` | "OpenAI's answer was cut short. Try again." |
 | `NoObjectGeneratedError` (answer didn't match the schema) | "OpenAI's answer didn't come out right. Try again." |
-| Anything else | "OpenAI couldn't answer that. Try again." (status and a 200-character excerpt logged, no key) |
+| Anything else | "OpenAI couldn't answer that. Try again." (status and a 200-character excerpt logged; the key, and anything key-shaped, is redacted first, since providers sometimes echo it) |
 
 ### Usage
 `recordUsage` reads the SDK's normalized `usage` (input, output, cached
@@ -163,11 +184,13 @@ as outbound webhook URLs (`assertWebhookUrl`, feature 12):
 
 - `https://` only, on a public host. `http://localhost` is allowed outside
   production, for local model servers during development.
-- **Checked again at request time against the resolved address**, not just
-  the hostname at save: a custom `fetch` for this provider resolves the host
-  and refuses private, loopback and link-local addresses, so a DNS change
-  after saving can't point Kanso at internal services.
-- No redirects followed.
+- **Checked again at connection time against the resolved address**, not just
+  the hostname at save: the custom provider's `fetch` is `guarded-fetch`
+  (recommended by the AI SDK's "Secure URL Fetching" guide), which pins the
+  resolved IP inside the socket connect and refuses private, loopback,
+  link-local and metadata addresses, so neither a DNS change after saving nor
+  DNS rebinding can point Kanso at internal services.
+- No redirects followed (the transport is used with `redirect: "error"`).
 - The URL is stored as typed (not secret) and shown to admins; the key is
   encrypted like every other.
 
@@ -196,9 +219,11 @@ Migration: existing rows get `provider = "anthropic"`; nothing else moves.
 not as a database enum, so adding a provider needs no migration.
 
 ## API
-`GET /api/workspaces/[slug]/ai` adds `provider`, `providerLabel`, `baseUrl`,
-`structuredOutputs`, and the catalog's providers and models (ids, labels,
-whether priced) for the settings form.
+`GET /api/workspaces/[slug]/ai` adds `provider`, `baseUrl`,
+`structuredOutputs` and `unpricedRequests` (in usage) for admins, and
+`ai.providerLabel` for everyone. The settings form imports the catalog
+directly (`lib/ai/catalog.ts` is plain data with no SDK), so it isn't sent
+over the API.
 
 `PUT /api/workspaces/[slug]/ai` (admins) accepts
 `{ provider?, apiKey?, model?, baseUrl?, structuredOutputs?, enabled?, useAgentKey? }`:

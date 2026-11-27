@@ -48,7 +48,7 @@ export function AskProjectDialog({
           <Sparkles className="size-3.5 text-primary-text" />
           <DialogTitle className="text-xs font-medium text-soft">Ask about {project.name}</DialogTitle>
         </div>
-        <DialogDescription className="sr-only">Ask a question; Claude answers from this project’s issues.</DialogDescription>
+        <DialogDescription className="sr-only">Ask a question; AI answers from this project’s issues.</DialogDescription>
         <form
           className="flex items-end gap-2 px-4 pt-3 pb-3"
           onSubmit={(event) => {

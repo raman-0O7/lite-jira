@@ -859,15 +859,20 @@ enum AgentRunStatus {
 // In-app AI (docs/features/20-in-app-ai.md "Data"): one row per workspace,
 // created the first time an admin saves Settings → AI.
 model AiSettings {
-  workspaceId String    @id
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  enabled     Boolean   @default(true)
-  model       String    @default("claude-opus-5-5")
-  // The workspace's own Claude API key, AES-256-GCM (lib/crypto.ts); null → Kanso's platform key, if any.
-  apiKeyEnc   String?
-  apiKeyHint  String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  workspaceId       String    @id
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  enabled           Boolean   @default(true)
+  /// Catalog provider id (lib/ai/catalog.ts); validated in the service, so adding one needs no migration.
+  provider          String    @default("anthropic")
+  model             String    @default("claude-opus-5-5")
+  /// Custom (OpenAI-compatible) endpoints only.
+  baseUrl           String?
+  structuredOutputs Boolean   @default(true)
+  // The workspace's own key for `provider`, AES-256-GCM (lib/crypto.ts); null → Kanso's platform key, if any.
+  apiKeyEnc         String?
+  apiKeyHint        String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }
 
 // In-app AI usage per workspace per UTC day: the platform key's daily cap, and
@@ -881,6 +886,8 @@ model AiUsage {
   inputTokens      Int       @default(0)
   outputTokens     Int       @default(0)
   costUsd          Float     @default(0)
+  /// Requests on a model with no catalog price: counted, never priced.
+  unpricedRequests Int       @default(0)
 
   @@id([workspaceId, day])
 }
