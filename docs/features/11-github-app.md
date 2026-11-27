@@ -140,10 +140,13 @@ description, and never interpreted.
 ## UI
 - **Settings → Integrations**:
   - shows "Not configured" when the app isn't set up;
-  - lists installations, with Install / Remove;
-  - shows your GitHub link, with Link / Unlink;
-  - lists connected repositories with their project and toggles, and a Sync now button;
-  - has a "Connect repository" form.
+  - is split under two headings, **Workspace** and **You**;
+  - **Workspace** lists installations ("GitHub account @login · added by Ana (Kanso)"),
+    with Install / Remove; their connected repositories with project, toggles and a
+    Sync now button; and a "Connect repository" form;
+  - **You** shows your GitHub link, with Link / Unlink, and says what it does: it
+    tells Kanso who you are on GitHub, grants no repo access, stores no token, and
+    applies to all your workspaces (`GitHubUserLink` is keyed by user only).
 - **Issue detail, GitHub section**:
   - the linked GitHub issue (repo#number, state, link);
   - linked PRs with state and checks;

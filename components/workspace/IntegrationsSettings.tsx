@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNowStrict } from "date-fns";
 import { ArrowRight, RefreshCw, Trash2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { GitHubMark } from "@/components/icons/GitHubMark";
@@ -98,13 +98,51 @@ export function IntegrationsSettings() {
         )
       ) : (
         <>
-          <AccountLink link={settings.data.link} />
-          {settings.data.installations.map((installation) => (
-            <Installation key={installation.id} installation={installation} canManage={settings.data.canManage} />
-          ))}
-          {settings.data.canManage ? <InstallButton hasInstallations={settings.data.installations.length > 0} /> : null}
+          <SettingsGroup
+            title="Workspace"
+            description="GitHub accounts this workspace has installed the app on, and the repositories connected to its projects. The same for every member."
+          >
+            {settings.data.installations.length === 0 && !settings.data.canManage ? (
+              <p className="text-sm text-muted-foreground">No GitHub account is installed in this workspace yet.</p>
+            ) : null}
+            {settings.data.installations.map((installation) => (
+              <Installation key={installation.id} installation={installation} canManage={settings.data.canManage} />
+            ))}
+            {settings.data.canManage ? (
+              <InstallButton hasInstallations={settings.data.installations.length > 0} />
+            ) : null}
+          </SettingsGroup>
+          <SettingsGroup
+            title="You"
+            description="Tells Kanso who you are on GitHub, so issues assigned to you in connected repositories are assigned to you here. It gives Kanso no access to your repositories and stores no token. Applies to all your workspaces."
+          >
+            <AccountLink link={settings.data.link} />
+          </SettingsGroup>
         </>
       )}
+    </section>
+  );
+}
+
+function SettingsGroup({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  const id = `github-${title.toLowerCase()}`;
+  return (
+    <section aria-labelledby={id} className="flex flex-col gap-3 border-t pt-4">
+      <div>
+        <h3 id={id} className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          {title}
+        </h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+      </div>
+      {children}
     </section>
   );
 }
@@ -157,11 +195,10 @@ function AccountLink({ link }: { link: { login: string } | null }) {
         <p className="text-xs text-muted-foreground">
           {link ? (
             <>
-              Linked as <span className="font-medium text-foreground">@{link.login}</span>. Issues assigned to you
-              in connected repositories come into Kanso.
+              Linked as <span className="font-medium text-foreground">@{link.login}</span> on GitHub.
             </>
           ) : (
-            "Link your account so issues assigned to you on GitHub come into Kanso."
+            "Not linked yet. Link it so GitHub issues assigned to you are assigned to you here."
           )}
         </p>
       </div>
@@ -219,8 +256,10 @@ function Installation({ installation, canManage }: { installation: GitHubInstall
       <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">
+            <span className="font-normal text-muted-foreground">
+              GitHub {installation.accountType === "Organization" ? "organization" : "account"}
+            </span>{" "}
             @{installation.accountLogin}
-            <span className="ml-2 text-xs font-normal text-muted-foreground">{installation.accountType}</span>
             {installation.suspendedAt ? (
               <span className="ml-2 rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
                 Suspended
@@ -231,7 +270,7 @@ function Installation({ installation, canManage }: { installation: GitHubInstall
             {installation.repos.length
               ? `${installation.repos.length} connected ${installation.repos.length === 1 ? "repository" : "repositories"}`
               : "No repositories connected yet"}
-            {installation.connectedBy ? ` · connected by ${installation.connectedBy.name}` : null}
+            {installation.connectedBy ? ` · added by ${installation.connectedBy.name} (Kanso)` : null}
           </p>
         </div>
         {canManage ? (
