@@ -140,6 +140,45 @@ describe("install & link", () => {
   });
 });
 
+describe("what a link reaches", () => {
+  it("says when no repos are connected, which repos can assign to the login, and when none can", async () => {
+    const { ctx, workspace, installation } = await installedTeam();
+    expect((await getGitHubSettings(ctx)).link).toMatchObject({ login: "ana-gh", repos: [] });
+
+    gh.state.repos = ["acme/web", "acme/api"];
+    const { project: web } = await makeProject(ctx, "Web", "WEB");
+    const { project: api } = await makeProject(ctx, "Api", "API");
+    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/web", projectId: web.id });
+    await connectRepo(ctx, { installationId: installation.id, repoFullName: "acme/api", projectId: api.id });
+
+    // Not a collaborator anywhere: GitHub can't assign issues to them.
+    expect((await getGitHubSettings(ctx)).link?.repos).toEqual([
+      { fullName: "acme/api", assignable: false },
+      { fullName: "acme/web", assignable: false },
+    ]);
+
+    // With access to one repo (a fresh client clears the cached answers).
+    gh = fakeGitHub();
+    gh.state.assignees["acme/web"] = ["ana-gh"];
+    expect((await getGitHubSettings(ctx)).link?.repos).toEqual([
+      { fullName: "acme/api", assignable: false },
+      { fullName: "acme/web", assignable: true },
+    ]);
+    // Answers are cached: a second load doesn't ask GitHub again.
+    const asked = () => gh.calls.filter((c) => c.path.includes("/assignees/")).length;
+    const before = asked();
+    await getGitHubSettings(ctx);
+    expect(asked()).toBe(before);
+
+    // Guests don't see repos, so their link doesn't list any.
+    const guest = await makeUser("Gus");
+    const guestCtx = await addMember(workspace.id, guest, "GUEST");
+    gh.state.user = { id: 1002, login: "gus-gh" };
+    await completeGitHubCallback(guest.id, { code: "good-code", state: installState(guestCtx, "link") });
+    expect((await getGitHubSettings(guestCtx)).link).toMatchObject({ login: "gus-gh", repos: null });
+  });
+});
+
 describe("repositories & import", () => {
   it("connecting needs admin; a repo maps to one project", async () => {
     const { ctx, workspace, installation } = await installedTeam();

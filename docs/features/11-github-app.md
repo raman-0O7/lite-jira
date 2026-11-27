@@ -141,7 +141,10 @@ description, and never interpreted.
 - **Settings → Integrations**:
   - shows "Not configured" when the app isn't set up;
   - lists installations, with Install / Remove;
-  - shows your GitHub link, with Link / Unlink;
+  - shows your GitHub link, with Link / Unlink, and what it reaches: the connected
+    repositories GitHub can assign issues to your login in (checked with
+    `GET /repos/{repo}/assignees/{login}`, cached ~10 minutes), a hint to ask an
+    admin when it's none of them, or a plain note when no repository is connected yet;
   - lists connected repositories with their project and toggles, and a Sync now button;
   - has a "Connect repository" form.
 - **Issue detail, GitHub section**:

@@ -18,6 +18,7 @@ import { GitHubAppSetup } from "@/components/workspace/GitHubAppSetup";
 import {
   type ConnectedRepo,
   type GitHubInstallation,
+  type GitHubSettings,
   type ImportMode,
   type RepoToggles,
   connectRepo,
@@ -133,7 +134,7 @@ function useRefresh() {
   };
 }
 
-function AccountLink({ link }: { link: { login: string } | null }) {
+function AccountLink({ link }: { link: GitHubSettings["link"] }) {
   const { slug } = useWorkspace();
   const refresh = useRefresh();
   const go = useMutation({
@@ -157,8 +158,7 @@ function AccountLink({ link }: { link: { login: string } | null }) {
         <p className="text-xs text-muted-foreground">
           {link ? (
             <>
-              Linked as <span className="font-medium text-foreground">@{link.login}</span>. Issues assigned to you
-              in connected repositories come into Kanso.
+              Linked as <span className="font-medium text-foreground">@{link.login}</span>. <LinkReach link={link} />
             </>
           ) : (
             "Link your account so issues assigned to you on GitHub come into Kanso."
@@ -175,6 +175,37 @@ function AccountLink({ link }: { link: { login: string } | null }) {
         </Button>
       )}
     </div>
+  );
+}
+
+/** What a member's link actually does, given the repos connected to this workspace. */
+function LinkReach({ link }: { link: NonNullable<GitHubSettings["link"]> }) {
+  const { login, repos } = link;
+  if (repos === null) return <>Issues assigned to you in connected repositories come into Kanso.</>;
+  if (!repos.length) {
+    return <>No repositories are connected to this workspace yet, so nothing comes in from GitHub.</>;
+  }
+  const reachable = repos.filter((repo) => repo.assignable !== false);
+  if (!reachable.length) {
+    return (
+      <>
+        @{login} doesn’t have access to any connected repository, so no issues there can be assigned to you. Ask an
+        admin to add you on GitHub or to connect a repository you work in.
+      </>
+    );
+  }
+  return (
+    <>
+      Issues assigned to you in {reachable.length === 1 ? "this repository" : `these ${reachable.length} repositories`}{" "}
+      come into Kanso:{" "}
+      {reachable.map((repo, i) => (
+        <span key={repo.fullName}>
+          {i ? ", " : null}
+          <span className="font-medium text-foreground">{repo.fullName}</span>
+        </span>
+      ))}
+      .
+    </>
   );
 }
 
