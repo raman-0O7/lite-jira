@@ -1,5 +1,7 @@
 import { toAttachmentData, type UploadedImage } from "@/lib/attachments";
-import { FORWARD_STATUSES, forwardComment } from "@/lib/agents/claude-api";
+import { FORWARD_STATUSES } from "@/lib/agents/claude-api";
+import { WORKSPACE_AGENT_KINDS } from "@/lib/agents/config";
+import { forwardWorkspaceComment } from "@/lib/agents/workspace-agent";
 import { resumeRun } from "@/lib/agents/resume";
 import { db } from "@/lib/db";
 import { defer } from "@/lib/defer";
@@ -112,11 +114,11 @@ export async function addComment(ctx: Ctx, issueId: string, input: unknown, imag
     if (waiting) defer("agents.resume", () => resumeRun(ctx, waiting.id, comment.id));
     // The workspace agent hears every teammate's comment while it works (docs/features/18-workspace-agent.md).
     const working = await db.agentRun.findFirst({
-      where: { issueId, status: { in: FORWARD_STATUSES }, agent: { kind: "CLAUDE_API" } },
+      where: { issueId, status: { in: FORWARD_STATUSES }, agent: { kind: { in: [...WORKSPACE_AGENT_KINDS] } } },
       orderBy: { createdAt: "desc" },
       select: { id: true },
     });
-    if (working) defer("agents.forward", () => forwardComment(ctx, working.id, comment.id));
+    if (working) defer("agents.forward", () => forwardWorkspaceComment(ctx, working.id, comment.id));
   }
   return comment;
 }

@@ -1,12 +1,13 @@
 import { newClaimCode } from "@/lib/agents/claim-code";
-import { reconcileActiveRuns, startWorkspaceSession } from "@/lib/agents/claude-api";
+import { startWorkspaceSession } from "@/lib/agents/claude-api";
 import { fireRoutine } from "@/lib/agents/claude-code";
 import { type ClaudeCodeConfig, decryptConfig, type McpAgentConfig } from "@/lib/agents/config";
 import { PUSH_PERMISSIONS, repoAccessToken } from "@/lib/agents/github-access";
 import { DispatchError } from "@/lib/agents/http";
-import { interruptRunSessions } from "@/lib/agents/claude-api-client";
 import { failRun } from "@/lib/agents/lifecycle";
+import { startOpenAiSession } from "@/lib/agents/openai-api";
 import { issueRepository } from "@/lib/agents/repo";
+import { interruptRunSessions, reconcileWorkspaceRuns } from "@/lib/agents/workspace-agent";
 import { postAgentWebhook } from "@/lib/agents/webhook";
 import { appUrl } from "@/lib/app-url";
 import { db } from "@/lib/db";
@@ -58,13 +59,13 @@ export async function dispatchRun(runId: string) {
           sessionUrl: session.sessionUrl,
         },
       });
-    } else if (run.agent.kind === "CLAUDE_API") {
+    } else if (run.agent.kind === "CLAUDE_API" || run.agent.kind === "OPENAI_API") {
       if (!repository) throw new DispatchError("The project has no connected GitHub repository");
       // Kanso's GitHub App: a token that can only push to this repository.
       const github = await repoAccessToken(run.workspaceId, repository.fullName, PUSH_PERMISSIONS, "push to");
       // Up-to-date costs for the monthly limit.
-      await reconcileActiveRuns({ agentId: run.agent.id });
-      const session = await startWorkspaceSession({
+      await reconcileWorkspaceRuns({ agentId: run.agent.id });
+      const input = {
         agentId: run.agent.id,
         agentName: run.agent.name,
         configEnc: run.agent.configEnc,
@@ -74,7 +75,12 @@ export async function dispatchRun(runId: string) {
         workspace,
         repository,
         githubToken: github.token,
-      });
+      };
+      // Claude mounts the repository as a session resource; OpenAI reaches it through a run vault.
+      const session =
+        run.agent.kind === "CLAUDE_API"
+          ? { ...(await startWorkspaceSession(input)), runVaultId: null, runCredentialId: null }
+          : { ...(await startOpenAiSession(input)), githubResourceId: null };
       const { count } = await db.agentRun.updateMany({
         where: { id: run.id, status: "QUEUED" },
         data: {
@@ -84,6 +90,8 @@ export async function dispatchRun(runId: string) {
           sessionUrl: session.sessionUrl,
           budgetCents: session.budgetCents,
           githubResourceId: session.githubResourceId,
+          runVaultId: session.runVaultId,
+          runCredentialId: session.runCredentialId,
           githubTokenAt: new Date(),
           syncedAt: new Date(),
         },

@@ -1,4 +1,4 @@
-import { Bot } from "lucide-react";
+import { Bot, BrainCircuit } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -11,11 +11,13 @@ export function ClaudeMark({ className, ...props }: React.SVGProps<SVGSVGElement
   );
 }
 
-/** An agent's icon: the Claude mark for Claude (Code or the workspace agent), a bot for anything else. */
-export function AgentIcon({ kind, className }: { kind?: "CLAUDE_CODE" | "MCP" | "CLAUDE_API"; className?: string }) {
-  return kind === "CLAUDE_CODE" || kind === "CLAUDE_API" ? (
-    <ClaudeMark className={className} />
-  ) : (
-    <Bot className={cn("text-review", className)} aria-hidden />
-  );
+/**
+ * An agent's icon: the Claude mark for Claude (Code or the workspace agent), a
+ * neutral mark for the workspace agent on OpenAI (no third-party logos), a bot
+ * for anything else.
+ */
+export function AgentIcon({ kind, className }: { kind?: "CLAUDE_CODE" | "MCP" | "CLAUDE_API" | "OPENAI_API"; className?: string }) {
+  if (kind === "CLAUDE_CODE" || kind === "CLAUDE_API") return <ClaudeMark className={className} />;
+  if (kind === "OPENAI_API") return <BrainCircuit className={cn("text-foreground", className)} aria-hidden />;
+  return <Bot className={cn("text-review", className)} aria-hidden />;
 }

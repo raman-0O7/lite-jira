@@ -1,5 +1,9 @@
 # Feature 18 — Workspace agent on the Claude API
 
+> The same workspace agent can also run on OpenAI's Agents API: see
+> [feature 25](25-workspace-agent-openai.md). Where this spec says `CLAUDE_API`,
+> the code now checks `isWorkspaceAgentKind` (either provider).
+
 **Depends on 12, 15, 17.**
 
 ## Goal

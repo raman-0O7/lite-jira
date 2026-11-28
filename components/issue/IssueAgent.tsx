@@ -9,14 +9,7 @@ import { RunStatusBadge } from "@/components/issue/AgentBadges";
 import { ago } from "@/components/issue/IssueActivity";
 import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
-import {
-  ACTIVE_RUN_STATUSES,
-  agentKeys,
-  fetchAgentRuns,
-  formatCents,
-  retryAgentRun,
-  RUN_STATUS_LABEL,
-} from "@/lib/api/agents";
+import { ACTIVE_RUN_STATUSES, agentKeys, fetchAgentRuns, formatCents, isWorkspaceAgent, retryAgentRun, RUN_STATUS_LABEL } from "@/lib/api/agents";
 import { type IssueFull, issueKeys } from "@/lib/api/issues";
 import { projectKeys } from "@/lib/api/projects";
 
@@ -57,8 +50,9 @@ export function IssueAgent({ issue, projectId }: { issue: IssueFull; projectId: 
   const latest = runs[0] ?? issue.agentRuns?.[0];
   const ended = !latest || latest.status === "FAILED" || latest.status === "CANCELLED";
   const latestRun = runs[0];
-  // The workspace agent runs in the Claude Console and is answered by commenting here.
-  const workspaceAgent = (latestRun?.agent.kind ?? issue.assigneeAgent?.kind) === "CLAUDE_API";
+  // The workspace agent runs on the provider's platform and is answered by commenting here.
+  const workspaceKind = latestRun?.agent.kind ?? issue.assigneeAgent?.kind;
+  const workspaceAgent = isWorkspaceAgent(workspaceKind);
 
   return (
     <div className="mt-3 flex flex-col gap-1.5 border-t px-1 pt-3" aria-label="Agent">
@@ -74,7 +68,7 @@ export function IssueAgent({ issue, projectId }: { issue: IssueFull; projectId: 
         <a href={latest.sessionUrl} target="_blank" rel="noreferrer" className={LINK}>
           <Play className="size-3.5 shrink-0 text-icon" />
           <span className="truncate">
-            {workspaceAgent ? "Watch in Console" : latest.status === "NEEDS_INPUT" ? "Answer in session" : "Watch session"}
+            {workspaceAgent ? (workspaceKind === "OPENAI_API" ? "Open in OpenAI dashboard" : "Watch in Console") : latest.status === "NEEDS_INPUT" ? "Answer in session" : "Watch session"}
           </span>
           <ExternalLink className="ml-auto size-3 shrink-0 text-muted-foreground" />
         </a>

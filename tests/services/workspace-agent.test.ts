@@ -254,6 +254,7 @@ describe("connecting the workspace agent", () => {
     expect(agent.enabled).toBe(true);
     const listed = (await listAgents(ctx)).find((a) => a.id === agent.id)!;
     expect(listed.workspaceAgent).toEqual({
+      provider: "anthropic",
       apiKeyHint: "…WXYZ",
       model: "claude-opus-5-5",
       monthlyLimitCents: 10_000,

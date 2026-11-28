@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { ClaudeMark } from "@/components/icons/AgentIcon";
+import { AgentIcon } from "@/components/icons/AgentIcon";
 import { useWorkspace } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,18 +36,48 @@ import {
   updateAgent,
   type UpdateAgentInput,
   WORKSPACE_AGENT_MODELS,
+  WORKSPACE_AGENT_MODELS_BY_PROVIDER,
   type WorkspaceAgentGitHub,
   type WorkspaceAgentModel,
+  type WorkspaceAgentProvider,
 } from "@/lib/api/agents";
 import { cn } from "@/lib/utils";
 
-const CONSOLE_KEYS_URL = "https://platform.claude.com/settings/keys";
+/** What differs between the providers the workspace agent runs on (features 18 and 25). */
+const PROVIDERS: Record<
+  WorkspaceAgentProvider,
+  { label: string; runtime: string; product: string; keyLabel: string; keyPlaceholder: string; keysUrl: string; keysSite: string; leftBehind: string }
+> = {
+  anthropic: {
+    label: "Anthropic",
+    runtime: "Claude Managed Agents",
+    product: "Claude Managed Agents",
+    keyLabel: "Claude API key",
+    keyPlaceholder: "sk-ant-…",
+    keysUrl: "https://platform.claude.com/settings/keys",
+    keysSite: "Claude Console",
+    leftBehind: "The environment, agent and vault Kanso created stay in your Claude Console for you to clean up.",
+  },
+  openai: {
+    label: "OpenAI",
+    runtime: "OpenAI’s Agents API",
+    product: "Agents API",
+    keyLabel: "OpenAI API key",
+    keyPlaceholder: "sk-…",
+    keysUrl: "https://platform.openai.com/api-keys",
+    keysSite: "OpenAI Platform",
+    leftBehind: "The saved agent and vault Kanso created stay in your OpenAI project for you to clean up.",
+  },
+};
+
+const providerOf = (agent: Agent | undefined): WorkspaceAgentProvider =>
+  agent?.workspaceAgent?.provider ?? (agent?.kind === "OPENAI_API" ? "openai" : "anthropic");
 
 const modelLabel = (model: WorkspaceAgentModel | undefined) =>
   WORKSPACE_AGENT_MODELS.find((m) => m.id === model)?.label.replace(
     " (cheaper)",
     "",
-  ) ?? "Claude";
+  ) ?? "the workspace agent";
 
 /**
  * Settings → Agents → Workspace agent (docs/features/18-workspace-agent.md
@@ -71,8 +101,8 @@ export function WorkspaceAgentSection({
           Workspace agent
         </h3>
         <p className="text-xs text-muted-foreground">
-          One agent for the whole team on the workspace’s Claude API key, billed
-          per token. Any member can hand it an issue, and answer it by
+          One agent for the whole team on the organization’s Anthropic or OpenAI
+          API key, billed per token. Any member can hand it an issue, and answer it by
           commenting.
         </p>
       </div>
@@ -86,10 +116,10 @@ export function WorkspaceAgentSection({
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed bg-surface px-4 py-3">
             <span className="flex size-8 items-center justify-center rounded-full bg-chip">
-              <ClaudeMark className="size-4" />
+              <AgentIcon kind="MCP" className="size-4" />
             </span>
             <p className="min-w-0 flex-1 text-sm text-muted-foreground">
-              Connect your organization’s Claude API key, set a monthly limit,
+              Connect your organization’s Anthropic or OpenAI API key, set a monthly limit,
               and everyone can use it. It works in your repositories through
               Kanso’s GitHub App.
             </p>
@@ -154,7 +184,7 @@ function WorkspaceAgentRow({
     <div className="flex flex-col gap-3 rounded-lg border bg-surface px-4 py-3 shadow-card">
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex size-8 items-center justify-center rounded-full bg-chip">
-          <ClaudeMark className="size-4" />
+          <AgentIcon kind={agent.kind} className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">
@@ -218,8 +248,7 @@ function WorkspaceAgentRow({
             <DialogTitle>Remove “{agent.name}”?</DialogTitle>
             <DialogDescription>
               Its running work is stopped and its run history removed. Issues
-              stay with their assignee. The environment, agent and vault Kanso
-              created stay in your Claude Console for you to clean up.
+              stay with their assignee. {PROVIDERS[providerOf(agent)].leftBehind}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -294,6 +323,7 @@ function SpendMeter({
 }
 
 type Form = {
+  provider: WorkspaceAgentProvider;
   name: string;
   apiKey: string;
   model: WorkspaceAgentModel;
@@ -304,10 +334,12 @@ type Form = {
 
 function initialForm(agent: Agent | undefined): Form {
   const s = agent?.workspaceAgent;
+  const provider = providerOf(agent);
   return {
+    provider,
     name: agent?.name ?? "Workspace agent",
     apiKey: "",
-    model: s?.model ?? "claude-opus-5-5",
+    model: s?.model ?? WORKSPACE_AGENT_MODELS_BY_PROVIDER[provider][0]!.id,
     monthlyLimit: s ? String(s.monthlyLimitCents / 100) : "100",
     runLimit: s ? String(s.runLimitCents / 100) : "25",
     consoleWorkspaceId: s?.consoleWorkspaceId ?? "",
@@ -330,23 +362,29 @@ function WorkspaceAgentDialog({
   const set = <K extends keyof Form>(key: K, value: Form[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
   const editing = Boolean(agent);
+  const provider = PROVIDERS[form.provider];
 
   const save = useMutation({
     mutationFn: async () => {
-      const base = {
+      const common = {
         name: form.name.trim(),
         model: form.model,
         monthlyLimit: Number(form.monthlyLimit),
         runLimit: Number(form.runLimit),
-        consoleWorkspaceId: form.consoleWorkspaceId.trim() || null,
       };
+      // The Console workspace only exists on Anthropic.
+      const base =
+        form.provider === "anthropic"
+          ? { ...common, consoleWorkspaceId: form.consoleWorkspaceId.trim() || null }
+          : common;
       if (!agent) {
         return (
-          await createAgent(slug, {
-            kind: "CLAUDE_API",
-            ...base,
-            apiKey: form.apiKey.trim(),
-          })
+          await createAgent(
+            slug,
+            form.provider === "openai"
+              ? { kind: "OPENAI_API", ...common, apiKey: form.apiKey.trim() }
+              : { kind: "CLAUDE_API", ...common, consoleWorkspaceId: form.consoleWorkspaceId.trim() || null, apiKey: form.apiKey.trim() },
+          )
         ).agent;
       }
       // Secrets are sent only when replaced.
@@ -383,8 +421,8 @@ function WorkspaceAgentDialog({
             {editing ? `Edit ${agent?.name}` : "Connect a workspace agent"}
           </DialogTitle>
           <DialogDescription>
-            It runs on Claude Managed Agents with your organization’s API key,
-            so usage is billed to that account. Keys are stored encrypted and
+            It runs on {provider.runtime} with your organization’s API key, so
+            usage is billed to that account. Keys are stored encrypted and
             never shown again.
           </DialogDescription>
         </DialogHeader>
@@ -397,6 +435,28 @@ function WorkspaceAgentDialog({
             save.mutate();
           }}
         >
+          {editing ? null : (
+            <Field id="wa-provider" label="Provider" hint="The AI provider your organization pays for. To switch later, remove the agent and connect it again.">
+              <Select
+                value={form.provider}
+                onValueChange={(value) => {
+                  const next = value as WorkspaceAgentProvider;
+                  setForm((f) => ({ ...f, provider: next, model: WORKSPACE_AGENT_MODELS_BY_PROVIDER[next][0]!.id }));
+                }}
+              >
+                <SelectTrigger id="wa-provider" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(PROVIDERS) as WorkspaceAgentProvider[]).map((id) => (
+                    <SelectItem key={id} value={id}>
+                      {PROVIDERS[id].label} · {PROVIDERS[id].product}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           <Field
             id="wa-name"
             label="Name"
@@ -412,17 +472,17 @@ function WorkspaceAgentDialog({
           </Field>
           <Field
             id="wa-key"
-            label="Claude API key"
+            label={provider.keyLabel}
             hint={
               <>
                 Create one in the{" "}
                 <a
-                  href={CONSOLE_KEYS_URL}
+                  href={provider.keysUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-0.5 underline"
                 >
-                  Claude Console <ExternalLink className="size-3" />
+                  {provider.keysSite} <ExternalLink className="size-3" />
                 </a>
                 .{editing ? " Leave empty to keep the current key." : ""}
               </>
@@ -437,7 +497,7 @@ function WorkspaceAgentDialog({
               placeholder={
                 agent?.workspaceAgent
                   ? `Current key ${agent.workspaceAgent.apiKeyHint}`
-                  : "sk-ant-…"
+                  : provider.keyPlaceholder
               }
               required={!editing}
             />
@@ -454,6 +514,7 @@ function WorkspaceAgentDialog({
           </div>
           <Field id="wa-model" label="Model">
             <Select
+              key={form.provider}
               value={form.model}
               onValueChange={(value) =>
                 set("model", value as WorkspaceAgentModel)
@@ -463,7 +524,7 @@ function WorkspaceAgentDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {WORKSPACE_AGENT_MODELS.map((model) => (
+                {WORKSPACE_AGENT_MODELS_BY_PROVIDER[form.provider].map((model) => (
                   <SelectItem key={model.id} value={model.id}>
                     {model.label}
                   </SelectItem>
@@ -497,7 +558,7 @@ function WorkspaceAgentDialog({
               />
             </Field>
           </div>
-          <details className="text-sm">
+          {form.provider === "openai" ? null : <details className="text-sm">
             <summary className="cursor-pointer text-xs text-muted-foreground select-none hover:text-foreground">
               Advanced
             </summary>
@@ -515,7 +576,7 @@ function WorkspaceAgentDialog({
                 />
               </Field>
             </div>
-          </details>
+          </details>}
           {error ? (
             <p
               role="alert"

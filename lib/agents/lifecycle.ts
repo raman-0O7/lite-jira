@@ -1,6 +1,5 @@
 import type { AgentRunStatus, Prisma } from "@prisma/client";
 
-import { interruptRunSessions } from "@/lib/agents/claude-api-client";
 import { claimTimeoutMinutes } from "@/lib/agents/config";
 import { db } from "@/lib/db";
 import { defer } from "@/lib/defer";
@@ -57,7 +56,8 @@ export async function failRun(
     await recordRunActivity(tx, ctx ?? dispatcherCtx(run.workspaceId), run, "agent.failed", { error: error.slice(0, 500) });
     return true;
   });
-  if (failed) defer("agents.interrupt", () => interruptRunSessions([runId]));
+  // Loaded lazily: the workspace-agent modules import this one.
+  if (failed) defer("agents.interrupt", async () => (await import("@/lib/agents/workspace-agent")).interruptRunSessions([runId]));
   return failed;
 }
 

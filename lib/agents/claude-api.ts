@@ -21,11 +21,11 @@ import type { Ctx } from "@/lib/services/context";
 export const DEFINITION_VERSION = 2;
 export const MCP_SERVER_NAME = "kanso";
 export const MIN_RUN_BUDGET_CENTS = 100;
-const SYNC_INTERVAL_MS = 20_000;
+export const SYNC_INTERVAL_MS = 20_000;
 /** GitHub App tokens last an hour; a session's is renewed once it's this old. */
-const TOKEN_RENEW_MS = 30 * 60_000;
+export const TOKEN_RENEW_MS = 30 * 60_000;
 /** A run with an open PR waits for review; its session ending doesn't fail it. */
-const BEFORE_PR = ACTIVE_RUN.filter((s) => s !== "PR_OPEN");
+export const BEFORE_PR = ACTIVE_RUN.filter((s) => s !== "PR_OPEN");
 
 export const mcpServerUrl = () => `${appUrl()}/api/mcp`;
 
@@ -223,7 +223,7 @@ const cents = (amount: { amount: string } | null | undefined) => {
   return Number.isFinite(value) ? Math.round(value) : null;
 };
 
-const DENY_MESSAGE =
+export const DENY_MESSAGE =
   "Nobody can approve tool calls for a Kanso workspace agent. Take a safer approach, or ask the team with report_progress (status needs_input).";
 
 /**
@@ -306,7 +306,7 @@ export async function reconcileRun(runId: string, { force = false, now = new Dat
   }
 }
 
-async function setStatus(
+export async function setStatus(
   run: { id: string; workspaceId: string; agentId: string; issueId: string },
   from: AgentRunStatus,
   to: AgentRunStatus,

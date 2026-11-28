@@ -11,18 +11,19 @@ import {
   claudeCodeConfigSchema,
   decryptConfig,
   encryptConfig,
+  isWorkspaceAgentKind,
   type McpAgentConfig,
+  OPENAI_AGENT_MODELS,
+  type OpenAiApiConfig,
+  WORKSPACE_AGENT_KINDS,
   WORKSPACE_AGENT_MODELS,
 } from "@/lib/agents/config";
 import { hashClaimCode } from "@/lib/agents/claim-code";
-import {
-  DEFINITION_VERSION,
-  provisionWorkspaceAgent,
-  reconcileActiveRuns,
-  updateAgentDefinition,
-  workspaceAgentSpend,
-} from "@/lib/agents/claude-api";
-import { describeAnthropicError, interruptRunSessions } from "@/lib/agents/claude-api-client";
+import { DEFINITION_VERSION, provisionWorkspaceAgent, updateAgentDefinition, workspaceAgentSpend } from "@/lib/agents/claude-api";
+import { describeAnthropicError } from "@/lib/agents/claude-api-client";
+import { OPENAI_DEFINITION_VERSION, provisionOpenAiAgent, updateOpenAiAgentDefinition } from "@/lib/agents/openai-api";
+import { describeOpenAiError } from "@/lib/agents/openai-api-client";
+import { interruptRunSessions, reconcileWorkspaceRuns } from "@/lib/agents/workspace-agent";
 import { dispatchRun } from "@/lib/agents/dispatcher";
 import { PULL_REQUEST_PERMISSIONS, repoAccessToken, workspaceAgentGitHub } from "@/lib/agents/github-access";
 import { DispatchError } from "@/lib/agents/http";
@@ -69,13 +70,14 @@ type AgentRow = Prisma.AgentGetPayload<{ select: typeof agentSelect }>;
 const hint = (secret: string) => `…${secret.slice(-4)}`;
 
 /** The workspace agent's settings, for admins: secrets only as their last 4 characters. */
-function workspaceAgentSettings(config: ClaudeApiConfig) {
+function workspaceAgentSettings(kind: string, config: ClaudeApiConfig | OpenAiApiConfig) {
   return {
+    provider: kind === "OPENAI_API" ? ("openai" as const) : ("anthropic" as const),
     apiKeyHint: hint(config.apiKey),
-    model: config.model,
+    model: config.model as string,
     monthlyLimitCents: config.monthlyLimitCents,
     runLimitCents: config.runLimitCents,
-    consoleWorkspaceId: config.consoleWorkspaceId,
+    consoleWorkspaceId: "consoleWorkspaceId" in config ? config.consoleWorkspaceId : null,
   };
 }
 
@@ -97,7 +99,7 @@ function toAgent(row: AgentRow): PublicAgent {
       ? { fireUrl: (config as ClaudeCodeConfig).fireUrl.replace(/trig_[A-Za-z0-9_-]+/, (t) => `${t.slice(0, 9)}…`) }
       : agent.kind === "MCP"
         ? { webhookUrl: (config as McpAgentConfig).webhookUrl }
-        : { workspaceAgent: workspaceAgentSettings(config as ClaudeApiConfig) }),
+        : { workspaceAgent: workspaceAgentSettings(agent.kind, config as ClaudeApiConfig | OpenAiApiConfig) }),
   };
 }
 
@@ -112,7 +114,7 @@ export async function listAgents(ctx: Ctx) {
   const admin = can(ctx, "agent.manage");
   const scope: Prisma.AgentWhereInput = admin
     ? {}
-    : { OR: [{ ownerUserId: actingUserId(ctx) ?? "" }, { kind: { in: ["MCP", "CLAUDE_API"] } }] };
+    : { OR: [{ ownerUserId: actingUserId(ctx) ?? "" }, { kind: { in: ["MCP", ...WORKSPACE_AGENT_KINDS] } }] };
   const rows = await db.agent.findMany({
     where: { workspaceId: ctx.workspaceId, ...scope },
     orderBy: { createdAt: "asc" },
@@ -121,7 +123,7 @@ export async function listAgents(ctx: Ctx) {
   return Promise.all(
     rows.map(async (row) => {
       const agent = toAgent(row);
-      if (agent.kind !== "CLAUDE_API") return agent;
+      if (!isWorkspaceAgentKind(agent.kind)) return agent;
       if (!admin) return { ...agent, workspaceAgent: undefined };
       return { ...agent, spend: await workspaceAgentSpend(agent.id) };
     }),
@@ -157,6 +159,13 @@ const consoleWorkspaceId = z
   .regex(/^[A-Za-z0-9_-]*$/, "That doesn't look like a Console workspace ID")
   .nullish();
 const workspaceAgentModel = z.enum(WORKSPACE_AGENT_MODELS);
+// The workspace agent on OpenAI (docs/features/25-workspace-agent-openai.md "Setup").
+const openAiKey = z
+  .string()
+  .trim()
+  .max(300)
+  .regex(/^sk-[A-Za-z0-9_-]{20,}$/, "Paste an OpenAI API key (sk-…) from the OpenAI Platform");
+const openAiModel = z.enum(OPENAI_AGENT_MODELS);
 
 const createAgentSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("CLAUDE_CODE"), name, ...claudeCodeConfigSchema.shape }),
@@ -170,6 +179,14 @@ const createAgentSchema = z.discriminatedUnion("kind", [
     runLimit: limit.default(25),
     consoleWorkspaceId,
   }),
+  z.object({
+    kind: z.literal("OPENAI_API"),
+    name,
+    apiKey: openAiKey,
+    model: openAiModel.default("gpt-6-astra"),
+    monthlyLimit: limit.default(100),
+    runLimit: limit.default(25),
+  }),
 ]);
 
 /** Shown once at creation: an MCP agent's first token and webhook signing secret. */
@@ -177,12 +194,13 @@ type AgentSecrets = { token?: string; webhookSecret?: string };
 
 const toCents = (value: number) => Math.round(value * 100);
 
-/** An Anthropic failure while provisioning, as a safe message. */
-function provisioningError(error: unknown) {
-  const { status, message } = describeAnthropicError(error);
-  if (status === 401) return badRequest("Claude rejected that API key");
+/** A provider failure while provisioning, as a safe message. */
+function provisioningError(error: unknown, kind: "CLAUDE_API" | "OPENAI_API" = "CLAUDE_API") {
+  const provider = kind === "OPENAI_API" ? "OpenAI" : "Claude";
+  const { status, message } = kind === "OPENAI_API" ? describeOpenAiError(error) : describeAnthropicError(error);
+  if (status === 401) return badRequest(`${provider} rejected that API key`);
   if (status === 403) return badRequest(message);
-  return new ServiceError(502, `Couldn't set up the agent on Claude: ${message.toLowerCase()}`);
+  return new ServiceError(502, `Couldn't set up the agent on ${provider}: ${message.toLowerCase()}`);
 }
 
 async function revokeToken(tokenId: string) {
@@ -210,7 +228,7 @@ async function assertNameFree(workspaceId: string, agentName: string, exceptId?:
 export async function createAgent(ctx: Ctx, input: unknown) {
   authorize(ctx, "agent.create");
   const data = createAgentSchema.parse(input);
-  if (data.kind === "CLAUDE_API") return createWorkspaceAgent(ctx, data);
+  if (data.kind === "CLAUDE_API" || data.kind === "OPENAI_API") return createWorkspaceAgent(ctx, data);
   const ownerUserId = ownerOf(ctx);
   await assertNameFree(ctx.workspaceId, data.name);
 
@@ -234,55 +252,66 @@ export async function createAgent(ctx: Ctx, input: unknown) {
   });
 }
 
+type WorkspaceAgentInput = Extract<z.infer<typeof createAgentSchema>, { kind: "CLAUDE_API" | "OPENAI_API" }>;
+
+/** Provision the provider side for a new key: Anthropic (feature 18) or OpenAI (feature 25). */
+async function provision(
+  data: { kind: "CLAUDE_API" | "OPENAI_API"; apiKey: string; model: string; name: string },
+  workspaceSlug: string,
+  mcpToken: string,
+) {
+  return data.kind === "OPENAI_API"
+    ? provisionOpenAiAgent({ apiKey: data.apiKey, model: data.model as OpenAiApiConfig["model"], name: data.name, workspaceSlug, mcpToken })
+    : provisionWorkspaceAgent({ apiKey: data.apiKey, model: data.model as ClaudeApiConfig["model"], name: data.name, workspaceSlug, mcpToken });
+}
+
 /**
- * Connect the workspace agent (admins, one per workspace): the row and its
- * Kanso token first, then the Anthropic side; if that fails the row goes.
+ * Connect the workspace agent (admins, one per workspace, on either provider):
+ * the row and its Kanso token first, then the provider side; if that fails
+ * the row goes.
  */
-async function createWorkspaceAgent(ctx: Ctx, data: Extract<z.infer<typeof createAgentSchema>, { kind: "CLAUDE_API" }>) {
+async function createWorkspaceAgent(ctx: Ctx, data: WorkspaceAgentInput) {
   authorize(ctx, "agent.manage");
   const ownerUserId = ownerOf(ctx);
-  if (await db.agent.count({ where: { workspaceId: ctx.workspaceId, kind: "CLAUDE_API" } })) {
+  if (await db.agent.count({ where: { workspaceId: ctx.workspaceId, kind: { in: [...WORKSPACE_AGENT_KINDS] } } })) {
     throw new ServiceError(409, "This workspace already has a workspace agent");
   }
   if (data.runLimit > data.monthlyLimit) throw badRequest("The per-run limit can't be more than the monthly limit");
   await assertNameFree(ctx.workspaceId, data.name);
   const workspace = await db.workspace.findUniqueOrThrow({ where: { id: ctx.workspaceId }, select: { slug: true } });
 
-  const base: ClaudeApiConfig = {
-    apiKey: data.apiKey,
-    model: data.model,
-    monthlyLimitCents: toCents(data.monthlyLimit),
-    runLimitCents: toCents(data.runLimit),
-    consoleWorkspaceId: data.consoleWorkspaceId || null,
-    environmentId: "",
-    anthropicAgentId: "",
-    anthropicAgentVersion: 0,
-    vaultId: "",
-    vaultTokenId: "",
-    definitionVersion: DEFINITION_VERSION,
-  };
+  const limits = { monthlyLimitCents: toCents(data.monthlyLimit), runLimitCents: toCents(data.runLimit) };
+  const base: ClaudeApiConfig | OpenAiApiConfig =
+    data.kind === "OPENAI_API"
+      ? { apiKey: data.apiKey, model: data.model, ...limits, openaiAgentId: "", vaultId: "", vaultTokenId: "", definitionVersion: OPENAI_DEFINITION_VERSION }
+      : {
+          apiKey: data.apiKey,
+          model: data.model,
+          ...limits,
+          consoleWorkspaceId: data.consoleWorkspaceId || null,
+          environmentId: "",
+          anthropicAgentId: "",
+          anthropicAgentVersion: 0,
+          vaultId: "",
+          vaultTokenId: "",
+          definitionVersion: DEFINITION_VERSION,
+        };
   // Disabled until provisioned, so nobody can assign it half set up.
   const { agent, minted } = await db.$transaction(async (tx) => {
     const agent = await tx.agent.create({
-      data: { workspaceId: ctx.workspaceId, name: data.name, kind: "CLAUDE_API", ownerUserId, enabled: false, configEnc: encryptConfig(base) },
+      data: { workspaceId: ctx.workspaceId, name: data.name, kind: data.kind, ownerUserId, enabled: false, configEnc: encryptConfig(base) },
       select: { id: true, workspaceId: true, ownerUserId: true, name: true },
     });
     return { agent, minted: await mintAgentToken(tx, agent) };
   });
 
-  let config: ClaudeApiConfig;
+  let config: ClaudeApiConfig | OpenAiApiConfig;
   try {
-    const provisioned = await provisionWorkspaceAgent({
-      apiKey: data.apiKey,
-      model: data.model,
-      name: data.name,
-      workspaceSlug: workspace.slug,
-      mcpToken: minted.secret,
-    });
-    config = { ...base, ...provisioned, vaultTokenId: minted.token.id };
+    const provisioned = await provision(data, workspace.slug, minted.secret);
+    config = { ...base, ...provisioned, vaultTokenId: minted.token.id } as ClaudeApiConfig | OpenAiApiConfig;
   } catch (error) {
     await db.agent.delete({ where: { id: agent.id } });
-    throw provisioningError(error);
+    throw provisioningError(error, data.kind);
   }
 
   return db.$transaction(async (tx) => {
@@ -291,7 +320,7 @@ async function createWorkspaceAgent(ctx: Ctx, data: Extract<z.infer<typeof creat
       data: { enabled: true, configEnc: encryptConfig(config) },
       select: agentSelect,
     });
-    await recordActivity(tx, ctx, { action: "agent.created", data: { agentId: agent.id, name: agent.name, kind: "CLAUDE_API" } });
+    await recordActivity(tx, ctx, { action: "agent.created", data: { agentId: agent.id, name: agent.name, kind: data.kind } });
     const secrets: AgentSecrets = {};
     return { agent: toAgent(row), secrets };
   });
@@ -306,25 +335,36 @@ const updateWorkspaceAgentSchema = z.object({
   runLimit: limit.optional(),
   consoleWorkspaceId,
 });
+const updateOpenAiAgentSchema = updateWorkspaceAgentSchema.omit({ consoleWorkspaceId: true }).extend({
+  apiKey: openAiKey.optional(),
+  model: openAiModel.optional(),
+});
 
 /**
  * Change the workspace agent (admins). A new API key provisions afresh (it may
  * belong to another organization) with a new Kanso token; a new model
  * publishes a new agent version. Disabling it cancels its runs.
  */
-async function updateWorkspaceAgent(ctx: Ctx, agent: { id: string; name: string; configEnc: string }, input: unknown) {
+async function updateWorkspaceAgent(
+  ctx: Ctx,
+  agent: { id: string; name: string; kind: string; configEnc: string },
+  input: unknown,
+) {
   authorize(ctx, "agent.manage");
-  const patch = updateWorkspaceAgentSchema.parse(input);
+  const kind = agent.kind === "OPENAI_API" ? "OPENAI_API" : "CLAUDE_API";
+  const patch = (kind === "OPENAI_API" ? updateOpenAiAgentSchema : updateWorkspaceAgentSchema).parse(input) as z.infer<
+    typeof updateWorkspaceAgentSchema
+  > & { model?: string };
   if (patch.name) await assertNameFree(ctx.workspaceId, patch.name, agent.id);
-  const current = decryptConfig<ClaudeApiConfig>(agent.configEnc);
+  const current = decryptConfig<ClaudeApiConfig | OpenAiApiConfig>(agent.configEnc);
   const agentName = patch.name ?? agent.name;
-  let config: ClaudeApiConfig = {
+  let config = {
     ...current,
     ...(patch.model ? { model: patch.model } : {}),
     ...(patch.monthlyLimit !== undefined ? { monthlyLimitCents: toCents(patch.monthlyLimit) } : {}),
     ...(patch.runLimit !== undefined ? { runLimitCents: toCents(patch.runLimit) } : {}),
-    ...(patch.consoleWorkspaceId !== undefined ? { consoleWorkspaceId: patch.consoleWorkspaceId || null } : {}),
-  };
+    ...(kind === "CLAUDE_API" && patch.consoleWorkspaceId !== undefined ? { consoleWorkspaceId: patch.consoleWorkspaceId || null } : {}),
+  } as ClaudeApiConfig | OpenAiApiConfig;
   if (config.runLimitCents > config.monthlyLimitCents) throw badRequest("The per-run limit can't be more than the monthly limit");
 
   let oldTokenId: string | null = null;
@@ -333,25 +373,30 @@ async function updateWorkspaceAgent(ctx: Ctx, agent: { id: string; name: string;
     const minted = await db.$transaction((tx) => mintAgentToken(tx, owner));
     const workspace = await db.workspace.findUniqueOrThrow({ where: { id: ctx.workspaceId }, select: { slug: true } });
     try {
-      const provisioned = await provisionWorkspaceAgent({
+      const provisioned = await provision({ kind, apiKey: patch.apiKey, model: config.model, name: agentName }, workspace.slug, minted.secret);
+      config = {
+        ...config,
+        ...provisioned,
         apiKey: patch.apiKey,
-        model: config.model,
-        name: agentName,
-        workspaceSlug: workspace.slug,
-        mcpToken: minted.secret,
-      });
-      config = { ...config, ...provisioned, apiKey: patch.apiKey, vaultTokenId: minted.token.id, definitionVersion: DEFINITION_VERSION };
+        vaultTokenId: minted.token.id,
+        definitionVersion: kind === "OPENAI_API" ? OPENAI_DEFINITION_VERSION : DEFINITION_VERSION,
+      } as ClaudeApiConfig | OpenAiApiConfig;
       oldTokenId = current.vaultTokenId || null;
     } catch (error) {
       await revokeToken(minted.token.id);
-      throw provisioningError(error);
+      throw provisioningError(error, kind);
     }
   } else if (patch.model && patch.model !== current.model) {
     try {
-      config.anthropicAgentVersion = await updateAgentDefinition(config, agentName);
-      config.definitionVersion = DEFINITION_VERSION;
+      if (kind === "OPENAI_API") {
+        await updateOpenAiAgentDefinition(config as OpenAiApiConfig, agentName);
+        config.definitionVersion = OPENAI_DEFINITION_VERSION;
+      } else {
+        (config as ClaudeApiConfig).anthropicAgentVersion = await updateAgentDefinition(config as ClaudeApiConfig, agentName);
+        config.definitionVersion = DEFINITION_VERSION;
+      }
     } catch (error) {
-      throw provisioningError(error);
+      throw provisioningError(error, kind);
     }
   }
 
@@ -410,7 +455,7 @@ const updateAgentSchema = z.object({
 
 export async function updateAgent(ctx: Ctx, id: string, input: unknown) {
   const agent = await findManagedAgent(ctx, id);
-  if (agent.kind === "CLAUDE_API") return updateWorkspaceAgent(ctx, agent, input);
+  if (isWorkspaceAgentKind(agent.kind)) return updateWorkspaceAgent(ctx, agent, input);
   const patch = updateAgentSchema.parse(input);
   if (patch.name) await assertNameFree(ctx.workspaceId, patch.name, id);
 
@@ -440,7 +485,7 @@ export async function updateAgent(ctx: Ctx, id: string, input: unknown) {
 /** Delete an agent: its tokens and runs go with it; its issues become unassigned. */
 export async function deleteAgent(ctx: Ctx, id: string) {
   const agent = await findManagedAgent(ctx, id);
-  if (agent.kind === "CLAUDE_API") {
+  if (isWorkspaceAgentKind(agent.kind)) {
     authorize(ctx, "agent.manage");
     // Its runs go with it, so stop their sessions first.
     const active = await db.agentRun.findMany({ where: { agentId: id, status: { in: ACTIVE_RUN } }, select: { id: true } });
@@ -615,7 +660,7 @@ export async function listAgentRuns(ctx: Ctx, issueId: string) {
   const issue = await db.issue.findFirst({ where: { id: issueId, project: projectScope(ctx) }, select: { id: true } });
   if (!issue) throw notFound("Issue not found");
   await failStaleRuns();
-  await reconcileActiveRuns({ issueId });
+  await reconcileWorkspaceRuns({ issueId });
   return db.agentRun.findMany({
     where: { issueId },
     orderBy: { createdAt: "desc" },
@@ -893,7 +938,7 @@ export async function openPullRequest(ctx: Ctx, key: string, input: unknown) {
   const agentId = issue.assigneeAgent!.id;
   const issueKey = formatKey(issue.project.key, issue.number);
   const agent = await db.agent.findUniqueOrThrow({ where: { id: agentId }, select: { kind: true } });
-  if (agent.kind !== "CLAUDE_API") {
+  if (!isWorkspaceAgentKind(agent.kind)) {
     throw badRequest("open_pull_request is for the workspace agent. Push your branch and open the pull request yourself.");
   }
   if (issue.claimedByAgentId !== agentId) throw new ServiceError(409, `Claim ${issueKey} first`);

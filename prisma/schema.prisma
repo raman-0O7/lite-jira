@@ -802,6 +802,8 @@ enum AgentKind {
   MCP
   /// The workspace agent: Claude Managed Agents on the workspace's API key (docs/features/18-workspace-agent.md).
   CLAUDE_API
+  /// The workspace agent on OpenAI's Agents API (docs/features/25-workspace-agent-openai.md).
+  OPENAI_API
 }
 
 model AgentRun {
@@ -835,6 +837,9 @@ model AgentRun {
   dispatchedAt      DateTime?
   claimedAt         DateTime?
   finishedAt        DateTime?
+  /// OpenAI workspace agent: the run's own vault and its git credential (docs/features/25-workspace-agent-openai.md).
+  runVaultId        String?
+  runCredentialId   String?
   /// Paths the agent says it plans to change, before it has a PR (report_progress `files`).
   plannedFiles      String[]       @default([])
   contextEntries    ContextEntry[]

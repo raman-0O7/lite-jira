@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { reconcileActiveRuns } from "@/lib/agents/claude-api";
+import { reconcileWorkspaceRuns } from "@/lib/agents/workspace-agent";
 import { failStaleRuns } from "@/lib/agents/lifecycle";
 import { safeEqual } from "@/lib/crypto";
 
@@ -12,5 +12,5 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const failed = await failStaleRuns();
-  return NextResponse.json({ failed, synced: await reconcileActiveRuns() });
+  return NextResponse.json({ failed, synced: await reconcileWorkspaceRuns() });
 }

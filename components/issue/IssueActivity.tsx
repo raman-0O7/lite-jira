@@ -14,7 +14,7 @@ import { StatusIcon } from "@/components/icons/StatusIcon";
 import { ActivitySkeleton } from "@/components/loading/skeletons";
 import { useCan } from "@/components/providers/workspace-provider";
 import { Button } from "@/components/ui/button";
-import { type AgentRun, agentKeys, fetchAgentRuns } from "@/lib/api/agents";
+import { type AgentRun, agentKeys, fetchAgentRuns, isWorkspaceAgent } from "@/lib/api/agents";
 import {
   addComment,
   ATTACHMENT_TYPES,
@@ -396,7 +396,7 @@ export function IssueActivity({
   const waiting = canResume && waitingRun && waitingRun.agent.kind !== "CLAUDE_CODE" ? waitingRun.agent : null;
   // The workspace agent hears every teammate's comment while it works.
   const listening =
-    canResume && latestRun?.agent.kind === "CLAUDE_API" && (latestRun.status === "RUNNING" || latestRun.status === "PR_OPEN")
+    canResume && isWorkspaceAgent(latestRun?.agent.kind) && (latestRun.status === "RUNNING" || latestRun.status === "PR_OPEN")
       ? latestRun.agent
       : null;
 

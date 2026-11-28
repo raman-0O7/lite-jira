@@ -1,16 +1,30 @@
 import { request } from "@/lib/api/http";
 
-export type AgentKind = "CLAUDE_CODE" | "MCP" | "CLAUDE_API";
+export type AgentKind = "CLAUDE_CODE" | "MCP" | "CLAUDE_API" | "OPENAI_API";
 
-export type WorkspaceAgentModel = "claude-opus-5-5" | "claude-sonnet-5-5";
+/** The workspace agent, on either provider (docs/features/25-workspace-agent-openai.md). */
+export const isWorkspaceAgent = (kind: AgentKind | undefined | null) => kind === "CLAUDE_API" || kind === "OPENAI_API";
 
-export const WORKSPACE_AGENT_MODELS: { id: WorkspaceAgentModel; label: string }[] = [
-  { id: "claude-opus-5-5", label: "Claude Opus 5.5" },
-  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (cheaper)" },
-];
+export type WorkspaceAgentProvider = "anthropic" | "openai";
+
+export type WorkspaceAgentModel = "claude-opus-5-5" | "claude-sonnet-5-5" | "gpt-6-astra" | "gpt-6.1-sol";
+
+/** Models per provider; the first is the default. */
+export const WORKSPACE_AGENT_MODELS_BY_PROVIDER: Record<WorkspaceAgentProvider, { id: WorkspaceAgentModel; label: string }[]> = {
+  anthropic: [
+    { id: "claude-opus-5-5", label: "Claude Opus 5.5" },
+    { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (cheaper)" },
+  ],
+  openai: [
+    { id: "gpt-6-astra", label: "GPT-6 Astra" },
+    { id: "gpt-6.1-sol", label: "GPT-6.1 Sol (cheaper)" },
+  ],
+};
+export const WORKSPACE_AGENT_MODELS = [...WORKSPACE_AGENT_MODELS_BY_PROVIDER.anthropic, ...WORKSPACE_AGENT_MODELS_BY_PROVIDER.openai];
 
 /** The workspace agent's settings (admins only; secrets as their last 4 characters). */
 export type WorkspaceAgentSettings = {
+  provider: WorkspaceAgentProvider;
   apiKeyHint: string;
   model: WorkspaceAgentModel;
   monthlyLimitCents: number;
@@ -56,6 +70,14 @@ export type CreateAgentInput =
       monthlyLimit: number;
       runLimit: number;
       consoleWorkspaceId: string | null;
+    }
+  | {
+      kind: "OPENAI_API";
+      name: string;
+      apiKey: string;
+      model: WorkspaceAgentModel;
+      monthlyLimit: number;
+      runLimit: number;
     };
 
 export type UpdateAgentInput = {

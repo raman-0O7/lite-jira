@@ -222,7 +222,7 @@ DONE, rest = IN_PROGRESS).
 | 11 | **22 — My Work & saved filters** (done): cross-project home, issues page with saved filters (personal or shared), issue links (blocks/blocked by, relates, duplicates) with a Blocked chip and `is:blocked` | 09 |
 | 12 | **23 — Connect your AI** (done; checks with the real apps on a deployed preview still to do): a "Connect your AI" page with setup for ChatGPT, Claude, Codex, Claude Code, Gemini CLI, Cursor and VS Code; ChatGPT verified end to end against our OAuth; an MCP tool contract test so tool changes can't silently break ChatGPT | 10 |
 | 12 | **24 — In-app AI on any provider** (done): in-app AI on the AI SDK; admins pick provider (Anthropic, OpenAI, Gemini, Mistral, xAI, DeepSeek, Groq, custom OpenAI-compatible) and model with the workspace's own key | 20 |
-| 13 | **25 — Workspace agent on OpenAI**: the workspace agent (18) made provider-agnostic, with an OpenAI Agents API backend (Codex harness, hosted sandbox) on the workspace's OpenAI key | 18 |
+| 13 | **25 — Workspace agent on OpenAI** (done; first run with a real OpenAI account still to verify): the workspace agent (18) made provider-agnostic, with an OpenAI Agents API backend (Codex harness, hosted sandbox) on the workspace's OpenAI key | 18 |
 | 13 | **26 — Sign in with ChatGPT**: each person's ChatGPT plan pays for their in-app AI. Waits on OpenAI's approval for hosted apps | 24 |
 | 12 | **27 — Project context** (done): a brief per project plus sourced decisions, constraints, conventions and vocabulary, served to every agent (`claim_issue`, `get_project_context`) and to in-app AI; agents propose what they learned and people accept; overlap warnings when two pieces of work change the same files | 10, 11, 12 |
 | later | Automation rules, WebMCP adapter, notifications, file attachments, recurring issues, templates, calendar view, billing | — |
@@ -369,8 +369,9 @@ Kanso works with the AI people already pay for, at three levels:
   or OpenAI's Agents API behind one adapter interface.
 
 Specs: [`23-connect-your-ai.md`](features/23-connect-your-ai.md),
-[`24-multi-provider-ai.md`](features/24-multi-provider-ai.md); 25 and 26 are
-written before they start.
+[`24-multi-provider-ai.md`](features/24-multi-provider-ai.md),
+[`25-workspace-agent-openai.md`](features/25-workspace-agent-openai.md); 26 is
+written before it starts.
 
 ### 27 — Project context
 The shared layer every agent works from, whoever makes the agent. People write a

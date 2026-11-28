@@ -27,23 +27,14 @@ import {
 } from "@/components/workspace/AgentSetupDialog";
 import { Snippet } from "@/components/workspace/SetupSteps";
 import { WorkspaceAgentSection } from "@/components/workspace/WorkspaceAgentCard";
-import {
-  type Agent,
-  type AgentKind,
-  agentKeys,
-  createAgentToken,
-  deleteAgent,
-  fetchAgents,
-  fetchAgentTokens,
-  revokeAgentToken,
-  updateAgent,
-} from "@/lib/api/agents";
+import { type Agent, agentKeys, type AgentKind, createAgentToken, deleteAgent, fetchAgents, fetchAgentTokens, isWorkspaceAgent, revokeAgentToken, updateAgent } from "@/lib/api/agents";
 import { useSession } from "@/lib/auth-client";
 
 const KIND_LABEL: Record<AgentKind, string> = {
   CLAUDE_CODE: "Claude Code routine",
   MCP: "MCP agent",
   CLAUDE_API: "Workspace agent",
+  OPENAI_API: "Workspace agent",
 };
 
 /** Settings → Agents (docs/features/12-agents.md "UI", 13-guided-setup.md "Agent setup"). */
@@ -60,10 +51,10 @@ export function AgentsSettings({ mcpUrl }: { mcpUrl: string }) {
   });
   // The workspace agent has its own section; the lists are personal and MCP agents.
   const workspaceAgent = agents.data?.find(
-    (agent) => agent.kind === "CLAUDE_API",
+    (agent) => isWorkspaceAgent(agent.kind),
   );
   const others =
-    agents.data?.filter((agent) => agent.kind !== "CLAUDE_API") ?? [];
+    agents.data?.filter((agent) => !isWorkspaceAgent(agent.kind)) ?? [];
 
   return (
     <div className="flex flex-col gap-8">

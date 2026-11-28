@@ -24,7 +24,33 @@ export type ClaudeApiConfig = {
   vaultTokenId: string;
   definitionVersion: number;
 };
-export type AgentConfig = ClaudeCodeConfig | McpAgentConfig | ClaudeApiConfig;
+/** The workspace agent on OpenAI's Agents API (docs/features/25-workspace-agent-openai.md "Data"). */
+export const OPENAI_AGENT_MODELS = ["gpt-6-astra", "gpt-6.1-sol"] as const;
+export type OpenAiAgentModel = (typeof OPENAI_AGENT_MODELS)[number];
+export type OpenAiApiConfig = {
+  apiKey: string;
+  model: OpenAiAgentModel;
+  monthlyLimitCents: number;
+  runLimitCents: number;
+  // Provisioned on the organization's OpenAI account.
+  openaiAgentId: string;
+  /** The workspace vault holding the Kanso MCP credential. */
+  vaultId: string;
+  /** The Kanso agent token stored in the vault for Kanso's MCP server. */
+  vaultTokenId: string;
+  definitionVersion: number;
+};
+export type AgentConfig = ClaudeCodeConfig | McpAgentConfig | ClaudeApiConfig | OpenAiApiConfig;
+
+/**
+ * The kinds that are "the workspace agent": one per workspace, on the
+ * organization's API key, any member can hand it work. A new provider is one
+ * more entry here.
+ */
+export const WORKSPACE_AGENT_KINDS = ["CLAUDE_API", "OPENAI_API"] as const;
+export type WorkspaceAgentKind = (typeof WORKSPACE_AGENT_KINDS)[number];
+export const isWorkspaceAgentKind = (kind: string): kind is WorkspaceAgentKind =>
+  (WORKSPACE_AGENT_KINDS as readonly string[]).includes(kind);
 
 export const FIRE_URL_PATTERN = /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/;
 
